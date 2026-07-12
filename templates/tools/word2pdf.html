@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Word 转 PDF — 工具箱</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #ecfdf5 0%, #f4f6fb 100%);
+      color: #1f2937;
+      display: flex; min-height: 100vh; padding: 24px;
+    }
+    .card {
+      margin: auto;
+      background: #fff; padding: 32px 36px; border-radius: 16px;
+      width: min(520px, 94vw);
+      box-shadow: 0 10px 40px rgba(0,0,0,.08);
+    }
+    .back { display: inline-block; margin-bottom: 16px; color: #059669; text-decoration: none; font-size: 13px; }
+    .back:hover { text-decoration: underline; }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    p.sub { margin: 0 0 16px; color: #6b7280; font-size: 13px; line-height: 1.5; }
+    .engine {
+      margin: 0 0 18px; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.5;
+    }
+    .engine.ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .engine.bad { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .drop {
+      display: block; width: 100%;
+      border: 2px dashed #a7f3d0; border-radius: 12px; padding: 28px 16px;
+      text-align: center; cursor: pointer; transition: .15s; background: #f0fdf4;
+    }
+    .drop:hover, .drop.drag { border-color: #10b981; background: #d1fae5; }
+    .drop strong { color: #059669; }
+    .drop.disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
+    input[type=file] { display: none; }
+    .file-list {
+      margin: 12px 0 0; padding: 0; list-style: none; max-height: 160px; overflow: auto;
+    }
+    .file-list li {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #374151; padding: 6px 8px;
+      background: #f9fafb; border-radius: 8px; margin-bottom: 6px;
+    }
+    .file-list .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-list .fsize { color: #9ca3af; flex-shrink: 0; }
+    .file-list button {
+      width: auto; margin: 0; padding: 2px 8px; font-size: 12px;
+      background: transparent; color: #9ca3af; border-radius: 6px; border: 0; cursor: pointer;
+    }
+    .file-list button:hover { color: #dc2626; background: #fef2f2; }
+    #btn {
+      width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 10px;
+      background: #059669; color: #fff; font-size: 15px; cursor: pointer;
+    }
+    #btn:disabled { background: #c7c9d9; cursor: not-allowed; }
+    .progress {
+      display: none; margin-top: 14px; height: 6px; background: #e5e7eb;
+      border-radius: 999px; overflow: hidden;
+    }
+    .progress.show { display: block; }
+    .progress > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, #10b981, #34d399);
+      transition: width .15s ease;
+    }
+    #status { margin-top: 12px; font-size: 13px; min-height: 18px; line-height: 1.5; }
+    .err { color: #dc2626; }
+    .ok { color: #16a34a; }
+    .info { color: #4b5563; }
+    .warn { color: #d97706; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <a class="back" href="/">&larr; 返回工具箱</a>
+    <h1>Word → PDF 转换器</h1>
+    <p class="sub">将 .docx / .doc 转为 PDF。优先使用 LibreOffice（适合服务器 / Docker），Windows 本机也可回退到 Microsoft Word。</p>
+
+    {% if engine and engine.ready %}
+    <div class="engine ok">
+      引擎就绪：{{ engine.preferred }}
+      {% if engine.engines|length > 1 %}
+        （可用：{{ engine.engines | join(', ') }}）
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="engine bad">
+      未检测到转换引擎。请安装
+      <a href="https://www.libreoffice.org/" target="_blank" rel="noopener">LibreOffice</a>
+      （推荐，可设置环境变量 <code>LIBREOFFICE_PATH</code>），
+      或在 Windows 上安装 Microsoft Word。Docker 镜像已内置 LibreOffice。
+    </div>
+    {% endif %}
+
+    <label class="drop{% if not engine or not engine.ready %} disabled{% endif %}" id="drop">
+      <input type="file" id="file" accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" multiple {% if not engine or not engine.ready %}disabled{% endif %} />
+      <div>点击或拖拽 <strong>Word 文件</strong> 到此处</div>
+      <div style="margin-top:6px;color:#9ca3af;font-size:12px;">支持 .docx / .doc · 最多 20 个 · 每个 ≤ 50 MB</div>
+    </label>
+    <ul class="file-list" id="list"></ul>
+
+    <button id="btn" disabled>开始转换</button>
+    <div class="progress" id="progress"><i id="bar"></i></div>
+    <div id="status"></div>
+  </div>
+
+  <script>
+    const MAX_FILES = 20;
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const ENGINE_READY = {{ 'true' if engine and engine.ready else 'false' }};
+    const fileInput = document.getElementById('file');
+    const drop = document.getElementById('drop');
+    const list = document.getElementById('list');
+    const btn = document.getElementById('btn');
+    const status = document.getElementById('status');
+    const progress = document.getElementById('progress');
+    const bar = document.getElementById('bar');
+
+    /** @type {File[]} */
+    let selected = [];
+
+    function isWord(name) {
+      const n = (name || '').toLowerCase();
+      return n.endsWith('.docx') || n.endsWith('.doc');
+    }
+
+    function fmtSize(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function downloadName(disposition, fallback) {
+      if (!disposition) return fallback;
+      const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition);
+      if (star) {
+        try { return decodeURIComponent(star[1].replace(/\+/g, ' ')); }
+        catch (e) { /* fall through */ }
+      }
+      const ascii = /filename="?([^";]+)"?/i.exec(disposition);
+      if (ascii) return ascii[1];
+      return fallback;
+    }
+
+    function errDetail(detail) {
+      if (typeof detail === 'string') return detail;
+      if (Array.isArray(detail)) {
+        return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+      }
+      return '转换失败';
+    }
+
+    function setProgress(pct) {
+      progress.classList.add('show');
+      bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+    function hideProgress() {
+      progress.classList.remove('show');
+      bar.style.width = '0%';
+    }
+
+    function renderList() {
+      list.innerHTML = '';
+      selected.forEach((f, i) => {
+        const li = document.createElement('li');
+        const name = document.createElement('span');
+        name.className = 'fname';
+        name.title = f.name;
+        name.textContent = f.name;
+        const size = document.createElement('span');
+        size.className = 'fsize';
+        size.textContent = fmtSize(f.size);
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '移除';
+        rm.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          selected.splice(i, 1);
+          renderList();
+          status.textContent = '';
+          status.className = '';
+        });
+        li.append(name, size, rm);
+        list.appendChild(li);
+      });
+      btn.disabled = !ENGINE_READY || selected.length === 0;
+      btn.textContent = selected.length > 1
+        ? `开始转换（${selected.length} 个文件 → ZIP）`
+        : '开始转换';
+    }
+
+    function addFiles(fileList) {
+      if (!ENGINE_READY) {
+        status.className = 'err';
+        status.textContent = '转换引擎未就绪，无法上传';
+        return;
+      }
+      const incoming = Array.from(fileList || []);
+      const errors = [];
+      for (const f of incoming) {
+        if (!isWord(f.name)) {
+          errors.push(`${f.name}: 仅支持 .docx / .doc`);
+          continue;
+        }
+        if (f.size > MAX_BYTES) {
+          errors.push(`${f.name}: 超过 50 MB`);
+          continue;
+        }
+        if (f.size === 0) {
+          errors.push(`${f.name}: 空文件`);
+          continue;
+        }
+        const dup = selected.some(s => s.name === f.name && s.size === f.size);
+        if (dup) continue;
+        if (selected.length >= MAX_FILES) {
+          errors.push(`最多 ${MAX_FILES} 个文件`);
+          break;
+        }
+        selected.push(f);
+      }
+      renderList();
+      if (errors.length) {
+        status.className = 'err';
+        status.textContent = errors.join('；');
+      } else {
+        status.textContent = '';
+        status.className = '';
+      }
+      fileInput.value = '';
+    }
+
+    fileInput.addEventListener('change', e => addFiles(e.target.files));
+
+    ['dragover', 'dragenter'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); if (ENGINE_READY) drop.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+
+    function xhrPost(url, formData) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.responseType = 'blob';
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            setProgress((e.loaded / e.total) * 70);
+            status.className = 'info';
+            status.textContent = `上传中… ${Math.round((e.loaded / e.total) * 100)}%`;
+          }
+        };
+        xhr.upload.onload = () => {
+          setProgress(75);
+          status.className = 'info';
+          status.textContent = '上传完成，正在转换…';
+        };
+        xhr.onload = () => {
+          setProgress(100);
+          resolve(xhr);
+        };
+        xhr.onerror = () => reject(new Error('网络错误'));
+        xhr.onabort = () => reject(new Error('已取消'));
+        xhr.send(formData);
+      });
+    }
+
+    btn.addEventListener('click', async () => {
+      if (!selected.length || !ENGINE_READY) return;
+      btn.disabled = true;
+      status.className = 'info';
+      status.textContent = selected.length > 1
+        ? `批量转换中（${selected.length} 个）…`
+        : '准备上传…';
+      setProgress(2);
+
+      const fd = new FormData();
+      const multi = selected.length > 1;
+      if (multi) {
+        selected.forEach(f => fd.append('files', f));
+      } else {
+        fd.append('file', selected[0]);
+      }
+
+      const url = multi ? '/tools/word2pdf/convert-batch' : '/tools/word2pdf/convert';
+      try {
+        const xhr = await xhrPost(url, fd);
+        if (xhr.status < 200 || xhr.status >= 300) {
+          let msg = `HTTP ${xhr.status}`;
+          try {
+            const text = await xhr.response.text();
+            const err = JSON.parse(text);
+            msg = errDetail(err.detail) || msg;
+          } catch (e) { /* keep msg */ }
+          throw new Error(msg);
+        }
+        const blob = xhr.response;
+        const fallback = multi
+          ? 'word2pdf_batch.zip'
+          : selected[0].name.replace(/\.docx?$/i, '') + '.pdf';
+        const a = document.createElement('a');
+        const href = URL.createObjectURL(blob);
+        a.href = href;
+        a.download = downloadName(xhr.getResponseHeader('content-disposition'), fallback);
+        a.click();
+        URL.revokeObjectURL(href);
+
+        const engine = xhr.getResponseHeader('X-Engine') || '';
+        const files = xhr.getResponseHeader('X-Files');
+        status.className = 'ok';
+        status.textContent = multi
+          ? `完成：${files || selected.length} 个文件已打包下载${engine ? '（引擎：' + engine + '）' : ''}。`
+          : `完成：PDF 已下载${engine ? '（引擎：' + engine + '）' : ''}。`;
+      } catch (e) {
+        status.className = 'err';
+        status.textContent = e.message || String(e);
+      } finally {
+        hideProgress();
+        btn.disabled = !ENGINE_READY || selected.length === 0;
+      }
+    });
+
+    if (!ENGINE_READY) {
+      status.className = 'warn';
+      status.textContent = '请先安装转换引擎后再使用。';
+    }
+  </script>
+</body>
+</html>

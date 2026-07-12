@@ -1,4 +1,5 @@
 from .pdf2word import router as pdf2word_router
+from .word2pdf import router as word2pdf_router
 
 TOOL_REGISTRY = [
     {
@@ -8,6 +9,13 @@ TOOL_REGISTRY = [
         "icon": "📄",
         "route": "/tools/pdf2word",
     },
+    {
+        "name": "Word 转 PDF",
+        "slug": "word2pdf",
+        "description": "Word（.docx / .doc）转 PDF：LibreOffice 优先，Windows 可回退 Microsoft Word。",
+        "icon": "📝",
+        "route": "/tools/word2pdf",
+    },
 ]
 
-__all__ = ["TOOL_REGISTRY", "pdf2word_router"]
+__all__ = ["TOOL_REGISTRY", "pdf2word_router", "word2pdf_router"]
