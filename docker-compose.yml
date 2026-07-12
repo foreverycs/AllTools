@@ -1,15 +1,22 @@
 services:
   toolbox:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # China-friendly pull of library/python (avoids docker.io timeout).
+        # Alternatives if this mirror fails:
+        #   docker.1ms.run/library/python:3.12-slim
+        #   dockerproxy.com/library/python:3.12-slim
+        #   python:3.12-slim   # only if the host has a working registry-mirror
+        PYTHON_IMAGE: docker.m.daocloud.io/library/python:3.12-slim
     image: pdf2word-toolbox:latest
     ports:
       - "8002:8000"
     environment:
-      # Explicit path so word2pdf always finds LibreOffice in the container.
       LIBREOFFICE_PATH: /usr/bin/soffice
       HOME: /tmp
       SAL_USE_VCLPLUGIN: svp
-    # LibreOffice headless needs a bit of RAM for complex docs.
     mem_limit: 1g
     restart: unless-stopped
     healthcheck:

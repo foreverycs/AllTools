@@ -1,11 +1,32 @@
-FROM python:3.12-slim
+# Base image: default uses a China-friendly mirror of Docker Hub library/python.
+# Override if needed, e.g.:
+#   docker compose build --build-arg PYTHON_IMAGE=python:3.12-slim
+#   docker compose build --build-arg PYTHON_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/python:3.12-slim
+ARG PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim
+FROM ${PYTHON_IMAGE}
 
 WORKDIR /app
 
+# Debian apt → Aliyun (faster on mainland / Alibaba Cloud ECS).
+# bookworm = current python:3.12-slim base; adjust if the base tag changes.
+RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i \
+        -e 's|deb.debian.org|mirrors.aliyun.com|g' \
+        -e 's|security.debian.org|mirrors.aliyun.com|g' \
+        /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    if [ -f /etc/apt/sources.list ]; then \
+      sed -i \
+        -e 's|deb.debian.org|mirrors.aliyun.com|g' \
+        -e 's|security.debian.org|mirrors.aliyun.com|g' \
+        /etc/apt/sources.list; \
+    fi
+
 # Headless LibreOffice for Word → PDF (+ CJK fonts for Chinese docs).
-# python:3.12-slim is Debian-based; packages come from the distro mirror.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         libreoffice-writer \
         libreoffice-java-common \
         default-jre-headless \
@@ -14,23 +35,24 @@ RUN apt-get update \
         fonts-noto-cjk \
         fonts-wqy-zenhei \
         fontconfig \
-        ca-certificates \
-    # Prefer the real binary path for LIBREOFFICE_PATH (soffice is usually a symlink).
-RUN set -eux; \
-    if [ -x /usr/bin/soffice ]; then echo /usr/bin/soffice > /etc/libreoffice-path; \
-    elif [ -x /usr/bin/libreoffice ]; then echo /usr/bin/libreoffice > /etc/libreoffice-path; \
+        ca-certificates; \
+    fc-cache -f; \
+    rm -rf /var/lib/apt/lists/*; \
+    if [ -x /usr/bin/soffice ]; then LO=/usr/bin/soffice; \
+    elif [ -x /usr/bin/libreoffice ]; then LO=/usr/bin/libreoffice; \
     else echo "LibreOffice binary not found" >&2; exit 1; fi; \
-    LO="$(cat /etc/libreoffice-path)"; \
+    echo "$LO" > /etc/libreoffice-path; \
     "$LO" --version
 
 ENV HOME=/tmp \
     SAL_USE_VCLPLUGIN=svp \
-    PYTHONUNBUFFERED=1
-# Resolved at runtime via converter PATH lookup; also export for clarity.
-ENV LIBREOFFICE_PATH=/usr/bin/soffice
+    PYTHONUNBUFFERED=1 \
+    LIBREOFFICE_PATH=/usr/bin/soffice \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=mirrors.aliyun.com
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

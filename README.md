@@ -90,17 +90,41 @@ curl http://127.0.0.1:8002/health
 # 浏览器
 # http://127.0.0.1:8002          工具箱首页
 # http://127.0.0.1:8002/tools/word2pdf
+```
 
-# 命令行在容器内转换
+**国内服务器拉不到 `python:3.12-slim`（docker.io 超时）时：**
+
+本仓库 Dockerfile 默认基础镜像为  
+`docker.m.daocloud.io/library/python:3.12-slim`，一般可直接构建。
+
+若该镜像站也失败，可换源再构建：
+
+```bash
+# 备选 1
+docker compose build --build-arg PYTHON_IMAGE=docker.1ms.run/library/python:3.12-slim
+docker compose up -d
+
+# 备选 2：给 Docker 配 registry-mirror 后仍用官方名
+# 编辑 /etc/docker/daemon.json 后 systemctl restart docker，例如：
+# {
+#   "registry-mirrors": [
+#     "https://docker.m.daocloud.io",
+#     "https://docker.1ms.run"
+#   ]
+# }
+docker compose build --build-arg PYTHON_IMAGE=python:3.12-slim
+docker compose up -d
+```
+
+首次构建会安装 LibreOffice，体积与时间较大，属正常现象。
+
+```bash
+# 容器内查看引擎
 docker compose exec toolbox python -m word2pdf --info
-# 把本机文件挂进去再转（一次性）：
-# docker compose run --rm -v "%cd%:/data" toolbox python -m word2pdf /data/input.docx -o /data/out.pdf
 
 # 停止
 docker compose down
 ```
-
-首次构建会下载 LibreOffice，体积与时间较大，属正常现象。
 
 ## API
 
