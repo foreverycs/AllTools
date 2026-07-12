@@ -10,3 +10,5 @@ tests/
 *.docx
 *.pdf
 README.md
+file/**
+!file/.gitkeep

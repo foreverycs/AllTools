@@ -30,6 +30,7 @@
 ### 通用
 
 - **批量转换**：多文件一次上传，打包为 ZIP 下载。
+- **最近上传记录**：转换成功后仅将**输入文件**写入后台 `file/` 目录，首页可查看/下载；**仅保留最近 5 天**（可配 `UPLOAD_RETENTION_DAYS`）。
 - Web 界面：拖拽上传、上传进度条、统计与警告提示。
 - 命令行：`python -m converter input.pdf` / `python -m word2pdf input.docx`。
 - 单文件最大 50 MB，批量最多 20 个；上传分块写盘，转换在线程池执行。
@@ -131,6 +132,8 @@ docker compose down
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/health` | 健康检查 |
+| `GET` | `/api/uploads` | 最近上传记录 JSON |
+| `GET` | `/api/uploads/{id}/download` | 下载归档的输入文件 |
 | `GET` | `/tools/pdf2word` | PDF→Word 页面 |
 | `POST` | `/tools/pdf2word/convert` | 单 PDF → `.docx` |
 | `POST` | `/tools/pdf2word/convert-batch` | 多 PDF → `.zip` |
@@ -179,6 +182,9 @@ converter/
 word2pdf/
   __main__.py               Word→PDF CLI
   converter.py              LibreOffice / MS Word 引擎
+storage/
+  history.py                上传归档与 5 天清理
+file/                       上传记录目录（挂载持久化，gitignore）
 templates/
   index.html                工具箱首页
   tools/pdf2word.html       PDF 转 Word 上传页

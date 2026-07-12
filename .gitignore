@@ -6,3 +6,6 @@ venv/
 .pytest_cache/
 *.docx
 *.pdf
+# Upload history (keep directory via .gitkeep)
+file/**
+!file/.gitkeep

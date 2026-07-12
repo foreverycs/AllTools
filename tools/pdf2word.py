@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from converter import content_warnings, count_blocks, extract_document, write_document
+from storage import archive_conversion
 
 router = APIRouter(prefix="/tools/pdf2word", tags=["pdf2word"])
 
@@ -139,8 +140,19 @@ async def convert(
             status_code=500, detail=f"Conversion failed: {exc}"
         ) from exc
 
-    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
     out_name = _safe_stem(file.filename) + ".docx"
+    await asyncio.to_thread(
+        archive_conversion,
+        tool="pdf2word",
+        original_name=file.filename or "input.pdf",
+        input_path=pdf_path,
+        extra={
+            "pages": stats.get("pages"),
+            "tables": stats.get("tables"),
+            "images": stats.get("images"),
+        },
+    )
+    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
     return FileResponse(
         docx_path,
         media_type=_DOCX_MEDIA,
@@ -207,6 +219,19 @@ async def convert_batch(
                     out_name = f"{stem}_{idx + 1}.docx"
                 used_names.add(out_name)
                 zf.write(docx_path, out_name)
+
+                await asyncio.to_thread(
+                    archive_conversion,
+                    tool="pdf2word",
+                    original_name=file.filename or f"input_{idx}.pdf",
+                    input_path=pdf_path,
+                    extra={
+                        "pages": stats.get("pages"),
+                        "tables": stats.get("tables"),
+                        "images": stats.get("images"),
+                        "batch": True,
+                    },
+                )
 
                 total_pages += stats["pages"]
                 total_tables += stats["tables"]

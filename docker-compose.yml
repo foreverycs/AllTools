@@ -17,6 +17,11 @@ services:
       LIBREOFFICE_PATH: /usr/bin/soffice
       HOME: /tmp
       SAL_USE_VCLPLUGIN: svp
+      UPLOAD_RETENTION_DAYS: "5"
+      UPLOAD_FILE_DIR: /app/file
+    volumes:
+      # Persist upload history on the host
+      - ./file:/app/file
     mem_limit: 1g
     restart: unless-stopped
     healthcheck:

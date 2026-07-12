@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from word2pdf import ConversionError, convert_to_pdf, engine_info
+from storage import archive_conversion
 
 router = APIRouter(prefix="/tools/word2pdf", tags=["word2pdf"])
 
@@ -137,8 +138,15 @@ async def convert(
             status_code=500, detail=f"Conversion failed: {exc}"
         ) from exc
 
-    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
     out_name = _safe_stem(file.filename) + ".pdf"
+    await asyncio.to_thread(
+        archive_conversion,
+        tool="word2pdf",
+        original_name=file.filename or "input.docx",
+        input_path=doc_path,
+        extra={"engine": stats.get("engine"), "bytes": stats.get("bytes")},
+    )
+    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
     return FileResponse(
         pdf_path,
         media_type=_PDF_MEDIA,
@@ -205,6 +213,18 @@ async def convert_batch(
                     out_name = f"{stem}_{idx + 1}.pdf"
                 used_names.add(out_name)
                 zf.write(pdf_path, out_name)
+
+                await asyncio.to_thread(
+                    archive_conversion,
+                    tool="word2pdf",
+                    original_name=file.filename or f"input_{idx}.docx",
+                    input_path=doc_path,
+                    extra={
+                        "engine": stats.get("engine"),
+                        "bytes": stats.get("bytes"),
+                        "batch": True,
+                    },
+                )
 
                 engines_used.add(stats.get("engine") or "")
                 total_bytes += stats.get("bytes") or 0
