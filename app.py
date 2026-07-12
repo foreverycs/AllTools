@@ -16,6 +16,7 @@ from storage import (
     list_records,
     resolve_stored,
 )
+from admin import admin_router
 from tools import (
     TOOL_REGISTRY,
     TOOL_ROUTERS,
@@ -54,7 +55,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="工具集", version="0.6.1", lifespan=lifespan)
+app = FastAPI(title="工具集", version="0.7.0", lifespan=lifespan)
 
 # Static assets (shared CSS, etc.)
 static_dir = os.path.join(BASE_DIR, "static")
@@ -64,6 +65,9 @@ if os.path.isdir(static_dir):
 # Register all tool routers
 for router in TOOL_ROUTERS:
     app.include_router(router)
+
+# Admin console (password-protected)
+app.include_router(admin_router)
 
 
 @app.get("/", response_class=HTMLResponse)

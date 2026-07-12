@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}管理后台{% endblock %} — 工具集</title>
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/admin.css" />
+</head>
+<body class="admin-body">
+  <div class="admin-layout">
+    <aside class="admin-side">
+      <a class="admin-brand" href="/admin">
+        <div class="admin-brand-mark">管</div>
+        <div>
+          <div class="admin-brand-name">管理后台</div>
+          <div class="admin-brand-sub">v{{ app_version }}</div>
+        </div>
+      </a>
+      <nav class="admin-nav">
+        <a href="/admin" class="{% if active == 'dashboard' %}active{% endif %}">仪表盘</a>
+        <a href="/admin/uploads" class="{% if active == 'uploads' %}active{% endif %}">上传记录</a>
+        <a href="/admin/system" class="{% if active == 'system' %}active{% endif %}">系统状态</a>
+      </nav>
+      <div class="admin-side-foot">
+        <a href="/">返回前台</a>
+        <form method="post" action="/admin/logout">
+          <button type="submit">退出登录</button>
+        </form>
+      </div>
+    </aside>
+    <main class="admin-main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

@@ -3,9 +3,12 @@ from .history import (
     RETENTION_DAYS,
     archive_conversion,
     cleanup_expired,
+    delete_record,
+    ensure_file_dir,
+    get_record,
     list_records,
     resolve_stored,
-    ensure_file_dir,
+    storage_stats,
 )
 
 __all__ = [
@@ -13,7 +16,10 @@ __all__ = [
     "RETENTION_DAYS",
     "archive_conversion",
     "cleanup_expired",
+    "delete_record",
+    "ensure_file_dir",
+    "get_record",
     "list_records",
     "resolve_stored",
-    "ensure_file_dir",
+    "storage_stats",
 ]

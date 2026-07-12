@@ -1,0 +1,108 @@
+{% extends "admin/base.html" %}
+{% block title %}系统状态{% endblock %}
+{% block content %}
+<div class="admin-header">
+  <div>
+    <h1>系统状态</h1>
+    <p>引擎探测、工具注册与环境配置</p>
+  </div>
+  <div class="admin-actions">
+    <a class="admin-btn" href="/health" target="_blank" rel="noopener">公开 /health</a>
+    <a class="admin-btn" href="/docs" target="_blank" rel="noopener">API 文档</a>
+  </div>
+</div>
+
+<div class="admin-grid-2">
+  <div class="admin-panel">
+    <div class="admin-panel-h">转换引擎</div>
+    <div class="admin-panel-b">
+      <dl class="admin-kv">
+        <dt>Word→PDF 就绪</dt>
+        <dd>
+          {% if health.word2pdf.ready %}
+          <span class="admin-badge ok">是</span>
+          {% else %}
+          <span class="admin-badge err">否</span>
+          {% endif %}
+        </dd>
+        <dt>可用引擎</dt>
+        <dd>{{ (health.word2pdf.engines or [])|join(', ') or '无' }}</dd>
+        <dt>首选引擎</dt>
+        <dd>{{ health.word2pdf.preferred or '—' }}</dd>
+        <dt>LibreOffice 路径</dt>
+        <dd class="admin-mono">{{ health.word2pdf.libreoffice_path or '—' }}</dd>
+        <dt>OCR 可用</dt>
+        <dd>
+          {% if health.ocr.available %}
+          <span class="admin-badge ok">是</span>
+          {% else %}
+          <span class="admin-badge warn">否</span>
+          {% endif %}
+        </dd>
+        <dt>OCR 语言</dt>
+        <dd>{{ health.ocr.lang or '—' }}</dd>
+        <dt>Tesseract</dt>
+        <dd class="admin-mono">{{ health.ocr.tesseract_cmd or '—' }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="admin-panel">
+    <div class="admin-panel-h">存储</div>
+    <div class="admin-panel-b">
+      <dl class="admin-kv">
+        <dt>归档目录</dt>
+        <dd class="admin-mono">{{ stats.file_dir }}</dd>
+        <dt>记录数</dt>
+        <dd>{{ stats.record_count }}</dd>
+        <dt>文件在位</dt>
+        <dd>{{ stats.files_present }}</dd>
+        <dt>索引字节</dt>
+        <dd>{{ stats.bytes_indexed }}</dd>
+        <dt>磁盘字节</dt>
+        <dd>{{ stats.bytes_on_disk }}</dd>
+        <dt>保留天数</dt>
+        <dd>{{ stats.retention_days }}</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<div class="admin-panel" style="margin-top:16px">
+  <div class="admin-panel-h">环境变量（摘要）</div>
+  <div class="admin-panel-b">
+    <dl class="admin-kv">
+      {% for k, v in env_hints.items() %}
+      <dt>{{ k }}</dt>
+      <dd class="admin-mono">{{ v }}</dd>
+      {% endfor %}
+    </dl>
+  </div>
+</div>
+
+<div class="admin-panel" style="margin-top:16px">
+  <div class="admin-panel-h">已注册工具</div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>名称</th>
+          <th>Slug</th>
+          <th>栏目</th>
+          <th>路由</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tools %}
+        <tr>
+          <td>{{ t.name }}</td>
+          <td class="admin-mono">{{ t.slug }}</td>
+          <td>{{ t.category }}</td>
+          <td class="admin-mono"><a href="{{ t.route }}" style="color:#4f46e5">{{ t.route }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

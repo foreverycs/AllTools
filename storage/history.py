@@ -298,3 +298,84 @@ def resolve_stored(rel: str) -> Optional[Path]:
     if candidate.is_file():
         return candidate
     return None
+
+
+def get_record(record_id: str) -> Optional[Dict[str, Any]]:
+    """Return one record by id (with ``input_exists``), or None."""
+    if not record_id:
+        return None
+    with _lock:
+        records = _load_records()
+    for rec in records:
+        if rec.get("id") == record_id:
+            item = dict(rec)
+            rel = rec.get("input_rel")
+            item["input_exists"] = bool(rel) and (FILE_DIR / str(rel)).is_file()
+            return item
+    return None
+
+
+def delete_record(record_id: str) -> bool:
+    """Delete one history record and its stored input file. Returns True if removed."""
+    if not record_id:
+        return False
+    with _lock:
+        records = _load_records()
+        kept: List[Dict[str, Any]] = []
+        removed_rec: Optional[Dict[str, Any]] = None
+        for rec in records:
+            if rec.get("id") == record_id and removed_rec is None:
+                removed_rec = rec
+            else:
+                kept.append(rec)
+        if removed_rec is None:
+            return False
+        _remove_record_files(removed_rec)
+        _save_records(kept)
+        return True
+
+
+def storage_stats() -> Dict[str, Any]:
+    """Aggregate stats for admin dashboard."""
+    try:
+        cleanup_expired()
+    except Exception:
+        pass
+    with _lock:
+        records = _load_records()
+
+    by_tool: Dict[str, int] = {}
+    total_bytes = 0
+    with_file = 0
+    for rec in records:
+        tool = str(rec.get("tool") or "unknown")
+        by_tool[tool] = by_tool.get(tool, 0) + 1
+        try:
+            total_bytes += int(rec.get("input_bytes") or 0)
+        except (TypeError, ValueError):
+            pass
+        rel = rec.get("input_rel")
+        if rel and (FILE_DIR / str(rel)).is_file():
+            with_file += 1
+
+    disk_bytes = 0
+    try:
+        for p in FILE_DIR.rglob("*"):
+            if p.is_file():
+                try:
+                    disk_bytes += p.stat().st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+    return {
+        "retention_days": RETENTION_DAYS,
+        "file_dir": str(FILE_DIR),
+        "record_count": len(records),
+        "files_present": with_file,
+        "bytes_indexed": total_bytes,
+        "bytes_on_disk": disk_bytes,
+        "by_tool": by_tool,
+        "latest": records[0] if records else None,
+    }

@@ -1,0 +1,111 @@
+{% extends "admin/base.html" %}
+{% block title %}仪表盘{% endblock %}
+{% block content %}
+<div class="admin-header">
+  <div>
+    <h1>仪表盘</h1>
+    <p>概览上传归档与引擎状态</p>
+  </div>
+  <div class="admin-actions">
+    <a class="admin-btn" href="/admin/uploads">管理上传</a>
+    <a class="admin-btn admin-btn-primary" href="/admin/system">系统状态</a>
+  </div>
+</div>
+
+<div class="admin-stats">
+  <div class="admin-stat">
+    <div class="admin-stat-label">归档记录</div>
+    <div class="admin-stat-value">{{ stats.record_count }}</div>
+  </div>
+  <div class="admin-stat">
+    <div class="admin-stat-label">磁盘文件在位</div>
+    <div class="admin-stat-value">{{ stats.files_present }}</div>
+  </div>
+  <div class="admin-stat">
+    <div class="admin-stat-label">磁盘占用</div>
+    <div class="admin-stat-value" style="font-size:1.15rem">
+      {% set mb = (stats.bytes_on_disk or 0) / 1024 / 1024 %}
+      {{ '%.1f'|format(mb) }} MB
+    </div>
+  </div>
+  <div class="admin-stat">
+    <div class="admin-stat-label">保留天数</div>
+    <div class="admin-stat-value">{{ stats.retention_days }}</div>
+  </div>
+</div>
+
+<div class="admin-grid-2">
+  <div class="admin-panel">
+    <div class="admin-panel-h">
+      <span>最近上传</span>
+      <a href="/admin/uploads" class="admin-muted" style="text-decoration:none;font-weight:650">全部 →</a>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>工具</th>
+            <th>文件名</th>
+            <th>大小</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in recent %}
+          <tr>
+            <td class="admin-mono">{{ r.created_at }}</td>
+            <td><span class="admin-badge">{{ r.tool }}</span></td>
+            <td>{{ r.original_name }}</td>
+            <td class="admin-muted">
+              {% if r.input_bytes %}{{ '%.1f'|format(r.input_bytes / 1024) }} KB{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="admin-muted">暂无记录</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="admin-panel">
+    <div class="admin-panel-h">引擎与能力</div>
+    <div class="admin-panel-b">
+      <ul class="admin-list">
+        <li>
+          <span>Word → PDF</span>
+          {% if health.word2pdf.ready %}
+          <span class="admin-badge ok">{{ health.word2pdf.preferred or 'ready' }}</span>
+          {% else %}
+          <span class="admin-badge err">不可用</span>
+          {% endif %}
+        </li>
+        <li>
+          <span>OCR</span>
+          {% if health.ocr.available %}
+          <span class="admin-badge ok">{{ health.ocr.lang or 'ready' }}</span>
+          {% else %}
+          <span class="admin-badge warn">未安装</span>
+          {% endif %}
+        </li>
+        <li>
+          <span>前台工具数</span>
+          <strong>{{ health.tools }}</strong>
+        </li>
+        <li>
+          <span>栏目数</span>
+          <strong>{{ health.categories }}</strong>
+        </li>
+      </ul>
+      {% if stats.by_tool %}
+      <p class="admin-muted" style="margin:14px 0 8px;font-weight:700">按工具统计</p>
+      <ul class="admin-list">
+        {% for tool, n in stats.by_tool.items() %}
+        <li><span>{{ tool }}</span><strong>{{ n }}</strong></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

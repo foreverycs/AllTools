@@ -19,6 +19,8 @@ services:
       SAL_USE_VCLPLUGIN: svp
       UPLOAD_RETENTION_DAYS: "5"
       UPLOAD_FILE_DIR: /app/file
+      # Override in production: ADMIN_PASSWORD / ADMIN_SECRET
+      ADMIN_PASSWORD: admin123
     volumes:
       # Persist upload history on the host
       - ./file:/app/file

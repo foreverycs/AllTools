@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理员登录 — 工具集</title>
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/admin.css" />
+</head>
+<body class="admin-body">
+  <div class="admin-login-wrap">
+    <div class="admin-login">
+      <h1>管理后台登录</h1>
+      <p class="sub">查看上传归档、清理记录与系统状态</p>
+      {% if error %}
+      <div class="err">{{ error }}</div>
+      {% endif %}
+      <form method="post" action="/admin/login">
+        <input type="hidden" name="next" value="{{ next_url or '/admin' }}" />
+        <label for="password">管理密码</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password" autofocus />
+        <button class="admin-btn admin-btn-primary" type="submit">登录</button>
+      </form>
+      <p class="hint">
+        默认密码 <code>admin123</code>。生产环境请设置环境变量
+        <code>ADMIN_PASSWORD</code>。
+      </p>
+      <p class="hint" style="margin-top:8px"><a href="/" style="color:#4f46e5;font-weight:650;text-decoration:none">← 返回前台</a></p>
+    </div>
+  </div>
+</body>
+</html>

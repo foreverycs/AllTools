@@ -1,0 +1,88 @@
+{% extends "admin/base.html" %}
+{% block title %}上传记录{% endblock %}
+{% block content %}
+<div class="admin-header">
+  <div>
+    <h1>上传记录</h1>
+    <p>仅归档输入文件，默认保留 {{ retention_days }} 天</p>
+  </div>
+  <div class="admin-actions">
+    <form method="post" action="/admin/cleanup" onsubmit="return confirm('清理所有过期记录？');">
+      <button class="admin-btn" type="submit">清理过期</button>
+    </form>
+  </div>
+</div>
+
+{% if flash %}
+<div class="admin-flash">{{ flash }}</div>
+{% endif %}
+
+<form class="admin-filters" method="get" action="/admin/uploads">
+  <label class="admin-field">工具
+    <select name="tool">
+      <option value="">全部</option>
+      {% for t in tools_used %}
+      <option value="{{ t }}" {% if tool_filter == t %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="admin-field">搜索
+    <input type="search" name="q" value="{{ q }}" placeholder="文件名或 ID" />
+  </label>
+  <button class="admin-btn admin-btn-primary" type="submit">筛选</button>
+  {% if tool_filter or q %}
+  <a class="admin-btn" href="/admin/uploads">重置</a>
+  {% endif %}
+</form>
+
+<div class="admin-panel">
+  <div class="admin-panel-h">
+    <span>共 {{ items|length }} 条</span>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>时间</th>
+          <th>工具</th>
+          <th>原始文件名</th>
+          <th>大小</th>
+          <th>文件</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in items %}
+        <tr>
+          <td class="admin-mono">{{ r.id }}</td>
+          <td class="admin-mono">{{ r.created_at }}</td>
+          <td><span class="admin-badge">{{ r.tool }}</span></td>
+          <td>{{ r.original_name }}</td>
+          <td class="admin-muted">
+            {% if r.input_bytes %}{{ '%.1f'|format(r.input_bytes / 1024) }} KB{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if r.input_exists %}
+            <span class="admin-badge ok">在位</span>
+            {% else %}
+            <span class="admin-badge err">缺失</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap">
+            {% if r.input_exists %}
+            <a class="admin-btn" href="/admin/uploads/{{ r.id }}/download">下载</a>
+            {% endif %}
+            <form method="post" action="/admin/uploads/{{ r.id }}/delete" style="display:inline" onsubmit="return confirm('确认删除该记录与文件？');">
+              <button class="admin-btn admin-btn-danger" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="admin-muted">没有匹配的记录</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

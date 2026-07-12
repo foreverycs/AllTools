@@ -63,7 +63,17 @@ python app.py
 uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-浏览器打开 http://127.0.0.1:8000 。顶部菜单进入 **文档处理** / **编码工具** 栏目页，再打开具体工具。
+### 管理后台
+
+浏览器打开 http://127.0.0.1:8000/admin
+
+| 环境变量 | 说明 | 默认 |
+|----------|------|------|
+| `ADMIN_PASSWORD` | 后台登录密码 | `admin123` |
+| `ADMIN_SECRET` | 会话签名密钥（建议生产单独设置） | 由密码派生 |
+| `ADMIN_SESSION_TTL` | 会话有效期（秒） | `43200`（12 小时） |
+
+功能：仪表盘统计、上传记录筛选/下载/删除、过期清理、引擎与 OCR 状态。
 
 | 栏目 | 路径 |
 |------|------|
@@ -163,7 +173,10 @@ docker compose down
 | `GET` | `/tools/word2pdf/status` | 引擎状态 JSON |
 | `POST` | `/tools/word2pdf/convert` | 单 Word → `.pdf` |
 | `POST` | `/tools/word2pdf/convert-batch` | 多 Word → `.zip` |
-| `GET` | `/tools/base64` | Base64 编解码页面 |
+| `GET` | `/admin` | 管理后台（需登录） |
+| `GET` | `/admin/login` | 管理员登录 |
+| `GET` | `/admin/uploads` | 上传归档管理 |
+| `GET` | `/admin/system` | 系统状态 |
 | `POST` | `/tools/base64/encode` | 文本/文件 → Base64 |
 | `POST` | `/tools/base64/decode` | Base64 → 文本/hex |
 | `POST` | `/tools/base64/probe` | 粗检是否像 Base64 |
@@ -217,6 +230,9 @@ pytest tests -q
 
 ```
 app.py                      FastAPI 入口（工具集首页）
+admin/
+  auth.py                   后台会话鉴权
+  routes.py                 /admin 页面与 API
 tools/
   __init__.py               分类 + TOOL_REGISTRY + TOOL_ROUTERS
   pdf2word.py               文档：PDF→Word
