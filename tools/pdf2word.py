@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import tempfile
@@ -17,6 +18,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+_CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 
 @router.get("", response_class=HTMLResponse)
@@ -24,9 +26,29 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(request, "tools/pdf2word.html")
 
 
+async def _save_upload(file: UploadFile, dest: str) -> None:
+    """Stream the upload to disk, enforcing the size limit without loading all bytes."""
+    total = 0
+    with open(dest, "wb") as out:
+        while True:
+            chunk = await file.read(_CHUNK_SIZE)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413, detail="File too large (max 50 MB)"
+                )
+            out.write(chunk)
+    if total == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+
 @router.post("/convert")
-async def convert(file: UploadFile = File(...),
-                  background_tasks: BackgroundTasks = None):
+async def convert(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
@@ -36,24 +58,30 @@ async def convert(file: UploadFile = File(...),
     tmp_dir = tempfile.mkdtemp(prefix="pdf2word_")
     pdf_path = os.path.join(tmp_dir, "input.pdf")
     docx_path = os.path.join(tmp_dir, "output.docx")
+
     try:
-        data = await file.read()
-        if len(data) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
-        with open(pdf_path, "wb") as f:
-            f.write(data)
-        pages = extract_document(pdf_path)
-        write_document(pages, docx_path)
+        await _save_upload(file, pdf_path)
+        # pdfplumber / python-docx are CPU-bound; keep the event loop free.
+        pages = await asyncio.to_thread(extract_document, pdf_path)
+        await asyncio.to_thread(write_document, pages, docx_path)
+    except HTTPException:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Conversion failed: {exc}")
-    finally:
-        if background_tasks is not None:
-            background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=500, detail=f"Conversion failed: {exc}"
+        ) from exc
+
+    # Defer cleanup until after FileResponse finishes streaming the file.
+    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
 
     out_name = os.path.splitext(os.path.basename(file.filename))[0] + ".docx"
     return FileResponse(
         docx_path,
-        media_type=("application/vnd.openxmlformats-officedocument."
-                    "wordprocessingml.document"),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
         filename=out_name,
     )

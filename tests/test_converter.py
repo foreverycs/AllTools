@@ -207,9 +207,13 @@ def test_fidelity_alignment_variants():
     assert doc_table.cell(0, 1).paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.CENTER
     assert doc_table.cell(0, 2).paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.RIGHT
     assert doc_table.cell(1, 0).paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.LEFT
+
+
+def test_fidelity_soft_newline_normalized():
     from reportlab.lib.pagesizes import A4
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
     from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib import colors
 
     tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
     pdf_path = os.path.join(tmp, "br.pdf")
@@ -220,8 +224,7 @@ def test_fidelity_alignment_variants():
     st.leading = 12
     tbl = Table([[Paragraph("第一行<br/>第二行", st), "B"], ["C", "D"]],
                 colWidths=[120, 80])
-    tbl.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 1,
-                              __import__("reportlab.lib.colors", fromlist=["black"]).black)]))
+    tbl.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 1, colors.black)]))
     doc.build([tbl])
 
     pages = extract_document(pdf_path)

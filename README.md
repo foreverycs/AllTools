@@ -3,12 +3,15 @@
 将**纯文本、带表格**的 PDF 转换为高保真 Word（`.docx`），还原合并单元格与基本样式。
 基于 **FastAPI** + **pdfplumber**（表格提取）+ **python-docx**（Word 生成）。
 
+应用以「工具箱」形式组织，当前内置 **PDF 转 Word**；可按同样方式扩展更多小工具。
+
 ## 特性
 
 - 高保真还原：合并单元格（`rowspan` / `colspan`）、表格边框、首行加粗。
 - 文本与表格混排：按页面纵向顺序交错输出。
-- Web 界面：拖拽上传 PDF，转换后直接下载 `.docx`。
-- 单文件处理（每次一个 PDF）。
+- Web 界面：工具箱首页 + 拖拽上传 PDF，转换后直接下载 `.docx`。
+- 单文件处理（每次一个 PDF，最大 50 MB）。
+- 转换在线程池中执行，不阻塞 FastAPI 事件循环；上传按块写入磁盘。
 
 ## 安装
 
@@ -26,7 +29,14 @@ python app.py
 uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-浏览器打开 http://127.0.0.1:8000 ，上传 PDF 即可。
+浏览器打开 http://127.0.0.1:8000 ，进入「PDF 转 Word」上传即可。
+
+### Docker
+
+```bash
+docker compose up --build
+# 映射端口 8002 -> 8000
+```
 
 ## 测试
 
@@ -37,12 +47,18 @@ pytest tests -q
 ## 目录结构
 
 ```
-app.py                 FastAPI 入口（上传 / 转换 / 下载）
+app.py                      FastAPI 入口（工具箱首页）
+tools/
+  __init__.py               工具注册表 TOOL_REGISTRY
+  pdf2word.py               /tools/pdf2word 页面与转换 API
 converter/
-  pdf_reader.py        用 pdfplumber 提取页面文本与表格（含合并单元格检测）
-  docx_writer.py       用 python-docx 生成 Word，重建合并单元格与样式
-templates/index.html   上传前端页面
-tests/                 单元 / 样例 PDF 转换测试
+  pdf_reader.py             pdfplumber 提取文本与表格（含合并单元格）
+  docx_writer.py            python-docx 生成 Word
+templates/
+  index.html                工具箱首页
+  tools/pdf2word.html       PDF 转 Word 上传页
+tests/                      单元 / 样例 PDF 转换测试
+Dockerfile / docker-compose.yml
 ```
 
 ## 实现说明
@@ -52,6 +68,7 @@ tests/                 单元 / 样例 PDF 转换测试
   `rowspan` / `colspan`。
 - `docx_writer` 先建 `nrows × ncols` 网格，再对锚点单元格调用
   `cell.merge(...)` 重建合并。
+- 转换失败时立即清理临时目录；成功时在响应发送完毕后异步删除。
 
 ## 已知限制
 
