@@ -7,14 +7,23 @@
     <p>引擎探测、工具注册与环境配置</p>
   </div>
   <div class="admin-actions">
-    <a class="admin-btn" href="/health" target="_blank" rel="noopener">公开 /health</a>
-    <a class="admin-btn" href="/docs" target="_blank" rel="noopener">API 文档</a>
+    <a class="admin-btn" href="/health" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      公开 /health
+    </a>
+    <a class="admin-btn" href="/docs" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+      API 文档
+    </a>
   </div>
 </div>
 
 <div class="admin-grid-2">
   <div class="admin-panel">
-    <div class="admin-panel-h">转换引擎</div>
+    <div class="admin-panel-h">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#6366f1"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      转换引擎
+    </div>
     <div class="admin-panel-b">
       <dl class="admin-kv">
         <dt>Word→PDF 就绪</dt>
@@ -48,7 +57,10 @@
   </div>
 
   <div class="admin-panel">
-    <div class="admin-panel-h">存储</div>
+    <div class="admin-panel-h">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#059669"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+      存储
+    </div>
     <div class="admin-panel-b">
       <dl class="admin-kv">
         <dt>归档目录</dt>
@@ -69,7 +81,10 @@
 </div>
 
 <div class="admin-panel" style="margin-top:16px">
-  <div class="admin-panel-h">环境变量（摘要）</div>
+  <div class="admin-panel-h">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#d97706"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    环境变量（摘要）
+  </div>
   <div class="admin-panel-b">
     <dl class="admin-kv">
       {% for k, v in env_hints.items() %}
@@ -81,7 +96,10 @@
 </div>
 
 <div class="admin-panel" style="margin-top:16px">
-  <div class="admin-panel-h">已注册工具</div>
+  <div class="admin-panel-h">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0284c7"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+    已注册工具
+  </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>
@@ -98,7 +116,7 @@
           <td>{{ t.name }}</td>
           <td class="admin-mono">{{ t.slug }}</td>
           <td>{{ t.category }}</td>
-          <td class="admin-mono"><a href="{{ t.route }}" style="color:#4f46e5">{{ t.route }}</a></td>
+          <td><a class="admin-link admin-mono" href="{{ t.route }}">{{ t.route }}</a></td>
         </tr>
         {% endfor %}
       </tbody>

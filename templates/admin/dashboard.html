@@ -14,21 +14,41 @@
 
 <div class="admin-stats">
   <div class="admin-stat">
+    <div class="admin-stat-icon purple">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+      </svg>
+    </div>
     <div class="admin-stat-label">归档记录</div>
     <div class="admin-stat-value">{{ stats.record_count }}</div>
   </div>
   <div class="admin-stat">
+    <div class="admin-stat-icon green">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+    </div>
     <div class="admin-stat-label">磁盘文件在位</div>
     <div class="admin-stat-value">{{ stats.files_present }}</div>
   </div>
   <div class="admin-stat">
+    <div class="admin-stat-icon amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+      </svg>
+    </div>
     <div class="admin-stat-label">磁盘占用</div>
-    <div class="admin-stat-value" style="font-size:1.15rem">
+    <div class="admin-stat-value">
       {% set mb = (stats.bytes_on_disk or 0) / 1024 / 1024 %}
-      {{ '%.1f'|format(mb) }} MB
+      {{ '%.1f'|format(mb) }}<span style="font-size:0.7em;font-weight:600;color:var(--muted-2);margin-left:2px">MB</span>
     </div>
   </div>
   <div class="admin-stat">
+    <div class="admin-stat-icon blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    </div>
     <div class="admin-stat-label">保留天数</div>
     <div class="admin-stat-value">{{ stats.retention_days }}</div>
   </div>
@@ -38,7 +58,7 @@
   <div class="admin-panel">
     <div class="admin-panel-h">
       <span>最近上传</span>
-      <a href="/admin/uploads" class="admin-muted" style="text-decoration:none;font-weight:650">全部 →</a>
+      <a href="/admin/uploads" class="admin-muted" style="text-decoration:none;font-weight:650;font-size:12px">全部 →</a>
     </div>
     <div class="admin-table-wrap">
       <table class="admin-table">
@@ -61,7 +81,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="admin-muted">暂无记录</td></tr>
+          <tr><td colspan="4" class="admin-muted" style="text-align:center;padding:24px 0">暂无记录</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -98,7 +118,7 @@
         </li>
       </ul>
       {% if stats.by_tool %}
-      <p class="admin-muted" style="margin:14px 0 8px;font-weight:700">按工具统计</p>
+      <p class="admin-muted" style="margin:16px 0 8px;font-weight:700;font-size:11px;letter-spacing:0.04em;text-transform:uppercase">按工具统计</p>
       <ul class="admin-list">
         {% for tool, n in stats.by_tool.items() %}
         <li><span>{{ tool }}</span><strong>{{ n }}</strong></li>

@@ -8,13 +8,19 @@
   </div>
   <div class="admin-actions">
     <form method="post" action="/admin/cleanup" onsubmit="return confirm('清理所有过期记录？');">
-      <button class="admin-btn" type="submit">清理过期</button>
+      <button class="admin-btn" type="submit">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        清理过期
+      </button>
     </form>
   </div>
 </div>
 
 {% if flash %}
-<div class="admin-flash">{{ flash }}</div>
+<div class="admin-flash">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+  {{ flash }}
+</div>
 {% endif %}
 
 <form class="admin-filters" method="get" action="/admin/uploads">
@@ -29,7 +35,10 @@
   <label class="admin-field">搜索
     <input type="search" name="q" value="{{ q }}" placeholder="文件名或 ID" />
   </label>
-  <button class="admin-btn admin-btn-primary" type="submit">筛选</button>
+  <button class="admin-btn admin-btn-primary" type="submit">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    筛选
+  </button>
   {% if tool_filter or q %}
   <a class="admin-btn" href="/admin/uploads">重置</a>
   {% endif %}
@@ -37,7 +46,7 @@
 
 <div class="admin-panel">
   <div class="admin-panel-h">
-    <span>共 {{ items|length }} 条</span>
+    <span>共 {{ items|length }} 条记录</span>
   </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
@@ -71,16 +80,25 @@
           </td>
           <td style="white-space:nowrap">
             {% if r.input_exists %}
-            <a class="admin-btn" href="/admin/uploads/{{ r.id }}/download">下载</a>
-            <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.original_name }}">预览</button>
+            <a class="admin-btn" href="/admin/uploads/{{ r.id }}/download">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              下载
+            </a>
+            <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.original_name }}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              预览
+            </button>
             {% endif %}
             <form method="post" action="/admin/uploads/{{ r.id }}/delete" style="display:inline" onsubmit="return confirm('确认删除该记录与文件？');">
-              <button class="admin-btn admin-btn-danger" type="submit">删除</button>
+              <button class="admin-btn admin-btn-danger" type="submit">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                删除
+              </button>
             </form>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="admin-muted">没有匹配的记录</td></tr>
+        <tr><td colspan="7" class="admin-muted" style="text-align:center;padding:32px 0">没有匹配的记录</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -91,7 +109,10 @@
   <div class="preview-modal" id="previewModal">
     <div class="preview-header">
       <span class="preview-title" id="previewTitle"></span>
-      <button class="admin-btn preview-close" onclick="closePreview()">&times; 关闭</button>
+      <button class="admin-btn preview-close" onclick="closePreview()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        关闭
+      </button>
     </div>
     <div class="preview-body" id="previewBody"></div>
   </div>

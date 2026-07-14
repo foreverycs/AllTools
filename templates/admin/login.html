@@ -10,22 +10,37 @@
 <body class="admin-body">
   <div class="admin-login-wrap">
     <div class="admin-login">
+      <div class="admin-login-mark">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+      </div>
       <h1>管理后台登录</h1>
       <p class="sub">查看上传归档、清理记录与系统状态</p>
       {% if error %}
-      <div class="err">{{ error }}</div>
+      <div class="err">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        {{ error }}
+      </div>
       {% endif %}
       <form method="post" action="/admin/login">
         <input type="hidden" name="next" value="{{ next_url or '/admin' }}" />
         <label for="password">管理密码</label>
-        <input id="password" name="password" type="password" required autocomplete="current-password" autofocus />
-        <button class="admin-btn admin-btn-primary" type="submit">登录</button>
+        <input id="password" name="password" type="password" required autocomplete="current-password" autofocus placeholder="请输入密码" />
+        <button class="admin-btn admin-btn-primary" type="submit">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          登录
+        </button>
       </form>
       <p class="hint">
-        默认密码 <code>admin123</code>。生产环境请设置环境变量
-        <code>ADMIN_PASSWORD</code>。
+        默认密码 <code>admin123</code>，生产环境请设置环境变量 <code>ADMIN_PASSWORD</code>
       </p>
-      <p class="hint" style="margin-top:8px"><a href="/" style="color:#4f46e5;font-weight:650;text-decoration:none">← 返回前台</a></p>
+      <p class="hint" style="margin-top:10px;text-align:center">
+        <a href="/" class="admin-link" style="font-size:12.5px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+          返回前台
+        </a>
+      </p>
     </div>
   </div>
 </body>
