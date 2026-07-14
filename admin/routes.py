@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional
 from urllib.parse import quote
 
@@ -35,6 +36,14 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
+# Pre-compute static data
+_categories_cache = tools_by_category()
+
+# Cached health info — engines don't change at runtime
+_health_cache: dict = {}
+_health_cache_ts: float = 0.0
+_HEALTH_TTL: float = 60.0
+
 
 def _tpl(request: Request, name: str, **ctx):
     data = {
@@ -55,17 +64,23 @@ def _safe_next(next_url: Optional[str]) -> str:
 
 
 def _build_health() -> dict:
+    global _health_cache, _health_cache_ts
+    now = time.monotonic()
+    if _health_cache and now - _health_cache_ts < _HEALTH_TTL:
+        return _health_cache
     from word2pdf import engine_info
     from converter import ocr_info
 
     w2p = engine_info()
     ocr = ocr_info()
-    return {
+    _health_cache = {
         "word2pdf": w2p,
         "ocr": ocr,
         "tools": len(TOOL_REGISTRY),
-        "categories": len(tools_by_category()),
+        "categories": len(_categories_cache),
     }
+    _health_cache_ts = now
+    return _health_cache
 
 
 def _redirect(url: str) -> RedirectResponse:
@@ -132,7 +147,7 @@ async def dashboard(request: Request):
         health=_build_health(),
         recent=list_records(limit=8),
         tools=TOOL_REGISTRY,
-        categories=tools_by_category(),
+        categories=_categories_cache,
     )
 
 
@@ -147,9 +162,15 @@ async def uploads_page(
     if redir:
         return redir
 
-    items = list_records(limit=limit)
+    all_items = list_records(limit=max(limit, 200))
     tool_f = (tool or "").strip()
     q_f = (q or "").strip().lower()
+
+    tools_used = sorted(
+        {str(r.get("tool") or "") for r in all_items if r.get("tool")}
+    )
+
+    items = all_items[:limit]
     if tool_f:
         items = [r for r in items if r.get("tool") == tool_f]
     if q_f:
@@ -160,9 +181,6 @@ async def uploads_page(
             or q_f in str(r.get("id") or "").lower()
         ]
 
-    tools_used = sorted(
-        {str(r.get("tool") or "") for r in list_records(limit=200) if r.get("tool")}
-    )
     return _tpl(
         request,
         "admin/uploads.html",
@@ -265,7 +283,7 @@ async def system_page(request: Request):
         health=_build_health(),
         stats=storage_stats(),
         tools=TOOL_REGISTRY,
-        categories=tools_by_category(),
+        categories=_categories_cache,
         env_hints={
             "ADMIN_PASSWORD": (
                 "set" if os.environ.get("ADMIN_PASSWORD") else "default admin123"

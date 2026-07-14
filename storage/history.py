@@ -31,6 +31,8 @@ RETENTION_DAYS = int(os.environ.get("UPLOAD_RETENTION_DAYS", "5"))
 
 _SAFE_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 _lock = threading.Lock()
+_last_cleanup_ts: float = 0.0
+_CLEANUP_INTERVAL: float = 300.0  # seconds
 
 
 def _now() -> datetime:
@@ -134,6 +136,17 @@ def _remove_record_files(record: Dict[str, Any]) -> None:
 
 def cleanup_expired() -> int:
     """Delete records/files older than retention. Returns removed count."""
+    global _last_cleanup_ts
+    import time
+
+    now_ts = time.monotonic()
+    if now_ts - _last_cleanup_ts < _CLEANUP_INTERVAL:
+        return 0
+    _last_cleanup_ts = now_ts
+    return _do_cleanup()
+
+
+def _do_cleanup() -> int:
     ensure_file_dir()
     cutoff = _cutoff()
     removed = 0
@@ -258,7 +271,7 @@ def _archive_conversion(
         _save_records(kept)
 
     try:
-        cleanup_expired()
+        _do_cleanup()
     except Exception:
         pass
 

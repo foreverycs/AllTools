@@ -8,6 +8,8 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.responses import Response
 
 from storage import (
     RETENTION_DAYS,
@@ -29,6 +31,11 @@ from tools import (
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
+# Pre-compute static data that never changes at runtime
+_nav_items = nav_categories()
+_tool_count = len(TOOL_REGISTRY)
+_categories_cache = tools_by_category()
+
 
 def _page_ctx(
     *,
@@ -37,9 +44,9 @@ def _page_ctx(
 ) -> Dict[str, Any]:
     """Common template context for pages that share the top menu."""
     ctx: Dict[str, Any] = {
-        "nav_items": nav_categories(),
+        "nav_items": _nav_items,
         "active_nav": active_nav,
-        "tool_count": len(TOOL_REGISTRY),
+        "tool_count": _tool_count,
     }
     if extra:
         ctx.update(extra)
@@ -48,15 +55,28 @@ def _page_ctx(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from storage.history import _do_cleanup
+
     ensure_file_dir()
     try:
-        cleanup_expired()
+        _do_cleanup()
     except Exception:
         pass
     yield
 
 
 app = FastAPI(title="工具集", version="0.9.0", lifespan=lifespan)
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+@app.middleware("http")
+async def static_cache_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
 
 # Static assets (shared CSS, etc.)
 static_dir = os.path.join(BASE_DIR, "static")
@@ -118,8 +138,8 @@ async def api_tools():
     return JSONResponse(
         {
             "version": app.version,
-            "categories": tools_by_category(),
-            "nav": nav_categories(),
+            "categories": _categories_cache,
+            "nav": _nav_items,
             "tools": TOOL_REGISTRY,
         }
     )
@@ -132,12 +152,11 @@ async def health():
 
     w2p = engine_info()
     ocr = ocr_info()
-    cats = tools_by_category()
     return JSONResponse(
         {
             "status": "ok",
             "version": app.version,
-            "tools": len(TOOL_REGISTRY),
+            "tools": _tool_count,
             "categories": [
                 {
                     "id": c["id"],
@@ -145,7 +164,7 @@ async def health():
                     "count": len(c["tools"]),
                     "route": c.get("route"),
                 }
-                for c in cats
+                for c in _categories_cache
             ],
             "word2pdf": {
                 "ready": w2p.get("ready", False),
