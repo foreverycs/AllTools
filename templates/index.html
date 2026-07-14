@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="在线工具平台 — 文档处理、编码转换，本地部署，安全可控" />
+  <meta name="description" content="在线工具平台 — PDF/Word 转换、发票合并、编码工具，本地部署，即开即用" />
   <meta name="theme-color" content="#eef1f8" />
   <title>工具集 · Toolkit</title>
   <link rel="stylesheet" href="/static/css/tokens.css" />
@@ -21,140 +21,211 @@
   </style>
 </head>
 <body class="page-home">
-  <div class="home-bg" aria-hidden="true"></div>
+  <div class="home-bg" aria-hidden="true">
+    <div class="home-bg-grid"></div>
+    <div class="home-bg-orb home-bg-orb-a"></div>
+    <div class="home-bg-orb home-bg-orb-b"></div>
+    <div class="home-bg-scan"></div>
+  </div>
 
   <div class="site-page">
     {% include "partials/top_nav.html" %}
 
-    {# —— Editorial hero (no side card) —— #}
-    <section class="home-hero">
-      <div class="home-kicker">本地工具平台</div>
-      <h1>
-        文档与编码能力<br>
-        汇于一处的 <span class="grad">工作入口</span>
-      </h1>
-      <p class="home-lead">
-        统一承载 <strong>文档处理</strong> 与 <strong>编码工具</strong>。
-        服务端转换、可 Docker 部署，按栏目扩展，接口可对接业务系统。
-      </p>
-      <div class="home-cta-row">
-        {% if nav_items %}
-        <a class="home-btn home-btn-primary" href="{{ nav_items[0].route }}">
-          开始使用 · {{ nav_items[0].name }}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14M13 6l6 6-6 6"/>
-          </svg>
-        </a>
-        {% if nav_items|length > 1 %}
-        <a class="home-btn home-btn-ghost" href="{{ nav_items[1].route }}">
-          {{ nav_items[1].name }}
-        </a>
-        {% endif %}
-        {% endif %}
-      </div>
-      <div class="home-metrics" role="group" aria-label="平台概览">
-        <div class="home-metric">
-          <div class="home-metric-val"><span>{{ nav_items|length }}</span></div>
-          <div class="home-metric-label">业务栏目</div>
+    {# —— Command hero —— #}
+    <section class="home-hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="home-kicker">
+          <span class="kicker-pulse" aria-hidden="true"></span>
+          SYSTEM ONLINE · 本地工具平台
         </div>
-        <div class="home-metric">
-          <div class="home-metric-val"><span>{{ tool_count }}</span></div>
-          <div class="home-metric-label">可用工具</div>
-        </div>
-        <div class="home-metric">
-          <div class="home-metric-val"><span>API</span></div>
-          <div class="home-metric-label">开放接口</div>
-        </div>
-        <div class="home-metric">
-          <div class="home-metric-val"><span>本地</span></div>
-          <div class="home-metric-label">部署方式</div>
-        </div>
-      </div>
-    </section>
-
-    {# —— Full-width module bands with tool lists —— #}
-    <section class="home-bands" id="suites" aria-labelledby="bands-title">
-      <div class="home-bands-head">
-        <h2 id="bands-title">业务栏目</h2>
-        <p>选择栏目进入工作台，或直接打开下列工具</p>
-      </div>
-
-      {% for item in nav_items %}
-      <article class="band" data-accent="{{ item.accent or 'indigo' }}">
-        <div class="band-main">
-          <div class="band-index">0{{ loop.index }} / 0{{ nav_items|length }}</div>
-          <div class="band-title-row">
-            <span class="band-icon" aria-hidden="true">{{ item.icon }}</span>
-            <h3>{{ item.name }}</h3>
-          </div>
-          <div class="band-en">{{ item.name_en }}</div>
-          <p class="band-desc">{{ item.lead or item.description }}</p>
-          <a class="band-go" href="{{ item.route }}">
-            进入{{ item.name }}
+        <h1 id="hero-title">
+          打开就能用的<br>
+          <span class="grad">办公与开发工具台</span>
+        </h1>
+        <p class="home-lead">
+          一站完成 <strong>PDF ↔ Word</strong>、<strong>发票合并打印</strong>、
+          <strong>人民币大写</strong>、<strong>Base64 / JSON</strong>。
+          选下方工具即可开始，无需安装客户端。
+        </p>
+        <div class="home-cta-row">
+          <a class="home-btn home-btn-primary" href="#launch">
+            立即使用工具
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 12h14M13 6l6 6-6 6"/>
             </svg>
           </a>
+          <a class="home-btn home-btn-ghost" href="#suites">
+            按栏目浏览
+          </a>
         </div>
-        <div class="band-side">
-          {% if item.tool_names %}
-          <ul class="band-tools">
-            {# Resolve routes from TOOL_REGISTRY via matching names is fragile;
-               nav only has tool_names. Link to category for whole suite;
-               for individual tools we need routes — add tool_routes in nav if available. #}
-            {% if item.tools is defined and item.tools %}
-              {% for t in item.tools %}
-              <li>
-                <a class="band-tool" href="{{ t.route }}">
-                  <span class="band-tool-name">{{ t.name }}</span>
-                  <span class="band-tool-badge">{{ t.badge or '打开' }}</span>
-                  <svg class="band-tool-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-                    <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </a>
-              </li>
-              {% endfor %}
-            {% else %}
-              {% for name in item.tool_names %}
-              <li>
-                <a class="band-tool" href="{{ item.route }}">
-                  <span class="band-tool-name">{{ name }}</span>
-                  <span class="band-tool-badge">查看栏目</span>
-                  <svg class="band-tool-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-                    <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </a>
-              </li>
-              {% endfor %}
-            {% endif %}
-          </ul>
-          {% else %}
-          <p class="band-empty">该栏目工具筹备中</p>
-          {% endif %}
+        <ul class="hero-tags" aria-label="核心能力">
+          <li>文档互转</li>
+          <li>发票排版</li>
+          <li>财务大写</li>
+          <li>编码调试</li>
+          <li>私有部署</li>
+        </ul>
+      </div>
+
+      <aside class="hero-panel" aria-label="平台状态">
+        <div class="hud-head">
+          <span class="hud-title">MISSION CONTROL</span>
+          <span class="hud-live"><i></i> LIVE</span>
         </div>
-      </article>
-      {% endfor %}
+        <div class="hud-stats">
+          <div class="hud-stat">
+            <div class="hud-val">{{ tool_count }}</div>
+            <div class="hud-lab">可用工具</div>
+          </div>
+          <div class="hud-stat">
+            <div class="hud-val">{{ nav_items|length }}</div>
+            <div class="hud-lab">业务栏目</div>
+          </div>
+          <div class="hud-stat">
+            <div class="hud-val">API</div>
+            <div class="hud-lab">开放接口</div>
+          </div>
+          <div class="hud-stat">
+            <div class="hud-val">本地</div>
+            <div class="hud-lab">部署模式</div>
+          </div>
+        </div>
+        <div class="hud-divider"></div>
+        <div class="hud-routes">
+          <div class="hud-routes-label">快速通道</div>
+          {% for item in nav_items %}
+          <a class="hud-route" href="{{ item.route }}" data-accent="{{ item.accent or 'indigo' }}">
+            <span class="hud-route-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span class="hud-route-body">
+              <span class="hud-route-name">{{ item.name }}</span>
+              <span class="hud-route-meta">{{ item.tool_count }} 个工具</span>
+            </span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          {% endfor %}
+        </div>
+      </aside>
     </section>
 
-    {# —— Capability rail (divider list, not cards) —— #}
-    <section class="home-rail" aria-label="平台特性">
-      <div class="home-rail-label">平台特性</div>
-      <ul class="home-rail-list">
+    {# —— All tools: one glance launch pad —— #}
+    <section class="home-launch" id="launch" aria-labelledby="launch-title">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">01 · LAUNCH PAD</div>
+          <h2 id="launch-title">你可以直接做什么</h2>
+          <p>点击任意工具立刻进入，无需先选栏目</p>
+        </div>
+        <div class="section-meta">
+          <span class="meta-pill">{{ tool_count }} TOOLS READY</span>
+        </div>
+      </div>
+
+      <div class="launch-grid">
+        {% for item in nav_items %}
+          {% if item.tools is defined and item.tools %}
+            {% for t in item.tools %}
+            <a class="launch-card" href="{{ t.route }}" data-accent="{{ t.accent or item.accent or 'indigo' }}">
+              <div class="launch-glow" aria-hidden="true"></div>
+              <div class="launch-top">
+                <div class="launch-icon" aria-hidden="true">{{ t.icon }}</div>
+                <span class="launch-badge">{{ t.badge or '打开' }}</span>
+              </div>
+              <h3>{{ t.name }}</h3>
+              <p>{{ t.description }}</p>
+              <div class="launch-foot">
+                <span class="launch-cat">{{ item.name }}</span>
+                <span class="launch-cta">
+                  {{ t.cta or '打开' }}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+                    <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+              </div>
+            </a>
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+
+    {# —— Category suites —— #}
+    <section class="home-suites" id="suites" aria-labelledby="suites-title">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">02 · MODULES</div>
+          <h2 id="suites-title">按业务栏目进入</h2>
+          <p>同一类工具集中管理，适合反复使用的工作流</p>
+        </div>
+      </div>
+
+      <div class="suite-grid">
+        {% for item in nav_items %}
+        <article class="suite" data-accent="{{ item.accent or 'indigo' }}">
+          <div class="suite-head">
+            <div class="suite-icon" aria-hidden="true">{{ item.icon }}</div>
+            <div class="suite-titles">
+              <div class="suite-en">{{ item.name_en }}</div>
+              <h3>{{ item.name }}</h3>
+            </div>
+            <div class="suite-count">{{ item.tool_count }}</div>
+          </div>
+          <p class="suite-desc">{{ item.lead or item.description }}</p>
+          {% if item.tools is defined and item.tools %}
+          <ul class="suite-tools">
+            {% for t in item.tools %}
+            <li>
+              <a href="{{ t.route }}">
+                <span class="st-icon" aria-hidden="true">{{ t.icon }}</span>
+                <span class="st-name">{{ t.name }}</span>
+                <span class="st-badge">{{ t.badge or '打开' }}</span>
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="suite-empty">该栏目工具筹备中</p>
+          {% endif %}
+          <a class="suite-go" href="{{ item.route }}">
+            进入{{ item.name }}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    {# —— Platform signals —— #}
+    <section class="home-signals" aria-label="平台特性">
+      <div class="section-head compact">
+        <div>
+          <div class="section-kicker">03 · SIGNALS</div>
+          <h2>为什么适合放进业务链路</h2>
+        </div>
+      </div>
+      <ul class="signal-grid">
         <li>
-          <h4>高性能转换</h4>
-          <p>重任务线程池执行，上传流式写盘，适合批量办公文件。</p>
+          <div class="signal-code">01</div>
+          <h4>即开即用</h4>
+          <p>浏览器直达，上传即可转换 / 合并 / 编码，降低培训成本。</p>
         </li>
         <li>
+          <div class="signal-code">02</div>
           <h4>数据不出域</h4>
           <p>本机或私有 Docker 部署，敏感文件无需依赖公网 SaaS。</p>
         </li>
         <li>
+          <div class="signal-code">03</div>
           <h4>模块化扩展</h4>
           <p>按栏目注册工具，可随业务持续增加新能力。</p>
         </li>
         <li>
+          <div class="signal-code">04</div>
           <h4>API 就绪</h4>
-          <p>REST 与健康检查齐全，便于接入自动化流程。</p>
+          <p>REST 与健康检查齐全，便于接入自动化与系统集成。</p>
         </li>
       </ul>
     </section>
@@ -172,11 +243,11 @@
               </div>
               <div>
                 <div class="site-footer-name">工具集</div>
-                <div class="site-footer-tag">Document · Coding Toolkit</div>
+                <div class="site-footer-tag">Document · Office · Coding</div>
               </div>
             </div>
             <p class="site-footer-desc">
-              统一承载文档转换与编解码能力的本地工具平台，支持栏目扩展与 API 集成。
+              面向办公与研发的本地工具平台：文档转换、发票合并、财务大写与编解码一站完成。
             </p>
           </div>
 
