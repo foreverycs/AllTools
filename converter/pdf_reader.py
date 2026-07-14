@@ -27,6 +27,14 @@ TABLE_OVERLAP_REJECT = 0.45
 SPAN_COVER_RATIO = 0.55
 # OCR render resolution (higher than display images for better recognition).
 OCR_RENDER_DPI = 200
+# Borderless (text-strategy) tables: reject grids that look like prose / multi-col
+# layout rather than real forms. Line-based tables bypass these limits.
+TEXT_TABLE_MAX_COLS = 6
+TEXT_TABLE_MAX_ROWS = 25
+TEXT_TABLE_MAX_CELLS = 40
+TEXT_TABLE_MIN_FILLED = 4
+# Cluster word left edges within this gap (pt) when estimating real columns.
+TEXT_COL_CLUSTER_TOL = 18.0
 
 
 @dataclass
@@ -129,13 +137,28 @@ def _has_cjk(s: str) -> bool:
     return bool(_CJK_RE.search(s or ""))
 
 
+def _word_line_sort_key(w: dict) -> Tuple[float, float]:
+    """Reading order within one visual line: left-to-right, then top.
+
+    Primary key must be ``x0``. Sorting by ``top`` first breaks Chinese list
+    lines such as ``10、进入安装过程`` when the numeric marker sits a fraction
+    of a point lower/higher than the CJK run — the marker was appended after
+    the body (``、进入安装过程 10``).
+    """
+    return (float(w["x0"]), float(w.get("top") or 0.0))
+
+
 def _join_words(words: list) -> str:
     """Join pdfplumber words into a line, keeping CJK characters tight (no
     space between adjacent CJK glyphs) while preserving spaces between Latin
-    words and at CJK/Latin boundaries."""
+    words and at CJK/Latin boundaries.
+
+    Words are ordered left-to-right (not by vertical baseline) so slightly
+    misaligned list markers stay before their text.
+    """
     out = []
     prev = None
-    for w in sorted(words, key=lambda w: (round(w["top"]), w["x0"])):
+    for w in sorted(words, key=_word_line_sort_key):
         txt = w["text"]
         if prev is None:
             out.append(txt)
@@ -148,8 +171,10 @@ def _join_words(words: list) -> str:
             elif not prev_cjk and not cur_cjk:
                 out.append((" " + txt) if gap > 1.0 else txt)
             elif prev_cjk and not cur_cjk:
-                out.append(" " + txt)
-            else:  # Latin followed by CJK: keep them tight
+                # Number / Latin after CJK on the same line (e.g. "项 10") —
+                # keep a space. Pure list markers should already be first by x0.
+                out.append((" " + txt) if gap > 0.5 else txt)
+            else:  # Latin followed by CJK: keep them tight ("10、进入…")
                 out.append(txt)
         prev = w
     return "".join(out)
@@ -457,17 +482,17 @@ def _region_paragraphs(
     if not region_words:
         return []
 
-    region_words.sort(key=lambda w: (round(w["top"], 1), w["x0"]))
+    region_words.sort(key=lambda w: (round((w["top"] + w["bottom"]) / 2.0, 1), w["x0"]))
     lines: List[List[dict]] = []
     for w in region_words:
-        if lines and (w["top"] - lines[-1][-1]["bottom"]) <= LINE_GAP:
+        if lines and _words_same_visual_line(lines[-1], w):
             lines[-1].append(w)
         else:
             lines.append([w])
 
     paragraphs: List[List[TextRun]] = []
     for line in lines:
-        ordered = sorted(line, key=lambda w: w["x0"])
+        ordered = sorted(line, key=_word_line_sort_key)
         runs: List[TextRun] = []
         cur_key: Optional[Tuple[float, str]] = None
         buf: List[dict] = []
@@ -713,6 +738,283 @@ def _table_bbox_overlap_ratio(a, b) -> float:
     return inter / min(area_a, area_b)
 
 
+def _iter_page_strokes(page):
+    """Yield line-like strokes as (x0, top, x1, bottom) from lines / edges / thin rects."""
+    for ln in page.lines or []:
+        yield (
+            float(ln["x0"]), float(ln["top"]),
+            float(ln["x1"]), float(ln["bottom"]),
+        )
+    for edge in getattr(page, "edges", None) or []:
+        try:
+            yield (
+                float(edge["x0"]), float(edge["top"]),
+                float(edge["x1"]), float(edge["bottom"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    # Thin filled/stroked rectangles often act as grid lines in forms.
+    for rct in page.rects or []:
+        try:
+            x0, top = float(rct["x0"]), float(rct["top"])
+            x1, bottom = float(rct["x1"]), float(rct["bottom"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        w = abs(x1 - x0)
+        h = abs(bottom - top)
+        if w >= HLINE_MIN_WIDTH and h <= HLINE_MAX_THICKNESS * 1.5:
+            yield (x0, top, x1, bottom)
+        elif h >= HLINE_MIN_WIDTH and w <= HLINE_MAX_THICKNESS * 1.5:
+            yield (x0, top, x1, bottom)
+
+
+def _count_grid_lines_in_bbox(
+    page, bbox: Tuple[float, float, float, float], tol: float = 2.0
+) -> Tuple[int, int]:
+    """Count distinct vertical / horizontal strokes that intersect *bbox*."""
+    x0, top, x1, bottom = bbox
+    v_xs: List[float] = []
+    h_ys: List[float] = []
+    for sx0, stop, sx1, sbottom in _iter_page_strokes(page):
+        is_v = abs(sx0 - sx1) < 0.75
+        is_h = abs(stop - sbottom) < 0.75
+        if is_v:
+            x = (sx0 + sx1) / 2.0
+            y0, y1 = min(stop, sbottom), max(stop, sbottom)
+            # Line must run inside the table band and cross it meaningfully.
+            if x < x0 - tol or x > x1 + tol:
+                continue
+            ov = min(y1, bottom) - max(y0, top)
+            if ov < max(8.0, (bottom - top) * 0.15):
+                continue
+            if not any(abs(x - ex) <= tol for ex in v_xs):
+                v_xs.append(x)
+        elif is_h:
+            y = (stop + sbottom) / 2.0
+            lx0, lx1 = min(sx0, sx1), max(sx0, sx1)
+            if y < top - tol or y > bottom + tol:
+                continue
+            ov = min(lx1, x1) - max(lx0, x0)
+            if ov < max(12.0, (x1 - x0) * 0.15):
+                continue
+            if not any(abs(y - ey) <= tol for ey in h_ys):
+                h_ys.append(y)
+    return len(v_xs), len(h_ys)
+
+
+def _has_drawn_grid(page, bbox: Tuple[float, float, float, float]) -> bool:
+    """True when strokes form a real table grid (not just a header underline)."""
+    v, h = _count_grid_lines_in_bbox(page, bbox)
+    # Minimal grid: 2 vertical + 2 horizontal (one cell), or richer on one axis.
+    return (v >= 2 and h >= 2) or (v >= 3 and h >= 1) or (h >= 3 and v >= 1)
+
+
+def _table_bbox_from_block(tb: TableBlock) -> Tuple[float, float, float, float]:
+    x1 = tb.x0 + (sum(tb.col_widths) if tb.col_widths else 0.0)
+    if x1 <= tb.x0:
+        x1 = tb.x0 + 1.0
+    return (tb.x0, tb.top, x1, tb.bottom)
+
+
+def _words_in_bbox(words, bbox: Tuple[float, float, float, float], pad: float = 1.0):
+    x0, top, x1, bottom = bbox
+    out = []
+    for w in words:
+        cx = (w["x0"] + w["x1"]) / 2.0
+        cy = (w["top"] + w["bottom"]) / 2.0
+        if x0 - pad <= cx <= x1 + pad and top - pad <= cy <= bottom + pad:
+            out.append(w)
+    return out
+
+
+def _estimate_aligned_columns(words, x_tol: float = TEXT_COL_CLUSTER_TOL) -> int:
+    """How many distinct left-edge columns the words form (alignment clusters)."""
+    if not words:
+        return 0
+    xs = sorted(float(w["x0"]) for w in words)
+    clusters = 0
+    prev = None
+    for x in xs:
+        if prev is None or x - prev > x_tol:
+            clusters += 1
+            prev = x
+        else:
+            prev = prev  # keep cluster anchor (first x)
+    return clusters
+
+
+def _table_anchor_stats(tb: TableBlock) -> Tuple[List[Cell], List[str], List[int], List[int]]:
+    """Return (anchor cells, filled texts, per-col fill counts, per-row fill counts)."""
+    anchors: List[Cell] = []
+    col_fill = [0] * tb.cols
+    row_fill = [0] * tb.rows
+    for r in range(tb.rows):
+        for c in range(tb.cols):
+            if tb.owner[r][c] != (r, c):
+                continue
+            cell = tb.cells[r][c]
+            if cell is None:
+                continue
+            anchors.append(cell)
+            text = (cell.text or "").strip()
+            if text:
+                col_fill[c] += 1
+                row_fill[r] += 1
+    filled_texts = [(c.text or "").strip() for c in anchors if (c.text or "").strip()]
+    return anchors, filled_texts, col_fill, row_fill
+
+
+def _inter_column_text_gaps(tb: TableBlock, words) -> List[float]:
+    """Horizontal gaps between consecutive non-empty cell texts on the same row.
+
+    Large gaps (label …… value) are typical of forms; small gaps mean the
+    detector merely split a prose line into adjacent word chips.
+    """
+    if not tb.col_widths or tb.cols < 2:
+        return []
+    vx = [tb.x0]
+    for w in tb.col_widths:
+        vx.append(vx[-1] + w)
+    hy = [tb.top]
+    for h in tb.row_heights or []:
+        hy.append(hy[-1] + h)
+    if len(hy) != tb.rows + 1:
+        # Heights missing / inconsistent — fall back to word clustering only.
+        return []
+
+    gaps: List[float] = []
+    for r in range(tb.rows):
+        # Collect (col_index, text_x0, text_x1) for non-empty anchors on this row.
+        pieces = []
+        for c in range(tb.cols):
+            if tb.owner[r][c] != (r, c):
+                continue
+            cell = tb.cells[r][c]
+            if cell is None or not (cell.text or "").strip():
+                continue
+            # Words whose centre falls in this cell's band.
+            cx0, cx1 = vx[c], vx[c + cell.colspan]
+            cy0, cy1 = hy[r], hy[min(r + cell.rowspan, tb.rows)]
+            xs0, xs1 = [], []
+            for w in words:
+                wcx = (w["x0"] + w["x1"]) / 2.0
+                wcy = (w["top"] + w["bottom"]) / 2.0
+                if cx0 - 1 <= wcx <= cx1 + 1 and cy0 - 1 <= wcy <= cy1 + 1:
+                    xs0.append(w["x0"])
+                    xs1.append(w["x1"])
+            if not xs0:
+                continue
+            pieces.append((c, min(xs0), max(xs1)))
+        pieces.sort(key=lambda p: p[0])
+        for i in range(len(pieces) - 1):
+            # Gap from end of left text to start of right text.
+            gap = pieces[i + 1][1] - pieces[i][2]
+            gaps.append(gap)
+    return gaps
+
+
+def _is_plausible_borderless_table(tb: TableBlock, words) -> bool:
+    """Heuristic gate for tables found without a drawn grid (text strategy).
+
+    pdfplumber's text/text strategy eagerly treats multi-column prose and even
+    single-column paragraphs as tables, splitting words across micro-columns.
+    Real borderless forms look like compact label/value grids instead.
+    """
+    if tb.rows < 2 or tb.cols < 2:
+        return False
+    if tb.cols > TEXT_TABLE_MAX_COLS or tb.rows > TEXT_TABLE_MAX_ROWS:
+        return False
+    if tb.rows * tb.cols > TEXT_TABLE_MAX_CELLS:
+        return False
+
+    anchors, filled_texts, col_fill, row_fill = _table_anchor_stats(tb)
+    n_filled = len(filled_texts)
+    if n_filled < TEXT_TABLE_MIN_FILLED:
+        return False
+
+    # Need stable columns *and* rows (forms), not a single row of word chips.
+    strong_cols = sum(1 for n in col_fill if n >= 2)
+    strong_rows = sum(1 for n in row_fill if n >= 2)
+    if strong_cols < 2 or strong_rows < 2:
+        return False
+
+    # Sparse grids from prose alignment (many empty slots) are unreliable.
+    n_anchors = max(len(anchors), 1)
+    empty_ratio = (n_anchors - n_filled) / n_anchors
+    if empty_ratio > 0.55 and tb.cols >= 3:
+        return False
+    if empty_ratio > 0.65:
+        return False
+
+    # Tiny fragments mean the detector split glyphs/words into fake cells.
+    tiny = sum(1 for t in filled_texts if len(t) <= 1)
+    if tiny / max(n_filled, 1) > 0.2:
+        return False
+    short = sum(1 for t in filled_texts if len(t) <= 2)
+    if short / max(n_filled, 1) > 0.45 and tb.cols >= 3:
+        return False
+
+    bbox = _table_bbox_from_block(tb)
+    in_words = _words_in_bbox(words, bbox)
+    n_words = len(in_words)
+    if n_words < TEXT_TABLE_MIN_FILLED:
+        return False
+
+    # Over-segmentation: more non-empty cells than source words.
+    if n_filled > n_words + 1:
+        return False
+
+    # Detected column count should match how text is actually aligned.
+    est_cols = _estimate_aligned_columns(in_words)
+    if est_cols <= 1:
+        return False
+    if tb.cols > max(est_cols + 1, int(est_cols * 1.5) + 1):
+        return False
+
+    # Adjacent cells with only word-spacing gaps → prose line, not form columns.
+    # Real borderless forms leave a clear gutter (often 30–80+ pt) between fields.
+    gaps = _inter_column_text_gaps(tb, words)
+    gap_mid = None
+    if gaps:
+        gaps_sorted = sorted(gaps)
+        gap_mid = gaps_sorted[len(gaps_sorted) // 2]
+        # Most inter-cell gaps look like spaces between words on one line.
+        if gap_mid < 18.0:
+            return False
+        tight = sum(1 for g in gaps if g < 12.0)
+        if tight / len(gaps) >= 0.4:
+            return False
+
+    # Alternating empty grid rows + tight columns ⇒ line-spacing over-segmentation
+    # of prose. Real forms may also insert spacer bands, but keep large gutters.
+    empty_rows = sum(1 for n in row_fill if n == 0)
+    if empty_rows / max(tb.rows, 1) > 0.35 and (gap_mid is None or gap_mid < 40.0):
+        return False
+
+    # Very wide "cells" that are really full prose lines: few columns but long text.
+    avg_len = sum(len(t) for t in filled_texts) / max(n_filled, 1)
+    if tb.cols == 2 and avg_len > 48 and strong_rows < 3:
+        # Two long prose columns (article layout) — keep as text, not a table.
+        # Short label/value pairs stay (avg_len small).
+        longish = sum(1 for t in filled_texts if len(t) > 36)
+        if longish / max(n_filled, 1) >= 0.5:
+            return False
+
+    return True
+
+
+def _accept_table(tb: TableBlock, page, words) -> bool:
+    """Keep line-grid tables; only accept borderless ones that look like forms."""
+    bbox = _table_bbox_from_block(tb)
+    _, filled_texts, _, _ = _table_anchor_stats(tb)
+    if not filled_texts:
+        return False
+    if _has_drawn_grid(page, bbox):
+        # Real ruled table: still require a minimal grid shape.
+        return tb.rows >= 1 and tb.cols >= 1
+    return _is_plausible_borderless_table(tb, words)
+
+
 def _find_tables(page):
     """Detect tables with a hybrid strategy.
 
@@ -720,6 +1022,10 @@ def _find_tables(page):
     2. Mixed lines/text (vertical rules + horizontal text alignment).
     3. Pure text strategy for borderless grids, only when the region is not
        already covered by a line-based table.
+
+    Candidates are de-duplicated here; plausibility filtering (to drop prose
+    mis-detected as tables) happens after :func:`_build_table` via
+    :func:`_accept_table`.
     """
     settings_list = [
         {
@@ -754,8 +1060,10 @@ def _find_tables(page):
             "text_tolerance": 3,
             "text_x_tolerance": 3,
             "text_y_tolerance": 3,
-            "min_words_vertical": 2,
-            "min_words_horizontal": 1,
+            # Slightly stricter than pdfplumber defaults so single-column prose
+            # is less likely to form a micro-grid of word chips.
+            "min_words_vertical": 3,
+            "min_words_horizontal": 2,
         },
     ]
     kept = []
@@ -809,23 +1117,57 @@ def _text_h_align(x0: float, x1: float, page_w: float) -> str:
     return "left"
 
 
+def _word_mid_y(w: dict) -> float:
+    return (float(w["top"]) + float(w["bottom"])) / 2.0
+
+
+def _words_same_visual_line(line: List[dict], w: dict) -> bool:
+    """True when ``w`` belongs on the same visual text line as ``line``.
+
+    Uses vertical centres / band overlap so a list marker that is a couple of
+    points higher or lower than the body text still joins the same line
+    (``10、进入安装过程``), instead of becoming a separate block that may
+    later reorder as ``、进入安装过程 10``.
+    """
+    if not line:
+        return True
+    tops = [float(x["top"]) for x in line]
+    bottoms = [float(x["bottom"]) for x in line]
+    line_top, line_bot = min(tops), max(bottoms)
+    line_mid = (line_top + line_bot) / 2.0
+    w_top, w_bot = float(w["top"]), float(w["bottom"])
+    w_mid = (w_top + w_bot) / 2.0
+    # Centres close, or vertical ranges overlap with modest offset.
+    if abs(w_mid - line_mid) <= LINE_GAP * 1.5:
+        return True
+    if not (w_bot < line_top - 0.5 or w_top > line_bot + 0.5):
+        if abs(w_mid - line_mid) <= max(LINE_GAP * 2.5, 8.0):
+            return True
+    # Legacy sequential check (word just below previous word on the line).
+    last = line[-1]
+    if w_top - float(last["bottom"]) <= LINE_GAP and abs(w_mid - line_mid) <= 12.0:
+        return True
+    return False
+
+
 def _extract_text_blocks(page, table_bboxes, words) -> List[TextBlock]:
     outside = [w for w in words if not _in_any_bbox(w, table_bboxes)]
     if not outside:
         return []
 
-    # group words into lines by vertical proximity
-    outside.sort(key=lambda w: (round(w["top"]), w["x0"]))
+    # Group by vertical band using mid-Y first so slightly misaligned markers
+    # (list numbers) cluster with their body text before left-to-right join.
+    outside.sort(key=lambda w: (round(_word_mid_y(w), 1), w["x0"]))
     lines: List[List[dict]] = []
     for w in outside:
-        if lines and (w["top"] - lines[-1][-1]["bottom"]) <= LINE_GAP:
+        if lines and _words_same_visual_line(lines[-1], w):
             lines[-1].append(w)
         else:
             lines.append([w])
     page_w = float(getattr(page, "width", 0) or 0)
     blocks: List[TextBlock] = []
     for line in lines:
-        ordered = sorted(line, key=lambda w: w["x0"])
+        ordered = sorted(line, key=_word_line_sort_key)
         # Split a visual line into horizontal segments when words sit far apart
         # (form labels on opposite sides, header title next to logo, etc.).
         segments: List[List[dict]] = []
@@ -1072,9 +1414,14 @@ def _extract_page(page, *, ocr: bool = False, ocr_lang: Optional[str] = None) ->
     bboxes = []
     for t in raw_tables:
         tb = _build_table(t, page, words)
-        if tb is not None:
-            tables.append((tb.top, tb))
-            bboxes.append(t.bbox)
+        if tb is None:
+            continue
+        # Drop text-strategy false positives (plain prose / multi-col layout
+        # misread as a grid) so content stays as TextBlock / ImageBlock.
+        if not _accept_table(tb, page, words):
+            continue
+        tables.append((tb.top, tb))
+        bboxes.append(t.bbox)
 
     text_blocks = _extract_text_blocks(page, bboxes, words)
     image_blocks = _extract_images(page, bboxes)

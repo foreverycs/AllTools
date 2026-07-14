@@ -904,14 +904,97 @@ def test_content_warnings_ocr_flag():
     assert "ocr_applied" in warns
 
 
+def test_join_words_list_marker_before_body():
+    """List number must stay left of body even when baselines differ slightly."""
+    from converter.pdf_reader import _join_words
+
+    # Marker a bit lower (larger top) than the CJK body — old sort put "10" last.
+    words = [
+        {"text": "、进入安装过程", "x0": 90.0, "x1": 200.0, "top": 100.0, "bottom": 112.0},
+        {"text": "10", "x0": 72.0, "x1": 88.0, "top": 102.5, "bottom": 114.0},
+    ]
+    joined = _join_words(words)
+    assert joined.startswith("10"), joined
+    assert "进入安装过程" in joined
+    assert not joined.endswith("10"), joined
+    # Marker higher than body.
+    words2 = [
+        {"text": "10", "x0": 72.0, "x1": 88.0, "top": 98.0, "bottom": 110.0},
+        {"text": "、进入安装过程", "x0": 90.0, "x1": 200.0, "top": 100.0, "bottom": 112.0},
+    ]
+    assert _join_words(words2).startswith("10")
+
+
+def test_list_item_reading_order_with_baseline_offset(tmp_path):
+    """PDF list lines keep '10、…' order when number/body y-offset slightly."""
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    import os
+
+    pdf_path = str(tmp_path / "list_order.pdf")
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    h = A4[1]
+    # Prefer a CJK font if available; fall back to Helvetica with ASCII stand-in.
+    font_name = "Helvetica"
+    for candidate in (
+        r"C:\Windows\Fonts\simsun.ttc",
+        r"C:\Windows\Fonts\simhei.ttf",
+        r"C:\Windows\Fonts\msyh.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    ):
+        if os.path.isfile(candidate):
+            try:
+                pdfmetrics.registerFont(TTFont("CJKTest", candidate, subfontIndex=0))
+                font_name = "CJKTest"
+                break
+            except Exception:
+                try:
+                    pdfmetrics.registerFont(TTFont("CJKTest", candidate))
+                    font_name = "CJKTest"
+                    break
+                except Exception:
+                    pass
+
+    c.setFont(font_name, 12)
+    if font_name == "CJKTest":
+        # Number slightly lower than the following CJK text (common PDF quirk).
+        c.drawString(72, h - 120, "10")
+        c.drawString(95, h - 118, "、进入安装过程")
+        # Number slightly higher.
+        c.drawString(72, h - 160, "10")
+        c.drawString(95, h - 162, "、进入安装过程")
+    else:
+        # ASCII proxy for environments without CJK fonts.
+        c.drawString(72, h - 120, "10")
+        c.drawString(95, h - 118, ", enter install process")
+        c.drawString(72, h - 160, "10")
+        c.drawString(95, h - 162, ", enter install process")
+    c.save()
+
+    pages = extract_document(pdf_path)
+    texts = [b.text for b in pages[0].blocks if isinstance(b, TextBlock)]
+    assert texts, "expected text blocks"
+    for t in texts:
+        # Must not reverse to body-then-number.
+        assert not (
+            t.strip().endswith("10") and ("进入" in t or "enter" in t.lower())
+        ), t
+        if "10" in t and ("进入" in t or "enter" in t.lower()):
+            assert t.strip().startswith("10"), t
+
+
 def test_find_tables_hybrid_accepts_borderless(tmp_path):
-    """Borderless grid (text strategy) should still yield a table block."""
+    """Borderless form (text strategy) should still yield a table block."""
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 
     pdf_path = str(tmp_path / "borderless.pdf")
     c = canvas.Canvas(pdf_path, pagesize=A4)
     # Two-column form labels without drawn grid lines (ASCII for font-safe tests).
+    # Large horizontal gutter between label and value (real form layout).
     y = 750
     for left, right in [("Name", "Alice"), ("Dept", "R&D"), ("Date", "2026-07-12")]:
         c.drawString(72, y, left)
@@ -923,19 +1006,142 @@ def test_find_tables_hybrid_accepts_borderless(tmp_path):
     assert pages
     tables = [b for b in pages[0].blocks if isinstance(b, TableBlock)]
     texts = [b for b in pages[0].blocks if isinstance(b, TextBlock)]
-    if not tables:
-        joined = " ".join(t.text for t in texts)
-        assert "Name" in joined and "Alice" in joined
-    else:
-        flat = []
-        for row in tables[0].cells:
-            for cell in row:
-                if cell and cell.text:
-                    flat.append(cell.text)
-        blob = " ".join(flat)
-        page_text = " ".join(
-            (b.text if isinstance(b, TextBlock) else "") for b in pages[0].blocks
+    assert tables, "borderless label/value form should be kept as a table"
+    flat = []
+    for row in tables[0].cells:
+        for cell in row:
+            if cell and cell.text:
+                flat.append(cell.text)
+    blob = " ".join(flat)
+    assert "Name" in blob or "Alice" in blob
+    # Content must not disappear into empty text-only fallback.
+    joined = " ".join(t.text for t in texts)
+    assert "Name" in blob or "Name" in joined
+
+
+def test_plain_prose_not_detected_as_table(tmp_path):
+    """Single-column body text must stay as TextBlocks (no phantom grid)."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    pdf_path = str(tmp_path / "prose.pdf")
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    c.setFont("Helvetica", 12)
+    y = 780
+    for line in [
+        "Title of Document",
+        "This is a simple paragraph of plain text.",
+        "It has multiple lines but no columns or tables.",
+        "Just flowing prose that should stay as text blocks.",
+    ]:
+        c.drawString(50, y, line)
+        y -= 18
+    c.save()
+
+    pages = extract_document(pdf_path)
+    assert pages
+    tables = [b for b in pages[0].blocks if isinstance(b, TableBlock)]
+    texts = [b for b in pages[0].blocks if isinstance(b, TextBlock)]
+    assert tables == [], f"unexpected tables: {[(t.rows, t.cols) for t in tables]}"
+    assert texts, "prose should become text blocks"
+    joined = " ".join(t.text for t in texts)
+    assert "Title" in joined or "paragraph" in joined
+
+
+def test_multi_column_prose_not_detected_as_table(tmp_path):
+    """Two-column article layout is not a data table."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    pdf_path = str(tmp_path / "multicol.pdf")
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    c.setFont("Helvetica", 11)
+    h = A4[1]
+    for i in range(12):
+        c.drawString(
+            50, h - 80 - i * 16,
+            f"Left side paragraph content line {i + 1} continues here.",
         )
-        assert "Name" in blob or "Alice" in blob or "Name" in page_text
+        c.drawString(
+            320, h - 80 - i * 16,
+            f"Right column text line {i + 1} about topic.",
+        )
+    c.save()
+
+    pages = extract_document(pdf_path)
+    assert pages
+    tables = [b for b in pages[0].blocks if isinstance(b, TableBlock)]
+    texts = [b for b in pages[0].blocks if isinstance(b, TextBlock)]
+    assert tables == [], f"unexpected tables: {[(t.rows, t.cols) for t in tables]}"
+    assert len(texts) >= 4
+    joined = " ".join(t.text for t in texts)
+    assert "Left side" in joined and "Right column" in joined
+
+
+def test_text_and_image_pdf_no_phantom_table(tmp_path):
+    """PDF with only text + a decorative rect must not invent a huge table."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    pdf_path = str(tmp_path / "text_image.pdf")
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    w, h = A4
+    c.setFont("Helvetica", 14)
+    c.drawString(50, h - 50, "Company Annual Report 2024")
+    c.setFont("Helvetica", 11)
+    y = h - 90
+    for i, line in enumerate([
+        "This document contains only plain text and an image.",
+        "There should be no tables detected at all.",
+        "Name: John Doe          Dept: Engineering",
+        "Date: 2024-01-01        Status: Active",
+    ]):
+        c.drawString(50, y - i * 18, line)
+    for i in range(6):
+        c.drawString(50, h - 280 - i * 14, f"Paragraph line {i + 1} on the left side.")
+        c.drawString(320, h - 280 - i * 14, f"Column two content line number {i + 1}.")
+    c.setFillColorRGB(0.8, 0.85, 0.9)
+    c.rect(50, 80, 200, 100, fill=1, stroke=0)
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("Helvetica", 9)
+    c.drawString(60, 120, "[Image placeholder area]")
+    c.save()
+
+    pages = extract_document(pdf_path)
+    assert pages
+    tables = [b for b in pages[0].blocks if isinstance(b, TableBlock)]
+    texts = [b for b in pages[0].blocks if isinstance(b, TextBlock)]
+    assert tables == [], (
+        f"text+image PDF produced phantom table(s): "
+        f"{[(t.rows, t.cols) for t in tables]}"
+    )
+    assert texts
+    joined = " ".join(t.text for t in texts)
+    assert "Company Annual Report" in joined or "plain text" in joined
+
+
+def test_ruled_grid_table_still_detected(tmp_path):
+    """Drawn GRID tables must still be accepted after the prose filter."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+    from reportlab.lib import colors
+
+    pdf_path = str(tmp_path / "grid.pdf")
+    doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+    data = [
+        ["Name", "Info", "Score"],
+        ["Alice", "Math", "90"],
+        ["Bob", "Physics", "85"],
+    ]
+    table = Table(data, colWidths=[80, 80, 80])
+    table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+    ]))
+    doc.build([table])
+
+    pages = extract_document(pdf_path)
+    tables = [b for b in pages[0].blocks if isinstance(b, TableBlock)]
+    assert len(tables) == 1
+    assert tables[0].rows == 3 and tables[0].cols == 3
 
 
