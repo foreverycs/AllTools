@@ -204,6 +204,46 @@ async def uploads_download(request: Request, record_id: str):
     return FileResponse(path, filename=str(name))
 
 
+_PREVIEW_MIME = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".svg": "image/svg+xml",
+    ".txt": "text/plain",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".html": "text/html",
+    ".htm": "text/html",
+}
+
+
+@router.get("/uploads/{record_id}/preview")
+async def uploads_preview(request: Request, record_id: str):
+    redir = require_admin(request)
+    if redir:
+        return redir
+    rec = get_record(record_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Record not found")
+    rel = rec.get("input_rel")
+    if not rel:
+        raise HTTPException(status_code=404, detail="No file")
+    path = resolve_stored(str(rel))
+    if path is None:
+        raise HTTPException(status_code=404, detail="File missing")
+    ext = path.suffix.lower()
+    media_type = _PREVIEW_MIME.get(ext, "application/octet-stream")
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{path.name}"'},
+    )
+
+
 @router.post("/cleanup")
 async def run_cleanup(request: Request):
     redir = require_admin(request)

@@ -108,6 +108,28 @@ def test_admin_uploads_delete_and_download(admin_client):
     assert h.get_record(rec["id"]) is None
 
 
+def test_admin_uploads_preview(admin_client):
+    client, h, tmp_path = admin_client
+    src = tmp_path / "sample.pdf"
+    src.write_bytes(b"%PDF-1.4 test content")
+    rec = h.archive_conversion(
+        tool="pdf2word",
+        original_name="sample.pdf",
+        input_path=str(src),
+    )
+    assert rec is not None
+
+    _login(client)
+
+    pv = client.get(f"/admin/uploads/{rec['id']}/preview")
+    assert pv.status_code == 200
+    assert pv.headers.get("content-type") == "application/pdf"
+    assert "inline" in pv.headers.get("content-disposition", "")
+    assert pv.content.startswith(b"%PDF")
+
+    assert client.get("/admin/uploads/nonexistent/preview").status_code == 404
+
+
 def test_admin_api_stats_unauthorized(admin_client):
     client, _, _ = admin_client
     r = client.get("/admin/api/stats")

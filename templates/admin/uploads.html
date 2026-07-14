@@ -72,6 +72,7 @@
           <td style="white-space:nowrap">
             {% if r.input_exists %}
             <a class="admin-btn" href="/admin/uploads/{{ r.id }}/download">下载</a>
+            <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.original_name }}">预览</button>
             {% endif %}
             <form method="post" action="/admin/uploads/{{ r.id }}/delete" style="display:inline" onsubmit="return confirm('确认删除该记录与文件？');">
               <button class="admin-btn admin-btn-danger" type="submit">删除</button>
@@ -85,4 +86,67 @@
     </table>
   </div>
 </div>
+
+<div class="preview-overlay" id="previewOverlay" onclick="closePreview(event)">
+  <div class="preview-modal" id="previewModal">
+    <div class="preview-header">
+      <span class="preview-title" id="previewTitle"></span>
+      <button class="admin-btn preview-close" onclick="closePreview()">&times; 关闭</button>
+    </div>
+    <div class="preview-body" id="previewBody"></div>
+  </div>
+</div>
+
+<script>
+  const overlay = document.getElementById('previewOverlay');
+  const titleEl = document.getElementById('previewTitle');
+  const bodyEl = document.getElementById('previewBody');
+
+  const PREVIEW_EXTS = new Set(['pdf','png','jpg','jpeg','gif','webp','bmp','svg','txt','csv','json','html','htm']);
+  const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','bmp','svg']);
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.preview-btn');
+    if (!btn) return;
+    var id = btn.getAttribute('data-id');
+    var name = btn.getAttribute('data-name');
+    openPreview(id, name);
+  });
+
+  function openPreview(id, name) {
+    var ext = (name.split('.').pop() || '').toLowerCase();
+    if (!PREVIEW_EXTS.has(ext)) {
+      alert('该文件类型不支持预览');
+      return;
+    }
+    titleEl.textContent = name;
+    bodyEl.innerHTML = '';
+    var url = '/admin/uploads/' + encodeURIComponent(id) + '/preview';
+    if (IMAGE_EXTS.has(ext)) {
+      var img = document.createElement('img');
+      img.className = 'preview-img';
+      img.src = url;
+      img.alt = name;
+      bodyEl.appendChild(img);
+    } else {
+      var iframe = document.createElement('iframe');
+      iframe.className = 'preview-iframe';
+      iframe.src = url;
+      bodyEl.appendChild(iframe);
+    }
+    overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePreview(e) {
+    if (e && e.target !== overlay) return;
+    overlay.classList.remove('show');
+    bodyEl.innerHTML = '';
+    document.body.style.overflow = '';
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && overlay.classList.contains('show')) closePreview();
+  });
+</script>
 {% endblock %}
