@@ -104,6 +104,12 @@
       padding: 4px 9px; border-radius: 8px;
     }
 
+    .hint-box {
+      font-size: 12px; color: var(--muted-2); margin-bottom: 14px;
+      line-height: 1.55; padding: 10px 12px;
+      background: #f8fafc; border: 1px solid #eef2f7; border-radius: 12px;
+    }
+
     .drop {
       display: block; width: 100%; cursor: pointer;
       border: 2px dashed var(--c-border);
@@ -148,6 +154,11 @@
       font-weight: 600;
     }
     .file-list .fsize { color: var(--muted-2); flex-shrink: 0; font-size: 11px; }
+    .file-list .fslot {
+      font-size: 10px; font-weight: 700; color: var(--c);
+      background: #fff; border: 1px solid var(--c-border);
+      padding: 2px 6px; border-radius: 6px; flex-shrink: 0;
+    }
     .file-list button {
       border: 0; background: transparent; color: var(--muted-2);
       font-size: 12px; font-weight: 600; cursor: pointer;
@@ -170,23 +181,6 @@
     }
     .opts .check input {
       width: 16px; height: 16px; accent-color: var(--c); cursor: pointer;
-    }
-
-    .mode-tabs {
-      display: flex; gap: 4px; margin-bottom: 16px;
-      background: #f1f5f9; border-radius: 12px; padding: 4px;
-    }
-    .mode-tab {
-      flex: 1; padding: 9px 12px; border: 0; border-radius: 10px;
-      font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
-      background: transparent; color: var(--muted); transition: all .15s;
-    }
-    .mode-tab.active {
-      background: #fff; color: var(--c); box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-    .mode-desc {
-      font-size: 12px; color: var(--muted-2); margin-bottom: 14px;
-      line-height: 1.5; padding: 0 2px;
     }
 
     #btn {
@@ -246,11 +240,11 @@
   <div class="tool-shell">
   <div class="shell">
     <div class="nav">
-      <a class="back" href="/c/document">
+      <a class="back" href="/c/office">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M19 12H5M11 18l-6-6 6-6"/>
         </svg>
-        文档处理
+        办公工具
       </a>
       <span class="chip">发票合并</span>
     </div>
@@ -260,22 +254,20 @@
         <div class="icon" aria-hidden="true">🧾</div>
         <div>
           <h1>发票合并</h1>
-          <p>将两张发票合并到一张 A4 纸，节省打印纸张。支持单文件配对合并或双文件交叉合并。</p>
+          <p>将两张发票合并到一张 A4 纸（上半页 + 下半页）。只上传一张时，发票仅排在上半页。</p>
         </div>
       </div>
 
       <div class="features">
         <span class="feat">A4 排版</span>
-        <span class="feat">分割线</span>
-        <span class="feat">单/双文件</span>
-        <span class="feat">批量处理</span>
+        <span class="feat">上下半页</span>
+        <span class="feat">可选分割线</span>
+        <span class="feat">单张占上半页</span>
       </div>
 
-      <div class="mode-tabs">
-        <button class="mode-tab active" data-mode="single" type="button">单文件配对</button>
-        <button class="mode-tab" data-mode="dual" type="button">双文件合并</button>
-      </div>
-      <p class="mode-desc" id="modeDesc">上传一个包含多页的 PDF，自动将第 1+2 页、第 3+4 页…分别合并到一张 A4 纸上。</p>
+      <p class="hint-box">
+        每个 PDF 只使用第 1 页（一张发票一个文件）。上传 1 个文件 → 仅占上半页；上传 2 个文件 → 第 1 个在上、第 2 个在下。
+      </p>
 
       <label class="drop" id="drop">
         <input type="file" id="file" accept="application/pdf,.pdf" multiple />
@@ -285,8 +277,8 @@
             <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
           </svg>
         </div>
-        <div class="drop-title" id="dropTitle">点击或拖拽 <strong>PDF 文件</strong> 到此处</div>
-        <div class="drop-hint" id="dropHint">上传 1 个 PDF（≥2 页）或 2 个 PDF 各自 1 页</div>
+        <div class="drop-title">点击或拖拽 <strong>1～2 个 PDF</strong> 到此处</div>
+        <div class="drop-hint">每个文件一张发票；最多 2 个文件，单个不超过 50 MB</div>
       </label>
       <ul class="file-list" id="list"></ul>
 
@@ -294,7 +286,7 @@
         <div class="opts-title">合并选项</div>
         <label class="check">
           <input type="checkbox" id="divider" checked />
-          在两张发票之间添加分割线
+          在页面中间添加分割线（单张 / 双张均生效）
         </label>
       </div>
 
@@ -316,37 +308,7 @@
     var dividerCheck = document.getElementById('divider');
     var progress = document.getElementById('progress');
     var bar = document.getElementById('bar');
-    var modeDesc = document.getElementById('modeDesc');
-    var dropTitle = document.getElementById('dropTitle');
-    var dropHint = document.getElementById('dropHint');
     var selected = [];
-    var mode = 'single';
-
-    var tabBtns = document.querySelectorAll('.mode-tab');
-    for (var i = 0; i < tabBtns.length; i++) {
-      tabBtns[i].addEventListener('click', function() {
-        for (var j = 0; j < tabBtns.length; j++) tabBtns[j].classList.remove('active');
-        this.classList.add('active');
-        mode = this.getAttribute('data-mode');
-        selected = [];
-        renderList();
-        status.textContent = '';
-        status.className = '';
-        if (mode === 'single') {
-          MAX_FILES = 20;
-          modeDesc.textContent = '上传一个包含多页的 PDF，自动将第 1+2 页、第 3+4 页…分别合并到一张 A4 纸上。';
-          dropTitle.innerHTML = '点击或拖拽 <strong>PDF 文件</strong> 到此处';
-          dropHint.textContent = '上传 1 个 PDF（≥2 页）或多个 PDF 批量处理';
-          fileInput.multiple = true;
-        } else {
-          MAX_FILES = 2;
-          modeDesc.textContent = '上传两个 PDF 文件，将两个文件的对应页逐一合并：第 1 个文件的每页放在上半部分，第 2 个文件的每页放在下半部分。';
-          dropTitle.innerHTML = '点击或拖拽 <strong>两个 PDF 文件</strong> 到此处';
-          dropHint.textContent = '恰好上传 2 个 PDF 文件';
-          fileInput.multiple = true;
-        }
-      });
-    }
 
     function fmtSize(n) {
       if (n < 1024) return n + ' B';
@@ -382,6 +344,9 @@
         var icon = document.createElement('span');
         icon.className = 'fi';
         icon.textContent = '\uD83D\uDCC4';
+        var slot = document.createElement('span');
+        slot.className = 'fslot';
+        slot.textContent = i === 0 ? '\u4E0A\u534A\u9875' : '\u4E0B\u534A\u9875';
         var name = document.createElement('span');
         name.className = 'fname';
         name.title = f.name;
@@ -400,16 +365,16 @@
           status.textContent = '';
           status.className = '';
         });
-        li.append(icon, name, size, rm);
+        li.append(icon, slot, name, size, rm);
         list.appendChild(li);
       });
       btn.disabled = selected.length === 0;
-      if (mode === 'dual') {
-        btn.textContent = selected.length === 2 ? '\u5F00\u59CB\u5408\u5E76' : '\u8BF7\u4E0A\u4F20 2 \u4E2A PDF';
+      if (selected.length === 0) {
+        btn.textContent = '\u8BF7\u4E0A\u4F20 1\uFF5E2 \u4E2A PDF';
+      } else if (selected.length === 1) {
+        btn.textContent = '\u5F00\u59CB\u5408\u5E76\uFF08\u4EC5\u4E0A\u534A\u9875\uFF09';
       } else {
-        btn.textContent = selected.length > 1
-          ? '\u6279\u91CF\u5408\u5E76\uFF08' + selected.length + ' \u4E2A\u6587\u4EF6\uFF09'
-          : '\u5F00\u59CB\u5408\u5E76';
+        btn.textContent = '\u5F00\u59CB\u5408\u5E76\uFF08\u4E0A\u4E0B\u534A\u9875\uFF09';
       }
     }
 
@@ -433,7 +398,7 @@
         var dup = selected.some(function(s) { return s.name === f.name && s.size === f.size; });
         if (dup) continue;
         if (selected.length >= MAX_FILES) {
-          errors.push('\u6700\u591A ' + MAX_FILES + ' \u4E2A\u6587\u4EF6');
+          errors.push('\u6700\u591A ' + MAX_FILES + ' \u4E2A\u6587\u4EF6\uFF08\u6BCF\u5F20\u53D1\u7968\u4E00\u4E2A PDF\uFF09');
           break;
         }
         selected.push(f);
@@ -485,24 +450,20 @@
 
     btn.addEventListener('click', async function() {
       if (!selected.length) return;
+      if (selected.length > 2) {
+        status.className = 'err';
+        status.textContent = '\u6700\u591A\u4E0A\u4F20 2 \u4E2A PDF';
+        return;
+      }
       btn.disabled = true;
       status.className = 'info';
       status.textContent = '\u51C6\u5907\u4E0A\u4F20\u2026';
       setProgress(2);
 
       var fd = new FormData();
-      if (mode === 'dual') {
-        if (selected.length !== 2) {
-          status.className = 'err';
-          status.textContent = '\u53CC\u6587\u4EF6\u6A21\u5F0F\u9700\u8981\u6070\u597D 2 \u4E2A PDF';
-          hideProgress();
-          btn.disabled = false;
-          return;
-        }
-        fd.append('file', selected[0]);
+      fd.append('file', selected[0]);
+      if (selected.length === 2) {
         fd.append('file2', selected[1]);
-      } else {
-        fd.append('file', selected[0]);
       }
       if (dividerCheck.checked) fd.append('divider', 'true');
 
@@ -530,7 +491,11 @@
         var inPages = xhr.getResponseHeader('X-Input-Pages') || '?';
         var outPages = xhr.getResponseHeader('X-Output-Pages') || '?';
         status.className = 'ok';
-        status.textContent = '\u5B8C\u6210\uFF1A' + inPages + ' \u9875\u5408\u5E76\u4E3A ' + outPages + ' \u9875\uFF0C\u6587\u4EF6\u5DF2\u4E0B\u8F7D\u3002';
+        if (selected.length === 1) {
+          status.textContent = '\u5B8C\u6210\uFF1A\u5355\u5F20\u53D1\u7968\u5DF2\u6392\u5728 A4 \u4E0A\u534A\u9875\uFF0C\u6587\u4EF6\u5DF2\u4E0B\u8F7D\u3002';
+        } else {
+          status.textContent = '\u5B8C\u6210\uFF1A' + inPages + ' \u5F20\u53D1\u7968\u5408\u5E76\u4E3A ' + outPages + ' \u9875 A4\uFF0C\u6587\u4EF6\u5DF2\u4E0B\u8F7D\u3002';
+        }
       } catch (e) {
         status.className = 'err';
         status.textContent = e.message || String(e);

@@ -121,6 +121,8 @@ def test_office_category_and_alias():
     assert office.status_code == 200
     assert "办公工具" in office.text
     assert "/tools/rmb" in office.text
+    assert "/tools/pdf-merge" in office.text
+    assert "发票合并" in office.text
 
     alias = client.get("/office", follow_redirects=False)
     assert alias.status_code in (307, 302)
