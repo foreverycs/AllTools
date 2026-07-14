@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="发票合并 — 两张发票合并到一张 A4 纸" />
+  <title>发票合并 — 工具箱</title>
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
+  <style>
+    :root {
+      --c: #7c3aed;
+      --c2: #8b5cf6;
+      --c-soft: #f5f3ff;
+      --c-border: #ddd6fe;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    .bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 80% 55% at 12% 8%, rgba(139, 92, 246, 0.25), transparent 55%),
+        radial-gradient(ellipse 60% 45% at 92% 12%, rgba(124, 58, 237, 0.12), transparent 50%),
+        radial-gradient(ellipse 50% 40% at 50% 100%, rgba(139, 92, 246, 0.08), transparent 55%),
+        linear-gradient(165deg, #f5f3ff 0%, #eef2f7 45%, #f5f7fb 100%);
+    }
+    .bg::before {
+      content: "";
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.45) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.45) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 70% 55% at 50% 35%, black 15%, transparent 75%);
+      opacity: 0.5;
+    }
+
+    .shell { position: relative; z-index: 1; width: 100%; }
+    .nav {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px; gap: 12px;
+    }
+    .back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      text-decoration: none; padding: 8px 12px;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 999px; backdrop-filter: blur(10px);
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .back:hover { color: var(--c); border-color: var(--c-border); background: #fff; }
+    .back svg { width: 15px; height: 15px; }
+    .chip {
+      font-size: 11px; font-weight: 700; color: var(--c);
+      background: var(--c-soft); border: 1px solid var(--c-border);
+      padding: 6px 11px; border-radius: 999px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px 28px 24px;
+      overflow: hidden;
+      position: relative;
+    }
+    .card::before {
+      content: "";
+      position: absolute; left: 0; right: 0; top: 0; height: 3px;
+      background: linear-gradient(90deg, var(--c), var(--c2), #a78bfa);
+    }
+    .card-head {
+      display: flex; gap: 14px; align-items: flex-start;
+      margin-bottom: 22px;
+    }
+    .icon {
+      width: 52px; height: 52px; border-radius: 16px; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 24px;
+      background: linear-gradient(145deg, var(--c2), var(--c));
+      box-shadow: 0 10px 24px rgba(124, 58, 237, 0.35),
+        inset 0 1px 0 rgba(255,255,255,0.28);
+    }
+    .card-head h1 {
+      font-size: 1.35rem; font-weight: 800; letter-spacing: -0.03em;
+      color: var(--ink); margin-bottom: 6px; line-height: 1.2;
+    }
+    .card-head p {
+      font-size: 13px; line-height: 1.6; color: var(--muted);
+    }
+
+    .features {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin: -6px 0 20px;
+    }
+    .feat {
+      font-size: 11px; font-weight: 600; color: #475569;
+      background: #f8fafc; border: 1px solid #eef2f7;
+      padding: 4px 9px; border-radius: 8px;
+    }
+
+    .drop {
+      display: block; width: 100%; cursor: pointer;
+      border: 2px dashed var(--c-border);
+      border-radius: 16px; padding: 32px 18px;
+      text-align: center; background: linear-gradient(180deg, #fafbff 0%, #f5f3ff 100%);
+      transition: border-color .15s, background .15s, box-shadow .15s;
+    }
+    .drop:hover, .drop.drag {
+      border-color: var(--c);
+      background: var(--c-soft);
+      box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.08);
+    }
+    .drop-icon {
+      width: 48px; height: 48px; margin: 0 auto 12px;
+      border-radius: 14px; display: grid; place-items: center;
+      background: #fff; border: 1px solid var(--c-border);
+      color: var(--c); box-shadow: var(--shadow-sm);
+    }
+    .drop-icon svg { width: 22px; height: 22px; }
+    .drop-title { font-size: 14px; font-weight: 600; color: var(--ink-2); }
+    .drop-title strong { color: var(--c); }
+    .drop-hint { margin-top: 6px; font-size: 12px; color: var(--muted-2); }
+    input[type=file] { display: none; }
+
+    .file-list {
+      margin: 12px 0 0; padding: 0; list-style: none;
+      max-height: 168px; overflow: auto;
+    }
+    .file-list li {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 12px; color: var(--ink-2);
+      padding: 10px 12px; margin-bottom: 6px;
+      background: #f8fafc; border: 1px solid #eef2f7; border-radius: 12px;
+    }
+    .file-list .fi {
+      width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 14px;
+      background: var(--c-soft); color: var(--c);
+    }
+    .file-list .fname {
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-weight: 600;
+    }
+    .file-list .fsize { color: var(--muted-2); flex-shrink: 0; font-size: 11px; }
+    .file-list button {
+      border: 0; background: transparent; color: var(--muted-2);
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      padding: 4px 8px; border-radius: 8px;
+    }
+    .file-list button:hover { color: #dc2626; background: #fef2f2; }
+
+    .opts {
+      margin-top: 16px; display: grid; gap: 14px;
+      padding: 16px; background: #f8fafc;
+      border: 1px solid #eef2f7; border-radius: 16px;
+    }
+    .opts-title {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--muted-2);
+    }
+    .opts .check {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer;
+    }
+    .opts .check input {
+      width: 16px; height: 16px; accent-color: var(--c); cursor: pointer;
+    }
+
+    .mode-tabs {
+      display: flex; gap: 4px; margin-bottom: 16px;
+      background: #f1f5f9; border-radius: 12px; padding: 4px;
+    }
+    .mode-tab {
+      flex: 1; padding: 9px 12px; border: 0; border-radius: 10px;
+      font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
+      background: transparent; color: var(--muted); transition: all .15s;
+    }
+    .mode-tab.active {
+      background: #fff; color: var(--c); box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .mode-desc {
+      font-size: 12px; color: var(--muted-2); margin-bottom: 14px;
+      line-height: 1.5; padding: 0 2px;
+    }
+
+    #btn {
+      width: 100%; margin-top: 18px; padding: 13px 16px; border: 0;
+      border-radius: 14px; font-size: 15px; font-weight: 700; cursor: pointer;
+      color: #fff;
+      background: linear-gradient(135deg, var(--c) 0%, var(--c2) 100%);
+      box-shadow: 0 8px 20px rgba(124, 58, 237, 0.32);
+      transition: transform .15s, box-shadow .15s, opacity .15s;
+    }
+    #btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px rgba(124, 58, 237, 0.4);
+    }
+    #btn:disabled {
+      background: #e2e8f0; color: #94a3b8; box-shadow: none;
+      cursor: not-allowed; transform: none;
+    }
+
+    .progress {
+      display: none; margin-top: 14px; height: 7px;
+      background: #eef2f7; border-radius: 999px; overflow: hidden;
+    }
+    .progress.show { display: block; }
+    .progress > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--c), var(--c2), #a78bfa);
+      border-radius: 999px; transition: width .15s ease;
+    }
+
+    #status {
+      margin-top: 14px; font-size: 13px; min-height: 20px; line-height: 1.55;
+      font-weight: 500;
+    }
+    #status:not(:empty) {
+      padding: 10px 12px; border-radius: 12px; background: #f8fafc;
+      border: 1px solid #eef2f7;
+    }
+    #status.err { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+    #status.ok { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+    #status.info { color: #334155; }
+    #status.warn { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+
+    @media (max-width: 480px) {
+      .card { padding: 22px 18px 18px; }
+      .card-head { gap: 12px; }
+      .icon { width: 46px; height: 46px; border-radius: 14px; font-size: 22px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .shell { animation: none; }
+      #btn { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="tool-shell">
+  <div class="shell">
+    <div class="nav">
+      <a class="back" href="/c/document">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19 12H5M11 18l-6-6 6-6"/>
+        </svg>
+        文档处理
+      </a>
+      <span class="chip">发票合并</span>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">🧾</div>
+        <div>
+          <h1>发票合并</h1>
+          <p>将两张发票合并到一张 A4 纸，节省打印纸张。支持单文件配对合并或双文件交叉合并。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">A4 排版</span>
+        <span class="feat">分割线</span>
+        <span class="feat">单/双文件</span>
+        <span class="feat">批量处理</span>
+      </div>
+
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="single" type="button">单文件配对</button>
+        <button class="mode-tab" data-mode="dual" type="button">双文件合并</button>
+      </div>
+      <p class="mode-desc" id="modeDesc">上传一个包含多页的 PDF，自动将第 1+2 页、第 3+4 页…分别合并到一张 A4 纸上。</p>
+
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="application/pdf,.pdf" multiple />
+        <div class="drop-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16V4M7 9l5-5 5 5"/>
+            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+          </svg>
+        </div>
+        <div class="drop-title" id="dropTitle">点击或拖拽 <strong>PDF 文件</strong> 到此处</div>
+        <div class="drop-hint" id="dropHint">上传 1 个 PDF（≥2 页）或 2 个 PDF 各自 1 页</div>
+      </label>
+      <ul class="file-list" id="list"></ul>
+
+      <div class="opts">
+        <div class="opts-title">合并选项</div>
+        <label class="check">
+          <input type="checkbox" id="divider" checked />
+          在两张发票之间添加分割线
+        </label>
+      </div>
+
+      <button id="btn" disabled>开始合并</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div id="status"></div>
+    </div>
+  </div>
+  </div>
+
+  <script>
+    var MAX_FILES = 2;
+    var MAX_BYTES = 50 * 1024 * 1024;
+    var fileInput = document.getElementById('file');
+    var drop = document.getElementById('drop');
+    var list = document.getElementById('list');
+    var btn = document.getElementById('btn');
+    var status = document.getElementById('status');
+    var dividerCheck = document.getElementById('divider');
+    var progress = document.getElementById('progress');
+    var bar = document.getElementById('bar');
+    var modeDesc = document.getElementById('modeDesc');
+    var dropTitle = document.getElementById('dropTitle');
+    var dropHint = document.getElementById('dropHint');
+    var selected = [];
+    var mode = 'single';
+
+    var tabBtns = document.querySelectorAll('.mode-tab');
+    for (var i = 0; i < tabBtns.length; i++) {
+      tabBtns[i].addEventListener('click', function() {
+        for (var j = 0; j < tabBtns.length; j++) tabBtns[j].classList.remove('active');
+        this.classList.add('active');
+        mode = this.getAttribute('data-mode');
+        selected = [];
+        renderList();
+        status.textContent = '';
+        status.className = '';
+        if (mode === 'single') {
+          MAX_FILES = 20;
+          modeDesc.textContent = '上传一个包含多页的 PDF，自动将第 1+2 页、第 3+4 页…分别合并到一张 A4 纸上。';
+          dropTitle.innerHTML = '点击或拖拽 <strong>PDF 文件</strong> 到此处';
+          dropHint.textContent = '上传 1 个 PDF（≥2 页）或多个 PDF 批量处理';
+          fileInput.multiple = true;
+        } else {
+          MAX_FILES = 2;
+          modeDesc.textContent = '上传两个 PDF 文件，将两个文件的对应页逐一合并：第 1 个文件的每页放在上半部分，第 2 个文件的每页放在下半部分。';
+          dropTitle.innerHTML = '点击或拖拽 <strong>两个 PDF 文件</strong> 到此处';
+          dropHint.textContent = '恰好上传 2 个 PDF 文件';
+          fileInput.multiple = true;
+        }
+      });
+    }
+
+    function fmtSize(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function downloadName(disposition, fallback) {
+      if (!disposition) return fallback;
+      var star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition);
+      if (star) {
+        try { return decodeURIComponent(star[1].replace(/\+/g, ' ')); }
+        catch (e) { /* fall through */ }
+      }
+      var ascii = /filename="?([^";]+)"?/i.exec(disposition);
+      if (ascii) return ascii[1];
+      return fallback;
+    }
+
+    function setProgress(pct) {
+      progress.classList.add('show');
+      bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+    function hideProgress() {
+      progress.classList.remove('show');
+      bar.style.width = '0%';
+    }
+
+    function renderList() {
+      list.innerHTML = '';
+      selected.forEach(function(f, i) {
+        var li = document.createElement('li');
+        var icon = document.createElement('span');
+        icon.className = 'fi';
+        icon.textContent = '\uD83D\uDCC4';
+        var name = document.createElement('span');
+        name.className = 'fname';
+        name.title = f.name;
+        name.textContent = f.name;
+        var size = document.createElement('span');
+        size.className = 'fsize';
+        size.textContent = fmtSize(f.size);
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '\u79FB\u9664';
+        rm.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          selected.splice(i, 1);
+          renderList();
+          status.textContent = '';
+          status.className = '';
+        });
+        li.append(icon, name, size, rm);
+        list.appendChild(li);
+      });
+      btn.disabled = selected.length === 0;
+      if (mode === 'dual') {
+        btn.textContent = selected.length === 2 ? '\u5F00\u59CB\u5408\u5E76' : '\u8BF7\u4E0A\u4F20 2 \u4E2A PDF';
+      } else {
+        btn.textContent = selected.length > 1
+          ? '\u6279\u91CF\u5408\u5E76\uFF08' + selected.length + ' \u4E2A\u6587\u4EF6\uFF09'
+          : '\u5F00\u59CB\u5408\u5E76';
+      }
+    }
+
+    function addFiles(fileList) {
+      var incoming = Array.from(fileList || []);
+      var errors = [];
+      for (var i = 0; i < incoming.length; i++) {
+        var f = incoming[i];
+        if (!f.name.toLowerCase().endsWith('.pdf')) {
+          errors.push(f.name + ': \u4EC5\u652F\u6301 PDF');
+          continue;
+        }
+        if (f.size > MAX_BYTES) {
+          errors.push(f.name + ': \u8D85\u8FC7 50 MB');
+          continue;
+        }
+        if (f.size === 0) {
+          errors.push(f.name + ': \u7A7A\u6587\u4EF6');
+          continue;
+        }
+        var dup = selected.some(function(s) { return s.name === f.name && s.size === f.size; });
+        if (dup) continue;
+        if (selected.length >= MAX_FILES) {
+          errors.push('\u6700\u591A ' + MAX_FILES + ' \u4E2A\u6587\u4EF6');
+          break;
+        }
+        selected.push(f);
+      }
+      renderList();
+      if (errors.length) {
+        status.className = 'err';
+        status.textContent = errors.join('\uFF1B');
+      } else {
+        status.textContent = '';
+        status.className = '';
+      }
+      fileInput.value = '';
+    }
+
+    fileInput.addEventListener('change', function(e) { addFiles(e.target.files); });
+
+    ['dragover', 'dragenter'].forEach(function(ev) {
+      drop.addEventListener(ev, function(e) { e.preventDefault(); drop.classList.add('drag'); });
+    });
+    ['dragleave', 'drop'].forEach(function(ev) {
+      drop.addEventListener(ev, function(e) { e.preventDefault(); drop.classList.remove('drag'); });
+    });
+    drop.addEventListener('drop', function(e) { addFiles(e.dataTransfer.files); });
+
+    function xhrPost(url, formData) {
+      return new Promise(function(resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.responseType = 'blob';
+        xhr.upload.onprogress = function(e) {
+          if (e.lengthComputable) {
+            setProgress((e.loaded / e.total) * 70);
+            status.className = 'info';
+            status.textContent = '\u4E0A\u4F20\u4E2D\u2026 ' + Math.round((e.loaded / e.total) * 100) + '%';
+          }
+        };
+        xhr.upload.onload = function() {
+          setProgress(75);
+          status.className = 'info';
+          status.textContent = '\u4E0A\u4F20\u5B8C\u6210\uFF0C\u6B63\u5728\u5408\u5E76\u2026';
+        };
+        xhr.onload = function() { setProgress(100); resolve(xhr); };
+        xhr.onerror = function() { reject(new Error('\u7F51\u7EDC\u9519\u8BEF')); };
+        xhr.onabort = function() { reject(new Error('\u5DF2\u53D6\u6D88')); };
+        xhr.send(formData);
+      });
+    }
+
+    btn.addEventListener('click', async function() {
+      if (!selected.length) return;
+      btn.disabled = true;
+      status.className = 'info';
+      status.textContent = '\u51C6\u5907\u4E0A\u4F20\u2026';
+      setProgress(2);
+
+      var fd = new FormData();
+      if (mode === 'dual') {
+        if (selected.length !== 2) {
+          status.className = 'err';
+          status.textContent = '\u53CC\u6587\u4EF6\u6A21\u5F0F\u9700\u8981\u6070\u597D 2 \u4E2A PDF';
+          hideProgress();
+          btn.disabled = false;
+          return;
+        }
+        fd.append('file', selected[0]);
+        fd.append('file2', selected[1]);
+      } else {
+        fd.append('file', selected[0]);
+      }
+      if (dividerCheck.checked) fd.append('divider', 'true');
+
+      var url = '/tools/pdf-merge/convert';
+      try {
+        var xhr = await xhrPost(url, fd);
+        if (xhr.status < 200 || xhr.status >= 300) {
+          var msg = 'HTTP ' + xhr.status;
+          try {
+            var text = await xhr.response.text();
+            var err = JSON.parse(text);
+            msg = (typeof err.detail === 'string') ? err.detail : msg;
+          } catch (e) { /* keep msg */ }
+          throw new Error(msg);
+        }
+        var blob = xhr.response;
+        var fallback = selected[0].name.replace(/\.pdf$/i, '') + '_merged.pdf';
+        var a = document.createElement('a');
+        var href = URL.createObjectURL(blob);
+        a.href = href;
+        a.download = downloadName(xhr.getResponseHeader('content-disposition'), fallback);
+        a.click();
+        URL.revokeObjectURL(href);
+
+        var inPages = xhr.getResponseHeader('X-Input-Pages') || '?';
+        var outPages = xhr.getResponseHeader('X-Output-Pages') || '?';
+        status.className = 'ok';
+        status.textContent = '\u5B8C\u6210\uFF1A' + inPages + ' \u9875\u5408\u5E76\u4E3A ' + outPages + ' \u9875\uFF0C\u6587\u4EF6\u5DF2\u4E0B\u8F7D\u3002';
+      } catch (e) {
+        status.className = 'err';
+        status.textContent = e.message || String(e);
+      } finally {
+        hideProgress();
+        btn.disabled = selected.length === 0;
+      }
+    });
+  </script>
+</body>
+</html>

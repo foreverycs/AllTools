@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from .base64_tool import router as base64_router
 from .json_tool import router as json_router
 from .pdf2word import router as pdf2word_router
+from .pdf_merge import router as pdf_merge_router
 from .rmb_tool import router as rmb_router
 from .word2pdf import router as word2pdf_router
 
@@ -75,6 +76,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "accent": "emerald",
     },
     {
+        "name": "发票合并",
+        "slug": "pdf-merge",
+        "category": "office",
+        "description": "两张发票合并到一张 A4 纸：上下半页排版，可选分割线；单张发票仅占上半页。",
+        "icon": "🧾",
+        "route": "/tools/pdf-merge",
+        "badge": "2→1 A4",
+        "features": ["A4 排版", "上下半页", "分割线", "单张上半页"],
+        "cta": "开始合并",
+        "accent": "violet",
+    },
+    {
         "name": "Base64 编解码",
         "slug": "base64",
         "category": "coding",
@@ -116,6 +129,7 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
 TOOL_ROUTERS = (
     pdf2word_router,
     word2pdf_router,
+    pdf_merge_router,
     base64_router,
     json_router,
     rmb_router,
@@ -194,6 +208,7 @@ __all__ = [
     "nav_categories",
     "pdf2word_router",
     "word2pdf_router",
+    "pdf_merge_router",
     "base64_router",
     "json_router",
     "rmb_router",
