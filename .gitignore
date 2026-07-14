@@ -9,3 +9,8 @@ venv/
 # Upload history (keep directory via .gitkeep)
 file/**
 !file/.gitkeep
+
+# Local env (secrets)
+.env
+.env.local
+

@@ -103,15 +103,18 @@ def test_api_uploads_requires_admin(hist_dir, tmp_path, monkeypatch):
     )
     assert rec is not None
 
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
     monkeypatch.setenv("ADMIN_PASSWORD", "test-pass")
-    monkeypatch.setenv("ADMIN_SECRET", "test-secret")
+    monkeypatch.setenv("ADMIN_SECRET", "test-secret-for-unit-tests-only")
 
     from fastapi.testclient import TestClient
     import app as app_mod
     import admin.auth as auth
     import admin.routes as routes
+    import core.settings as settings_mod
     import importlib
 
+    settings_mod.clear_settings_cache()
     importlib.reload(auth)
     importlib.reload(routes)
     importlib.reload(app_mod)

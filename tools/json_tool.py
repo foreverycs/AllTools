@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from coding import JsonError, format_json, validate_json
 from coding.json_format import MAX_INPUT_CHARS
+from tools.common import templates
 
 router = APIRouter(prefix="/tools/json", tags=["json"])
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 
 @router.get("", response_class=HTMLResponse)

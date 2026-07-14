@@ -9,7 +9,6 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 
 from admin.auth import (
     check_password,
@@ -19,6 +18,7 @@ from admin.auth import (
     require_admin,
     set_session_cookie,
 )
+from core.settings import get_settings
 from storage import (
     RETENTION_DAYS,
     cleanup_expired,
@@ -29,12 +29,10 @@ from storage import (
     storage_stats,
 )
 from tools import TOOL_REGISTRY, tools_by_category
+from tools.common import templates
 
 # NOTE: tags list closes with ], then APIRouter call closes with )
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 # Pre-compute static data
 _categories_cache = tools_by_category()
@@ -285,13 +283,12 @@ async def system_page(request: Request):
         tools=TOOL_REGISTRY,
         categories=_categories_cache,
         env_hints={
-            "ADMIN_PASSWORD": (
-                "set" if os.environ.get("ADMIN_PASSWORD") else "default admin123"
-            ),
+            **get_settings().admin_security_summary(),
             "UPLOAD_RETENTION_DAYS": str(RETENTION_DAYS),
             "UPLOAD_FILE_DIR": os.environ.get("UPLOAD_FILE_DIR") or "(default ./file)",
             "LIBREOFFICE_PATH": os.environ.get("LIBREOFFICE_PATH") or "(auto)",
             "PDF2WORD_OCR": os.environ.get("PDF2WORD_OCR") or "0",
+            "MAX_UPLOAD_BYTES": str(get_settings().max_upload_bytes),
         },
     )
 

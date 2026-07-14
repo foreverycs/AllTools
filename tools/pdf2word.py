@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import shutil
 import tempfile
 import zipfile
@@ -10,25 +9,23 @@ from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from converter import content_warnings, count_blocks, extract_document, ocr_info, write_document
+from core.concurrency import run_conversion
 from storage import archive_conversion
+from tools.common import (
+    DOCX_MEDIA,
+    ZIP_MEDIA,
+    check_upload_size_header,
+    max_batch_files,
+    safe_stem,
+    save_upload,
+    templates,
+)
 
 router = APIRouter(prefix="/tools/pdf2word", tags=["pdf2word"])
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
-
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB per file
-MAX_BATCH_FILES = 20
-_CHUNK_SIZE = 1024 * 1024  # 1 MB
-_DOCX_MEDIA = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
-_SAFE_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -43,33 +40,7 @@ async def tool_page(request: Request):
 @router.get("/ocr-status")
 async def ocr_status():
     """Return whether optional OCR (Tesseract) is available."""
-    from fastapi.responses import JSONResponse
-
     return JSONResponse(ocr_info())
-
-
-def _safe_stem(filename: str) -> str:
-    stem = os.path.splitext(os.path.basename(filename or "output"))[0]
-    stem = _SAFE_NAME_RE.sub("_", stem).strip("._") or "output"
-    return stem[:80]
-
-
-async def _save_upload(file: UploadFile, dest: str) -> None:
-    """Stream the upload to disk, enforcing the size limit without loading all bytes."""
-    total = 0
-    with open(dest, "wb") as out:
-        while True:
-            chunk = await file.read(_CHUNK_SIZE)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > MAX_UPLOAD_BYTES:
-                raise HTTPException(
-                    status_code=413, detail="File too large (max 50 MB)"
-                )
-            out.write(chunk)
-    if total == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
 
 
 def _convert_one(
@@ -104,7 +75,6 @@ def _stats_headers(stats: dict) -> dict:
     }
     warns = stats.get("warnings") or []
     if warns:
-        # ASCII-safe comma list for simple clients; also expose a message.
         headers["X-Warnings"] = ",".join(warns)
         if "ocr_applied" in warns:
             headers["X-Warning-Message"] = quote(
@@ -132,18 +102,11 @@ async def convert(
     page_breaks: bool = Form(True),
     ocr: Optional[str] = Form(None),
 ):
-    """Convert a single PDF to Word.
-
-    Optional form fields:
-    - ``page_range``: 1-based range like ``1-3,5`` (default: all pages)
-    - ``page_breaks``: insert Word page breaks between PDF pages (default: true)
-    - ``ocr``: ``true``/``1`` to OCR scanned pages (needs Tesseract)
-    """
+    """Convert a single PDF to Word."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
+    check_upload_size_header(file)
 
     use_ocr = _parse_ocr_flag(ocr)
     if use_ocr:
@@ -164,8 +127,8 @@ async def convert(
     range_spec = (page_range or "").strip() or None
 
     try:
-        await _save_upload(file, pdf_path)
-        stats = await asyncio.to_thread(
+        await save_upload(file, pdf_path)
+        stats = await run_conversion(
             _convert_one, pdf_path, docx_path, range_spec, page_breaks, use_ocr
         )
     except HTTPException:
@@ -180,7 +143,7 @@ async def convert(
             status_code=500, detail=f"Conversion failed: {exc}"
         ) from exc
 
-    out_name = _safe_stem(file.filename) + ".docx"
+    out_name = safe_stem(file.filename) + ".docx"
     await asyncio.to_thread(
         archive_conversion,
         tool="pdf2word",
@@ -195,7 +158,7 @@ async def convert(
     background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
     return FileResponse(
         docx_path,
-        media_type=_DOCX_MEDIA,
+        media_type=DOCX_MEDIA,
         filename=out_name,
         headers=_stats_headers(stats),
     )
@@ -212,10 +175,11 @@ async def convert_batch(
     """Convert multiple PDFs; returns a ZIP of .docx files."""
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
-    if len(files) > MAX_BATCH_FILES:
+    batch_limit = max_batch_files()
+    if len(files) > batch_limit:
         raise HTTPException(
             status_code=400,
-            detail=f"Too many files (max {MAX_BATCH_FILES})",
+            detail=f"Too many files (max {batch_limit})",
         )
 
     use_ocr = _parse_ocr_flag(ocr)
@@ -247,18 +211,14 @@ async def convert_batch(
                         status_code=400,
                         detail=f"File {idx + 1}: only PDF files are supported",
                     )
-                if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"{file.filename}: file too large (max 50 MB)",
-                    )
+                check_upload_size_header(file)
 
                 pdf_path = os.path.join(tmp_dir, f"in_{idx}.pdf")
                 docx_path = os.path.join(tmp_dir, f"out_{idx}.docx")
-                await _save_upload(file, pdf_path)
+                await save_upload(file, pdf_path)
 
                 try:
-                    stats = await asyncio.to_thread(
+                    stats = await run_conversion(
                         _convert_one,
                         pdf_path,
                         docx_path,
@@ -272,7 +232,7 @@ async def convert_batch(
                         detail=f"{file.filename}: {exc}",
                     ) from exc
 
-                stem = _safe_stem(file.filename)
+                stem = safe_stem(file.filename)
                 out_name = f"{stem}.docx"
                 if out_name in used_names:
                     out_name = f"{stem}_{idx + 1}.docx"
@@ -323,7 +283,7 @@ async def convert_batch(
     headers["X-Files"] = str(converted)
     return FileResponse(
         zip_path,
-        media_type="application/zip",
+        media_type=ZIP_MEDIA,
         filename="pdf2word_batch.zip",
         headers=headers,
     )

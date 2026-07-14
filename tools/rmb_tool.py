@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from office import AmountError, to_rmb_upper
+from tools.common import templates
 
 router = APIRouter(prefix="/tools/rmb", tags=["rmb"])
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 MAX_TEXT_CHARS = 64
 

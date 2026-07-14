@@ -3,28 +3,26 @@ from __future__ import annotations
 import asyncio
 import io
 import os
-import re
 import shutil
 import tempfile
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.templating import Jinja2Templates
 from pypdf import PageObject, PdfReader, PdfWriter, Transformation
 from starlette.requests import Request
 
+from core.concurrency import run_conversion
 from storage import archive_conversion
+from tools.common import (
+    PDF_MEDIA,
+    check_upload_size_header,
+    safe_stem,
+    save_upload,
+    templates,
+)
 
 router = APIRouter(prefix="/tools/pdf-merge", tags=["pdf-merge"])
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
-
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
-_CHUNK_SIZE = 1024 * 1024
-_PDF_MEDIA = "application/pdf"
-_SAFE_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 
 # A4 dimensions in points
 A4_W = 595.28
@@ -36,27 +34,6 @@ MARGIN = 18
 @router.get("", response_class=HTMLResponse)
 async def tool_page(request: Request):
     return templates.TemplateResponse(request, "tools/pdf-merge.html", {})
-
-
-def _safe_stem(filename: str) -> str:
-    stem = os.path.splitext(os.path.basename(filename or "output"))[0]
-    stem = _SAFE_NAME_RE.sub("_", stem).strip("._") or "output"
-    return stem[:80]
-
-
-async def _save_upload(file: UploadFile, dest: str) -> None:
-    total = 0
-    with open(dest, "wb") as out:
-        while True:
-            chunk = await file.read(_CHUNK_SIZE)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > MAX_UPLOAD_BYTES:
-                raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
-            out.write(chunk)
-    if total == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
 
 
 def _make_divider() -> bytes:
@@ -257,8 +234,7 @@ async def convert(
 ):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
-    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
+    check_upload_size_header(file)
 
     use_divider = str(divider or "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -267,7 +243,7 @@ async def convert(
     out_path = os.path.join(tmp_dir, "merged.pdf")
 
     try:
-        await _save_upload(file, pdf1_path)
+        await save_upload(file, pdf1_path)
 
         pdf2_path: Optional[str] = None
         if file2 and file2.filename:
@@ -276,15 +252,11 @@ async def convert(
                 raise HTTPException(
                     status_code=400, detail="Second file must be a PDF"
                 )
-            if file2.size is not None and file2.size > MAX_UPLOAD_BYTES:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-                raise HTTPException(
-                    status_code=413, detail="Second file too large (max 50 MB)"
-                )
+            check_upload_size_header(file2, label="Second file")
             pdf2_path = os.path.join(tmp_dir, "input2.pdf")
-            await _save_upload(file2, pdf2_path)
+            await save_upload(file2, pdf2_path)
 
-        stats = await asyncio.to_thread(
+        stats = await run_conversion(
             merge_invoices, pdf1_path, out_path, pdf2_path, use_divider
         )
         archive_name = file.filename
@@ -300,7 +272,7 @@ async def convert(
             status_code=500, detail=f"Merge failed: {exc}"
         ) from exc
 
-    out_name = _safe_stem(file.filename) + "_merged.pdf"
+    out_name = safe_stem(file.filename) + "_merged.pdf"
     await asyncio.to_thread(
         archive_conversion,
         tool="pdf-merge",
@@ -315,7 +287,7 @@ async def convert(
     # inline so the browser can embed / print instead of forcing a download
     return FileResponse(
         out_path,
-        media_type=_PDF_MEDIA,
+        media_type=PDF_MEDIA,
         filename=out_name,
         content_disposition_type="inline",
         headers={

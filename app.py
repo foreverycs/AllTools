@@ -7,13 +7,12 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import Response
 
+from core.settings import get_settings, validate_security_settings
 from storage import (
     RETENTION_DAYS,
-    cleanup_expired,
     ensure_file_dir,
     list_records,
     resolve_stored,
@@ -27,9 +26,9 @@ from tools import (
     nav_categories,
     tools_by_category,
 )
+from tools.common import templates
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 # Pre-compute static data that never changes at runtime
 _nav_items = nav_categories()
@@ -56,7 +55,12 @@ def _page_ctx(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from storage.history import _do_cleanup
+    from core.settings import load_dotenv
 
+    # Project-root .env for local runs (does not override real process env).
+    load_dotenv()
+    # Fail fast on weak/missing admin credentials (unless ALLOW_INSECURE_ADMIN=1).
+    validate_security_settings()
     ensure_file_dir()
     try:
         _do_cleanup()
@@ -179,6 +183,7 @@ async def health():
                 "retention_days": RETENTION_DAYS,
                 "count": len(list_records(limit=200)),
             },
+            "convert_concurrency": get_settings().convert_concurrency,
         }
     )
 

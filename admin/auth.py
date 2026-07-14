@@ -1,36 +1,36 @@
-"""Admin session auth (cookie-based, password from env)."""
+"""Admin session auth (cookie-based, password from settings/env)."""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import secrets
 import time
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 
+from core.settings import get_settings
+
 # Cookie name for signed admin session.
 COOKIE_NAME = "toolkit_admin"
-# Default password for local/dev — override with ADMIN_PASSWORD in production.
-DEFAULT_PASSWORD = "admin123"
-SESSION_TTL_SEC = int(os.environ.get("ADMIN_SESSION_TTL", str(12 * 3600)))
 
 
 def admin_password() -> str:
-    return (os.environ.get("ADMIN_PASSWORD") or DEFAULT_PASSWORD).strip() or DEFAULT_PASSWORD
+    return get_settings().admin_password
 
 
 def _secret() -> bytes:
-    raw = os.environ.get("ADMIN_SECRET") or admin_password()
+    raw = get_settings().admin_secret
     return hashlib.sha256(f"toolkit-admin:{raw}".encode("utf-8")).digest()
 
 
 def create_session_token() -> str:
-    """Return ``exp.ts.nonce.sig`` token."""
-    exp = int(time.time()) + max(SESSION_TTL_SEC, 300)
+    """Return ``exp.nonce.sig`` token."""
+    ttl = get_settings().admin_session_ttl_sec
+    exp = int(time.time()) + max(ttl, 300)
     nonce = secrets.token_hex(8)
     payload = f"{exp}.{nonce}"
     sig = hmac.new(_secret(), payload.encode("ascii"), hashlib.sha256).hexdigest()
@@ -70,19 +70,21 @@ def require_admin(request: Request) -> Optional[RedirectResponse]:
     if request.url.query:
         nxt = f"{nxt}?{request.url.query}"
     return RedirectResponse(
-        url=f"/admin/login?next={nxt}",
+        url=f"/admin/login?next={quote(nxt, safe='/?&=')}",
         status_code=303,
     )
 
 
 def set_session_cookie(response, token: str) -> None:
+    s = get_settings()
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
         samesite="lax",
-        max_age=SESSION_TTL_SEC,
+        max_age=s.admin_session_ttl_sec,
         path="/",
+        secure=s.admin_cookie_secure,
     )
 
 

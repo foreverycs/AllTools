@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from coding import DecodeError, decode_base64, encode_base64, probe_base64
+from tools.common import templates
 
 router = APIRouter(prefix="/tools/base64", tags=["base64"])
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 MAX_TEXT_CHARS = 2 * 1024 * 1024  # 2M chars
 MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB

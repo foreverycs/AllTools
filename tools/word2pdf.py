@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import shutil
 import tempfile
 import zipfile
@@ -10,22 +9,23 @@ from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
-from word2pdf import ConversionError, convert_to_pdf, engine_info
+from core.concurrency import run_conversion
 from storage import archive_conversion
+from tools.common import (
+    PDF_MEDIA,
+    ZIP_MEDIA,
+    check_upload_size_header,
+    max_batch_files,
+    safe_stem,
+    save_upload,
+    templates,
+)
+from word2pdf import ConversionError, convert_to_pdf, engine_info
 
 router = APIRouter(prefix="/tools/word2pdf", tags=["word2pdf"])
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
-
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB per file
-MAX_BATCH_FILES = 20
-_CHUNK_SIZE = 1024 * 1024  # 1 MB
-_PDF_MEDIA = "application/pdf"
-_SAFE_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 _WORD_EXTS = (".docx", ".doc")
 
 
@@ -45,35 +45,11 @@ async def status():
     return JSONResponse(engine_info())
 
 
-def _safe_stem(filename: str) -> str:
-    stem = os.path.splitext(os.path.basename(filename or "output"))[0]
-    stem = _SAFE_NAME_RE.sub("_", stem).strip("._") or "output"
-    return stem[:80]
-
-
 def _is_word_filename(name: Optional[str]) -> bool:
     if not name:
         return False
     lower = name.lower()
     return any(lower.endswith(ext) for ext in _WORD_EXTS)
-
-
-async def _save_upload(file: UploadFile, dest: str) -> None:
-    """Stream the upload to disk, enforcing the size limit."""
-    total = 0
-    with open(dest, "wb") as out:
-        while True:
-            chunk = await file.read(_CHUNK_SIZE)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > MAX_UPLOAD_BYTES:
-                raise HTTPException(
-                    status_code=413, detail="File too large (max 50 MB)"
-                )
-            out.write(chunk)
-    if total == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
 
 
 def _convert_one(docx_path: str, pdf_path: str) -> dict:
@@ -83,11 +59,10 @@ def _convert_one(docx_path: str, pdf_path: str) -> dict:
 
 
 def _engine_headers(stats: dict) -> dict:
-    headers = {
+    return {
         "X-Engine": str(stats.get("engine") or ""),
         "X-Bytes": str(stats.get("bytes") or 0),
     }
-    return headers
 
 
 def _require_engine() -> None:
@@ -113,9 +88,7 @@ async def convert(
             status_code=400,
             detail="Only .docx / .doc files are supported",
         )
-    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
-
+    check_upload_size_header(file)
     _require_engine()
 
     tmp_dir = tempfile.mkdtemp(prefix="word2pdf_")
@@ -124,8 +97,8 @@ async def convert(
     pdf_path = os.path.join(tmp_dir, "output.pdf")
 
     try:
-        await _save_upload(file, doc_path)
-        stats = await asyncio.to_thread(_convert_one, doc_path, pdf_path)
+        await save_upload(file, doc_path)
+        stats = await run_conversion(_convert_one, doc_path, pdf_path)
     except HTTPException:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
@@ -138,7 +111,7 @@ async def convert(
             status_code=500, detail=f"Conversion failed: {exc}"
         ) from exc
 
-    out_name = _safe_stem(file.filename) + ".pdf"
+    out_name = safe_stem(file.filename) + ".pdf"
     await asyncio.to_thread(
         archive_conversion,
         tool="word2pdf",
@@ -149,7 +122,7 @@ async def convert(
     background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
     return FileResponse(
         pdf_path,
-        media_type=_PDF_MEDIA,
+        media_type=PDF_MEDIA,
         filename=out_name,
         headers=_engine_headers(stats),
     )
@@ -163,10 +136,11 @@ async def convert_batch(
     """Convert multiple Word documents; returns a ZIP of PDFs."""
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
-    if len(files) > MAX_BATCH_FILES:
+    batch_limit = max_batch_files()
+    if len(files) > batch_limit:
         raise HTTPException(
             status_code=400,
-            detail=f"Too many files (max {MAX_BATCH_FILES})",
+            detail=f"Too many files (max {batch_limit})",
         )
 
     _require_engine()
@@ -186,28 +160,22 @@ async def convert_batch(
                         status_code=400,
                         detail=f"File {idx + 1}: only .docx / .doc are supported",
                     )
-                if file.size is not None and file.size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"{file.filename}: file too large (max 50 MB)",
-                    )
+                check_upload_size_header(file)
 
                 ext = os.path.splitext(file.filename or "input.docx")[1].lower() or ".docx"
                 doc_path = os.path.join(tmp_dir, f"in_{idx}{ext}")
                 pdf_path = os.path.join(tmp_dir, f"out_{idx}.pdf")
-                await _save_upload(file, doc_path)
+                await save_upload(file, doc_path)
 
                 try:
-                    stats = await asyncio.to_thread(
-                        _convert_one, doc_path, pdf_path
-                    )
+                    stats = await run_conversion(_convert_one, doc_path, pdf_path)
                 except ConversionError as exc:
                     raise HTTPException(
                         status_code=400,
                         detail=f"{file.filename}: {exc}",
                     ) from exc
 
-                stem = _safe_stem(file.filename)
+                stem = safe_stem(file.filename)
                 out_name = f"{stem}.pdf"
                 if out_name in used_names:
                     out_name = f"{stem}_{idx + 1}.pdf"
@@ -251,7 +219,7 @@ async def convert_batch(
     }
     return FileResponse(
         zip_path,
-        media_type="application/zip",
+        media_type=ZIP_MEDIA,
         filename="word2pdf_batch.zip",
         headers=headers,
     )

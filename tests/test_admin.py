@@ -14,15 +14,22 @@ def admin_client(tmp_path, monkeypatch):
     d.mkdir()
     monkeypatch.setenv("UPLOAD_FILE_DIR", str(d))
     monkeypatch.setenv("UPLOAD_RETENTION_DAYS", "5")
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
     monkeypatch.setenv("ADMIN_PASSWORD", "test-pass")
-    monkeypatch.setenv("ADMIN_SECRET", "test-secret")
+    monkeypatch.setenv("ADMIN_SECRET", "test-secret-for-unit-tests-only")
 
+    import core.settings as settings_mod
+    import core.concurrency as concurrency_mod
     import storage.history as h
     import storage as s
     import admin.auth as auth
     import admin.routes as routes
+    import tools.common as common
     import app as app_mod
 
+    settings_mod.clear_settings_cache()
+    concurrency_mod.reset_semaphore()
+    common.refresh_limits()
     importlib.reload(h)
     importlib.reload(s)
     importlib.reload(auth)

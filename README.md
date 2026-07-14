@@ -67,11 +67,36 @@ uvicorn app:app --host 127.0.0.1 --port 8000
 
 浏览器打开 http://127.0.0.1:8000/admin
 
+**生产必须配置强密钥**（启动时会校验；弱口令会直接失败）。
+
+本地开发：复制环境文件后启动即可：
+
+```bash
+copy .env.example .env
+# 或已有 .env 时直接：
+uvicorn app:app --reload --host 127.0.0.1 --port 8000
+```
+
+生产示例（请换成你自己的长随机串）：
+
+```bash
+set ADMIN_PASSWORD=Str0ng-Passw0rd!
+set ADMIN_SECRET=please-use-a-long-random-string-here
+# Linux/macOS: export ADMIN_PASSWORD=... ADMIN_SECRET=...
+```
+
 | 环境变量 | 说明 | 默认 |
 |----------|------|------|
-| `ADMIN_PASSWORD` | 后台登录密码 | `admin123` |
-| `ADMIN_SECRET` | 会话签名密钥（建议生产单独设置） | 由密码派生 |
+| `ADMIN_PASSWORD` | 后台登录密码（≥12 位，非常见弱口令） | **必填** |
+| `ADMIN_SECRET` | 会话签名密钥（≥24 位，与密码独立） | **必填** |
+| `ALLOW_INSECURE_ADMIN` | `1` 时允许弱口令/缺省（仅本地开发/测试） | `0` |
 | `ADMIN_SESSION_TTL` | 会话有效期（秒） | `43200`（12 小时） |
+| `ADMIN_COOKIE_SECURE` | Cookie 仅 HTTPS（`1`/`true`） | `0` |
+| `CONVERT_CONCURRENCY` | 全局转换并发上限（PDF/Word/发票） | `2` |
+| `MAX_UPLOAD_BYTES` | 单文件上传上限（字节） | `52428800`（50 MB） |
+| `MAX_BATCH_FILES` | 批量最多文件数 | `20` |
+
+项目根目录 `.env` 会在启动时自动加载（不会覆盖系统已有环境变量）。
 
 功能：仪表盘统计、上传记录筛选/下载/删除、过期清理、引擎与 OCR 状态。
 
@@ -79,6 +104,7 @@ uvicorn app:app --host 127.0.0.1 --port 8000
 |------|------|
 | 首页 | `/` |
 | 文档处理 | `/c/document`（别名 `/documents`） |
+| 办公工具 | `/c/office`（别名 `/office`） |
 | 编码工具 | `/c/coding`（别名 `/coding`） |
 
 ### 命令行
