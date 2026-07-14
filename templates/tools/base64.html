@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Base64 编码解码 — 文本与文件，标准 / URL-safe" />
   <title>Base64 编解码 — 工具集</title>
-  <link rel="stylesheet" href="/static/css/tokens.css" />
-  <link rel="stylesheet" href="/static/css/layout.css" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -206,13 +206,14 @@
       to { opacity: 1; transform: translateY(0); }
     }
   </style>
+  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
   <div class="tool-shell">
   <div class="shell">
     <div class="nav">
-      <a class="back" href="/c/coding">
+      <a class="back" href="{{ url_path('/c/coding') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 12H5M11 18l-6-6 6-6"/>
         </svg>
@@ -429,7 +430,7 @@
 
         let url;
         if (mode === 'encode') {
-          url = '/tools/base64/encode';
+          url = (window.__ROOT__||'')+'/tools/base64/encode';
           fd.append('wrap', wrap.value);
           const f = fileInput.files && fileInput.files[0];
           if (f) {
@@ -438,7 +439,7 @@
             fd.append('text', input.value);
           }
         } else {
-          url = '/tools/base64/decode';
+          url = (window.__ROOT__||'')+'/tools/base64/decode';
           fd.append('text', input.value);
           fd.append('strict', strict.checked ? 'true' : 'false');
         }

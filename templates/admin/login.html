@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>管理员登录 — 工具集</title>
-  <link rel="stylesheet" href="/static/css/tokens.css" />
-  <link rel="stylesheet" href="/static/css/admin.css" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/admin.css') }}" />
 </head>
 <body class="admin-body">
   <div class="admin-login-wrap">
@@ -23,7 +23,7 @@
         {{ error }}
       </div>
       {% endif %}
-      <form method="post" action="/admin/login">
+      <form method="post" action="{{ url_path('/admin/login') }}">
         <input type="hidden" name="next" value="{{ next_url or '/admin' }}" />
         <label for="password">管理密码</label>
         <input id="password" name="password" type="password" required autocomplete="current-password" autofocus placeholder="请输入密码" />
@@ -36,7 +36,7 @@
         默认密码 <code>admin123</code>，生产环境请设置环境变量 <code>ADMIN_PASSWORD</code>
       </p>
       <p class="hint" style="margin-top:10px;text-align:center">
-        <a href="/" class="admin-link" style="font-size:12.5px">
+        <a href="{{ url_path('/') }}" class="admin-link" style="font-size:12.5px">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
           返回前台
         </a>

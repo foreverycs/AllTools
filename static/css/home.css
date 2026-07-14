@@ -456,9 +456,9 @@
 
 .launch-card:hover {
   transform: translateY(-4px);
-  border-color: color-mix(in srgb, var(--c) 30%, transparent);
+  border-color: rgba(79, 70, 229, 0.28);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.1),
-    0 0 0 1px color-mix(in srgb, var(--c) 12%, transparent);
+    0 0 0 1px rgba(79, 70, 229, 0.12);
 }
 .launch-card:focus-visible {
   outline: 2px solid var(--c);
@@ -472,7 +472,7 @@
   border-radius: 50%;
   top: -50px;
   right: -40px;
-  background: radial-gradient(circle, color-mix(in srgb, var(--c) 28%, transparent), transparent 70%);
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.28), transparent 70%);
   opacity: 0.55;
   pointer-events: none;
   z-index: 0;
@@ -499,7 +499,7 @@
   place-items: center;
   font-size: 21px;
   background: linear-gradient(155deg, var(--c2), var(--c));
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--c) 38%, transparent),
+  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
   line-height: 1;
 }
@@ -508,7 +508,7 @@
   font-weight: 700;
   color: var(--c);
   background: var(--soft);
-  border: 1px solid color-mix(in srgb, var(--c) 16%, transparent);
+  border: 1px solid rgba(79, 70, 229, 0.16);
   padding: 4px 9px;
   border-radius: 999px;
   max-width: 52%;
@@ -609,7 +609,7 @@
   right: 0;
   top: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--c), color-mix(in srgb, var(--c) 40%, #a5b4fc));
+  background: linear-gradient(90deg, var(--c), #a5b4fc);
 }
 .suite::after {
   content: "";
@@ -619,7 +619,7 @@
   right: -30px;
   top: -30px;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--c) 18%, transparent), transparent 70%);
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.18), transparent 70%);
   pointer-events: none;
 }
 
@@ -639,7 +639,7 @@
   place-items: center;
   font-size: 20px;
   background: var(--soft);
-  border: 1px solid color-mix(in srgb, var(--c) 14%, transparent);
+  border: 1px solid rgba(79, 70, 229, 0.14);
   flex-shrink: 0;
 }
 .suite-titles { flex: 1; min-width: 0; }
@@ -662,7 +662,7 @@
   font-family: var(--mono);
   font-size: 18px;
   font-weight: 800;
-  color: color-mix(in srgb, var(--c) 70%, #94a3b8);
+  color: #818cf8;
   line-height: 1;
 }
 .suite-desc {

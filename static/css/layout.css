@@ -271,7 +271,7 @@
 .tool-card[data-accent="emerald"] .glow { background: radial-gradient(circle, #a7f3d0 0%, transparent 70%); }
 .tool-card[data-accent="amber"] .glow { background: radial-gradient(circle, #fde68a 0%, transparent 70%); }
 .tool-card[data-accent="sky"] .glow { background: radial-gradient(circle, #bae6fd 0%, transparent 70%); }
-.tool-card:hover { border-color: color-mix(in srgb, var(--c) 28%, transparent); }
+.tool-card:hover { border-color: rgba(79, 70, 229, 0.28); }
 
 .tool-card-top {
   position: relative;
@@ -289,7 +289,7 @@
   place-items: center;
   font-size: 24px;
   background: linear-gradient(155deg, var(--c2), var(--c));
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--c) 40%, transparent),
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   line-height: 1;
 }
@@ -351,7 +351,7 @@
   background: linear-gradient(135deg, var(--c), var(--c2));
   padding: 9px 14px;
   border-radius: 12px;
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--c) 35%, transparent);
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
   transition: gap 0.2s ease;
 }
 .tool-card:hover .tool-cta { gap: 11px; }

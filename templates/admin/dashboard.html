@@ -7,8 +7,8 @@
     <p>概览上传归档与引擎状态</p>
   </div>
   <div class="admin-actions">
-    <a class="admin-btn" href="/admin/uploads">管理上传</a>
-    <a class="admin-btn admin-btn-primary" href="/admin/system">系统状态</a>
+    <a class="admin-btn" href="{{ url_path('/admin/uploads') }}">管理上传</a>
+    <a class="admin-btn admin-btn-primary" href="{{ url_path('/admin/system') }}">系统状态</a>
   </div>
 </div>
 
@@ -58,7 +58,7 @@
   <div class="admin-panel">
     <div class="admin-panel-h">
       <span>最近上传</span>
-      <a href="/admin/uploads" class="admin-muted" style="text-decoration:none;font-weight:650;font-size:12px">全部 →</a>
+      <a href="{{ url_path('/admin/uploads') }}" class="admin-muted" style="text-decoration:none;font-weight:650;font-size:12px">全部 →</a>
     </div>
     <div class="admin-table-wrap">
       <table class="admin-table">

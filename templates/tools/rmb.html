@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="人民币金额转中文大写 — 财务规范写法" />
   <title>人民币大写 — 工具集</title>
-  <link rel="stylesheet" href="/static/css/tokens.css" />
-  <link rel="stylesheet" href="/static/css/layout.css" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -182,13 +182,14 @@
       margin-top: 14px; font-size: 12px; color: var(--muted-2); line-height: 1.55;
     }
   </style>
+  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
   <div class="tool-shell">
   <div class="shell">
     <div class="nav">
-      <a class="back" href="/c/office">
+      <a class="back" href="{{ url_path('/c/office') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 12H5M11 18l-6-6 6-6"/>
         </svg>
@@ -323,7 +324,7 @@
         const fd = new FormData();
         fd.append('amount', input.value);
         fd.append('prefix', prefix.checked ? 'true' : 'false');
-        const res = await fetch('/tools/rmb/convert', { method: 'POST', body: fd });
+        const res = await fetch((window.__ROOT__||'')+'/tools/rmb/convert', { method: 'POST', body: fd });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           const detail = data.detail;

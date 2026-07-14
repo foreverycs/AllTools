@@ -7,11 +7,11 @@
     <p>引擎探测、工具注册与环境配置</p>
   </div>
   <div class="admin-actions">
-    <a class="admin-btn" href="/health" target="_blank" rel="noopener">
+    <a class="admin-btn" href="{{ url_path('/health') }}" target="_blank" rel="noopener">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       公开 /health
     </a>
-    <a class="admin-btn" href="/docs" target="_blank" rel="noopener">
+    <a class="admin-btn" href="{{ url_path('/docs') }}" target="_blank" rel="noopener">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
       API 文档
     </a>
@@ -116,7 +116,7 @@
           <td>{{ t.name }}</td>
           <td class="admin-mono">{{ t.slug }}</td>
           <td>{{ t.category }}</td>
-          <td><a class="admin-link admin-mono" href="{{ t.route }}">{{ t.route }}</a></td>
+          <td><a class="admin-link admin-mono" href="{{ url_path(t.route) }}">{{ t.route }}</a></td>
         </tr>
         {% endfor %}
       </tbody>

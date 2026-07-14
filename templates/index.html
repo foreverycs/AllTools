@@ -6,17 +6,212 @@
   <meta name="description" content="在线工具平台 — PDF/Word 转换、发票合并、编码工具，本地部署，即开即用" />
   <meta name="theme-color" content="#eef1f8" />
   <title>工具集 · Toolkit</title>
-  <link rel="stylesheet" href="/static/css/tokens.css" />
-  <link rel="stylesheet" href="/static/css/layout.css" />
-  <link rel="stylesheet" href="/static/css/home.css" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/home.css') }}" />
+  {# Critical home layout inlined so a truncated/stale home.css cannot collapse the page #}
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
     body {
-      font-family: var(--font);
+      font-family: var(--font, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
       min-height: 100vh;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
+      color: var(--ink, #0b1220);
+      background: var(--bg, #eef1f8);
+    }
+    .page-home .site-page { position: relative; z-index: 1; }
+
+    /* Hero grid + tags + HUD — must not depend on external CSS being complete */
+    .home-hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.85fr);
+      gap: 22px;
+      align-items: stretch;
+      padding: 18px 0 8px;
+    }
+    @media (max-width: 900px) {
+      .home-hero { grid-template-columns: 1fr; }
+    }
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      list-style: none !important;
+      margin: 0;
+      padding: 0;
+    }
+    .hero-tags li {
+      list-style: none !important;
+      font-size: 12px;
+      font-weight: 650;
+      color: #475569;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(15, 23, 42, 0.07);
+      padding: 5px 10px;
+      border-radius: 999px;
+    }
+    .hero-panel {
+      position: relative;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid rgba(99, 102, 241, 0.16);
+      border-radius: 20px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+      backdrop-filter: blur(14px);
+      padding: 16px 16px 14px;
+      overflow: hidden;
+    }
+    .hud-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .hud-title {
+      font-family: var(--mono, ui-monospace, Consolas, monospace);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #64748b;
+    }
+    .hud-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono, ui-monospace, Consolas, monospace);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: #15803d;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      padding: 4px 8px;
+      border-radius: 999px;
+    }
+    .hud-live i {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #22c55e; display: block;
+    }
+    .hud-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .hud-stat {
+      background: linear-gradient(160deg, #f8fafc 0%, #eef2ff 100%);
+      border: 1px solid rgba(99, 102, 241, 0.1);
+      border-radius: 12px;
+      padding: 12px 12px 10px;
+    }
+    .hud-val {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: #4f46e5;
+      line-height: 1.15;
+    }
+    .hud-lab {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--muted-2, #94a3b8);
+      margin-top: 4px;
+    }
+    .hud-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.2), transparent);
+      margin: 14px 0 12px;
+    }
+    .hud-routes-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+    .hud-route {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: inherit;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      margin-bottom: 4px;
+    }
+    .hud-route:hover {
+      background: rgba(79, 70, 229, 0.05);
+      border-color: rgba(79, 70, 229, 0.14);
+    }
+    .hud-route-icon {
+      width: 34px; height: 34px; border-radius: 10px;
+      display: grid; place-items: center; font-size: 16px;
+      background: #eef2ff; flex-shrink: 0;
+    }
+    .hud-route-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .hud-route-name { font-size: 13.5px; font-weight: 700; color: var(--ink-2, #1e293b); }
+    .hud-route-meta { font-size: 11.5px; color: var(--muted-2, #94a3b8); font-weight: 600; }
+    .hud-route svg { width: 15px; height: 15px; color: #a5b4fc; flex-shrink: 0; }
+
+    .home-launch, .home-suites, .home-signals { margin-top: 40px; }
+    .section-kicker {
+      font-family: var(--mono, ui-monospace, Consolas, monospace);
+      font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+      color: #6366f1; margin-bottom: 8px;
+    }
+    .section-head h2 {
+      font-size: clamp(1.35rem, 2.4vw, 1.65rem);
+      font-weight: 800; letter-spacing: -0.03em; margin-bottom: 6px;
+    }
+    .section-head p { font-size: 13.5px; color: var(--muted, #64748b); line-height: 1.5; }
+    .launch-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 900px) { .launch-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .launch-grid { grid-template-columns: 1fr; } }
+    .launch-card {
+      display: flex; flex-direction: column; min-height: 210px;
+      padding: 18px 18px 16px; border-radius: 18px;
+      text-decoration: none; color: inherit;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(15, 23, 42, 0.07);
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+    }
+    .suite-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 900px) { .suite-grid { grid-template-columns: 1fr; } }
+    .suite {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(15, 23, 42, 0.07);
+      border-radius: 18px;
+      padding: 18px;
+    }
+    .suite-tools { list-style: none; margin: 12px 0; padding: 0; }
+    .suite-tools a {
+      display: flex; align-items: center; gap: 8px;
+      text-decoration: none; color: inherit; padding: 8px 0;
+    }
+    .signal-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      list-style: none;
+    }
+    @media (max-width: 900px) { .signal-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .signal-grid { grid-template-columns: 1fr; } }
+    .signal-grid li {
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(15, 23, 42, 0.07);
+      border-radius: 16px;
+      padding: 16px;
     }
   </style>
 </head>
@@ -94,7 +289,7 @@
         <div class="hud-routes">
           <div class="hud-routes-label">快速通道</div>
           {% for item in nav_items %}
-          <a class="hud-route" href="{{ item.route }}" data-accent="{{ item.accent or 'indigo' }}">
+          <a class="hud-route" href="{{ url_path(item.route) }}" data-accent="{{ item.accent or 'indigo' }}">
             <span class="hud-route-icon" aria-hidden="true">{{ item.icon }}</span>
             <span class="hud-route-body">
               <span class="hud-route-name">{{ item.name }}</span>
@@ -126,7 +321,7 @@
         {% for item in nav_items %}
           {% if item.tools is defined and item.tools %}
             {% for t in item.tools %}
-            <a class="launch-card" href="{{ t.route }}" data-accent="{{ t.accent or item.accent or 'indigo' }}">
+            <a class="launch-card" href="{{ url_path(t.route) }}" data-accent="{{ t.accent or item.accent or 'indigo' }}">
               <div class="launch-glow" aria-hidden="true"></div>
               <div class="launch-top">
                 <div class="launch-icon" aria-hidden="true">{{ t.icon }}</div>
@@ -176,7 +371,7 @@
           <ul class="suite-tools">
             {% for t in item.tools %}
             <li>
-              <a href="{{ t.route }}">
+              <a href="{{ url_path(t.route) }}">
                 <span class="st-icon" aria-hidden="true">{{ t.icon }}</span>
                 <span class="st-name">{{ t.name }}</span>
                 <span class="st-badge">{{ t.badge or '打开' }}</span>
@@ -187,7 +382,7 @@
           {% else %}
           <p class="suite-empty">该栏目工具筹备中</p>
           {% endif %}
-          <a class="suite-go" href="{{ item.route }}">
+          <a class="suite-go" href="{{ url_path(item.route) }}">
             进入{{ item.name }}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
               <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -256,13 +451,13 @@
             <ul class="site-footer-links">
               {% for item in nav_items %}
               <li>
-                <a href="{{ item.route }}">
+                <a href="{{ url_path(item.route) }}">
                   {{ item.name }}
                   <span class="count">{{ item.tool_count }}</span>
                 </a>
               </li>
               {% endfor %}
-              <li><a href="/health">服务状态</a></li>
+              <li><a href="{{ url_path('/health') }}">服务状态</a></li>
             </ul>
           </div>
 
@@ -279,10 +474,10 @@
         <div class="site-footer-bottom">
           <div class="site-footer-copy">© 工具集 · 本地部署优先</div>
           <div class="site-footer-bottom-links">
-            <a href="/api/tools">工具目录 API</a>
-            <a href="/health">健康检查</a>
-            <a href="/docs">接口文档</a>
-            <a href="/admin">管理后台</a>
+            <a href="{{ url_path('/api/tools') }}">工具目录 API</a>
+            <a href="{{ url_path('/health') }}">健康检查</a>
+            <a href="{{ url_path('/docs') }}">接口文档</a>
+            <a href="{{ url_path('/admin') }}">管理后台</a>
           </div>
         </div>
       </div>

@@ -155,6 +155,10 @@ class Settings:
     upload_retention_days: int
     upload_file_dir: Optional[str]
 
+    # Public URL prefix when reverse-proxied under a subpath (e.g. "/toolkit").
+    # Leave empty when the domain root points at this app (typical Baota setup).
+    root_path: str
+
     def admin_security_summary(self) -> dict:
         return {
             "ALLOW_INSECURE_ADMIN": self.allow_insecure_admin,
@@ -163,6 +167,7 @@ class Settings:
             "ADMIN_SESSION_TTL": str(self.admin_session_ttl_sec),
             "ADMIN_COOKIE_SECURE": self.admin_cookie_secure,
             "CONVERT_CONCURRENCY": str(self.convert_concurrency),
+            "ROOT_PATH": self.root_path or "(none)",
         }
 
 
@@ -253,7 +258,18 @@ def _load_settings() -> Settings:
             "UPLOAD_RETENTION_DAYS", 5, minimum=1, maximum=365
         ),
         upload_file_dir=(os.environ.get("UPLOAD_FILE_DIR") or "").strip() or None,
+        root_path=_normalize_root_path(os.environ.get("ROOT_PATH") or ""),
     )
+
+
+def _normalize_root_path(raw: str) -> str:
+    """Return '' or a leading-slash path without trailing slash."""
+    p = (raw or "").strip()
+    if not p or p == "/":
+        return ""
+    if not p.startswith("/"):
+        p = "/" + p
+    return p.rstrip("/")
 
 
 @lru_cache(maxsize=1)

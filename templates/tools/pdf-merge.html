@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="发票合并 — 两张发票合并到一张 A4 纸，页内预览与打印" />
   <title>发票合并 — 工具箱</title>
-  <link rel="stylesheet" href="/static/css/tokens.css" />
-  <link rel="stylesheet" href="/static/css/layout.css" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
   <style>
     :root {
       --c: #7c3aed;
@@ -408,13 +408,14 @@
       #previewFrame { min-height: 100vh; height: 100vh; background: #fff; }
     }
   </style>
+  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
   <div class="tool-shell">
   <div class="shell">
     <div class="nav">
-      <a class="back" href="/c/office">
+      <a class="back" href="{{ url_path('/c/office') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M19 12H5M11 18l-6-6 6-6"/>
         </svg>
@@ -745,7 +746,7 @@
       if (dividerCheck.checked) fd.append('divider', 'true');
 
       try {
-        var xhr = await xhrPost('/tools/pdf-merge/convert', fd);
+        var xhr = await xhrPost((window.__ROOT__||'')+'/tools/pdf-merge/convert', fd);
         if (xhr.status < 200 || xhr.status >= 300) {
           var msg = 'HTTP ' + xhr.status;
           try {

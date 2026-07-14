@@ -53,12 +53,30 @@ def _tpl(request: Request, name: str, **ctx):
     return templates.TemplateResponse(request, name, data)
 
 
-def _safe_next(next_url: Optional[str]) -> str:
+def _safe_next(next_url: Optional[str], request: Optional[Request] = None) -> str:
+    from tools.common import effective_root_path, url_path
+
+    root = effective_root_path(request)
+    admin_home = url_path("/admin", request)
     if not next_url:
-        return "/admin"
-    if next_url.startswith("/admin") and "://" not in next_url and "\\" not in next_url:
+        return admin_home
+    # Allow both app-absolute and root-prefixed paths.
+    allowed_prefixes = ("/admin",)
+    if root:
+        allowed_prefixes = (f"{root}/admin", "/admin")
+    if (
+        any(next_url.startswith(p) for p in allowed_prefixes)
+        and "://" not in next_url
+        and "\\" not in next_url
+    ):
         return next_url
-    return "/admin"
+    return admin_home
+
+
+def _admin_url(path: str, request: Optional[Request] = None) -> str:
+    from tools.common import url_path
+
+    return url_path(path, request)
 
 
 def _build_health() -> dict:
@@ -92,11 +110,11 @@ async def login_page(
     error: Optional[str] = Query(None),
 ):
     if is_admin(request):
-        return _redirect(_safe_next(next))
+        return _redirect(_safe_next(next, request))
     return _tpl(
         request,
         "admin/login.html",
-        next_url=_safe_next(next),
+        next_url=_safe_next(next, request),
         error=error,
     )
 
@@ -108,25 +126,29 @@ async def login_submit(
     next: Optional[str] = Form(None),
 ):
     if not check_password(password):
-        dest = "/admin/login?error=" + quote("password error") + "&next=" + quote(
-            _safe_next(next)
+        dest = (
+            _admin_url("/admin/login", request)
+            + "?error="
+            + quote("password error")
+            + "&next="
+            + quote(_safe_next(next, request))
         )
         return _redirect(dest)
-    resp = _redirect(_safe_next(next))
+    resp = _redirect(_safe_next(next, request))
     set_session_cookie(resp, create_session_token())
     return resp
 
 
 @router.post("/logout")
-async def logout():
-    resp = _redirect("/admin/login")
+async def logout(request: Request):
+    resp = _redirect(_admin_url("/admin/login", request))
     clear_session_cookie(resp)
     return resp
 
 
 @router.get("/logout")
-async def logout_get():
-    resp = _redirect("/admin/login")
+async def logout_get(request: Request):
+    resp = _redirect(_admin_url("/admin/login", request))
     clear_session_cookie(resp)
     return resp
 
@@ -199,7 +221,7 @@ async def uploads_delete(request: Request, record_id: str):
         return redir
     ok = delete_record(record_id)
     msg = "deleted" if ok else "not found"
-    return _redirect("/admin/uploads?msg=" + quote(msg))
+    return _redirect(_admin_url("/admin/uploads", request) + "?msg=" + quote(msg))
 
 
 @router.get("/uploads/{record_id}/download")
@@ -266,7 +288,9 @@ async def run_cleanup(request: Request):
     if redir:
         return redir
     removed = cleanup_expired()
-    return _redirect("/admin/uploads?msg=" + quote("cleaned %d" % removed))
+    return _redirect(
+        _admin_url("/admin/uploads", request) + "?msg=" + quote("cleaned %d" % removed)
+    )
 
 
 @router.get("/system", response_class=HTMLResponse)

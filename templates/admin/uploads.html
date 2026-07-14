@@ -7,7 +7,7 @@
     <p>仅归档输入文件，默认保留 {{ retention_days }} 天</p>
   </div>
   <div class="admin-actions">
-    <form method="post" action="/admin/cleanup" onsubmit="return confirm('清理所有过期记录？');">
+    <form method="post" action="{{ url_path('/admin/cleanup') }}" onsubmit="return confirm('清理所有过期记录？');">
       <button class="admin-btn" type="submit">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
         清理过期
@@ -23,7 +23,7 @@
 </div>
 {% endif %}
 
-<form class="admin-filters" method="get" action="/admin/uploads">
+<form class="admin-filters" method="get" action="{{ url_path('/admin/uploads') }}">
   <label class="admin-field">工具
     <select name="tool">
       <option value="">全部</option>
@@ -40,7 +40,7 @@
     筛选
   </button>
   {% if tool_filter or q %}
-  <a class="admin-btn" href="/admin/uploads">重置</a>
+  <a class="admin-btn" href="{{ url_path('/admin/uploads') }}">重置</a>
   {% endif %}
 </form>
 
@@ -80,7 +80,7 @@
           </td>
           <td style="white-space:nowrap">
             {% if r.input_exists %}
-            <a class="admin-btn" href="/admin/uploads/{{ r.id }}/download">
+            <a class="admin-btn" href="{{ url_path('/admin/uploads/' ~ r.id ~ '/download') }}" >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               下载
             </a>
@@ -89,7 +89,7 @@
               预览
             </button>
             {% endif %}
-            <form method="post" action="/admin/uploads/{{ r.id }}/delete" style="display:inline">
+            <form method="post" action="{{ url_path('/admin/uploads/' ~ r.id ~ '/delete') }}"  style="display:inline">
               <button class="admin-btn admin-btn-danger" type="submit">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                 删除
@@ -142,7 +142,7 @@
     }
     titleEl.textContent = name;
     bodyEl.innerHTML = '';
-    var url = '/admin/uploads/' + encodeURIComponent(id) + '/preview';
+    var url = (window.__ROOT__||'')+'/admin/uploads/' + encodeURIComponent(id) + '/preview';
     if (IMAGE_EXTS.has(ext)) {
       var img = document.createElement('img');
       img.className = 'preview-img';

@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import Response
 
-from core.settings import get_settings, validate_security_settings
+from core.settings import get_settings, load_dotenv, validate_security_settings
 from storage import (
     RETENTION_DAYS,
     ensure_file_dir,
@@ -30,10 +30,20 @@ from tools.common import templates
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Load .env early so ROOT_PATH is available without forcing full security load.
+load_dotenv()
+
 # Pre-compute static data that never changes at runtime
 _nav_items = nav_categories()
 _tool_count = len(TOOL_REGISTRY)
 _categories_cache = tools_by_category()
+
+
+def _import_root_path() -> str:
+    """Read ROOT_PATH without full credential validation (import-time safe)."""
+    from core.settings import _normalize_root_path
+
+    return _normalize_root_path(os.environ.get("ROOT_PATH") or "")
 
 
 def _page_ctx(
@@ -55,7 +65,6 @@ def _page_ctx(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from storage.history import _do_cleanup
-    from core.settings import load_dotenv
 
     # Project-root .env for local runs (does not override real process env).
     load_dotenv()
@@ -69,7 +78,21 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="工具集", version="0.9.0", lifespan=lifespan)
+app = FastAPI(
+    title="工具集",
+    version="0.9.0",
+    lifespan=lifespan,
+    root_path=_import_root_path(),
+)
+
+# Trust X-Forwarded-* from reverse proxies (Baota/Nginx). Safe when only the
+# proxy can reach uvicorn; restrict via network, not by disabling this.
+try:
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+except Exception:
+    pass
 
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
@@ -77,8 +100,14 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 @app.middleware("http")
 async def static_cache_headers(request: Request, call_next):
     response: Response = await call_next(request)
-    if request.url.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "public, max-age=86400"
+    path = request.url.path
+    # Templates use static_url(...?v=mtime); allow long cache for versioned assets.
+    if "/static/" in path:
+        if request.url.query and "v=" in request.url.query:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            # Unversioned /static requests: short cache so reverse-proxy mistakes heal faster
+            response.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
     return response
 
 
@@ -122,18 +151,24 @@ async def category_page(request: Request, category_id: str):
 
 # Friendly aliases (optional bookmarks)
 @app.get("/documents", response_class=HTMLResponse)
-async def documents_alias():
-    return RedirectResponse(url="/c/document", status_code=307)
+async def documents_alias(request: Request):
+    from tools.common import url_path
+
+    return RedirectResponse(url=url_path("/c/document", request), status_code=307)
 
 
 @app.get("/coding", response_class=HTMLResponse)
-async def coding_alias():
-    return RedirectResponse(url="/c/coding", status_code=307)
+async def coding_alias(request: Request):
+    from tools.common import url_path
+
+    return RedirectResponse(url=url_path("/c/coding", request), status_code=307)
 
 
 @app.get("/office", response_class=HTMLResponse)
-async def office_alias():
-    return RedirectResponse(url="/c/office", status_code=307)
+async def office_alias(request: Request):
+    from tools.common import url_path
+
+    return RedirectResponse(url=url_path("/c/office", request), status_code=307)
 
 
 @app.get("/api/tools")
@@ -184,6 +219,7 @@ async def health():
                 "count": len(list_records(limit=200)),
             },
             "convert_concurrency": get_settings().convert_concurrency,
+            "root_path": get_settings().root_path or "",
         }
     )
 

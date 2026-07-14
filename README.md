@@ -63,6 +63,19 @@ python app.py
 uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
+### 宝塔 / Nginx 反代（域名访问布局错乱）
+
+用 **IP:端口** 正常、**域名反代后页面乱版**，几乎都是 **CSS 没加载到**（`/static/css/*.css` 404 或返回了 HTML）。
+
+1. **先自检**：域名打开站点 → F12 → Network，看  
+   `/static/css/tokens.css`、`layout.css`、`home.css` 是否 **200**。  
+   若是 404，说明反代没把 `/static` 转到本应用。
+2. **推荐配置**：域名站点「反向代理」目标为 `http://127.0.0.1:你的端口`，**整站** `/` 反代，不要单独把 `/static` 指到别的网站根目录。  
+   参考仓库内 `deploy/nginx-baota.conf.example`。
+3. 必须带上：`Host`、`X-Forwarded-Proto`、`X-Forwarded-For`；上传/转换调大 `client_max_body_size` 与 `proxy_read_timeout`。
+4. 仅当域名挂在**子路径**（如 `https://x.com/toolkit/`）时，在 `.env` 设置 `ROOT_PATH=/toolkit` 并按示例 Nginx 去掉前缀；**域名根目录反代不要设置 `ROOT_PATH`**。
+5. HTTPS 站点若 Cookie 需 Secure，可设 `ADMIN_COOKIE_SECURE=1`。
+
 ### 管理后台
 
 浏览器打开 http://127.0.0.1:8000/admin

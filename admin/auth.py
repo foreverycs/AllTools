@@ -62,15 +62,23 @@ def is_admin(request: Request) -> bool:
     return verify_session_token(request.cookies.get(COOKIE_NAME))
 
 
+def _cookie_path() -> str:
+    root = get_settings().root_path
+    return root or "/"
+
+
 def require_admin(request: Request) -> Optional[RedirectResponse]:
     """Return a login redirect if not authenticated; otherwise None."""
     if is_admin(request):
         return None
+    from tools.common import url_path
+
     nxt = request.url.path
     if request.url.query:
         nxt = f"{nxt}?{request.url.query}"
+    login = url_path("/admin/login", request)
     return RedirectResponse(
-        url=f"/admin/login?next={quote(nxt, safe='/?&=')}",
+        url=f"{login}?next={quote(nxt, safe='/?&=')}",
         status_code=303,
     )
 
@@ -83,10 +91,10 @@ def set_session_cookie(response, token: str) -> None:
         httponly=True,
         samesite="lax",
         max_age=s.admin_session_ttl_sec,
-        path="/",
+        path=_cookie_path(),
         secure=s.admin_cookie_secure,
     )
 
 
 def clear_session_cookie(response) -> None:
-    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(COOKIE_NAME, path=_cookie_path())
