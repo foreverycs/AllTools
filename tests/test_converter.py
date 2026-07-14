@@ -670,6 +670,80 @@ def test_scanned_page_embeds_full_image():
     assert doc.inline_shapes
 
 
+def test_embedded_image_keeps_native_resolution(tmp_path):
+    """High-res PDF XObject should be kept, not downsampled via low-DPI raster."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+    from PIL import Image
+    import io
+    from converter.pdf_reader import ImageBlock
+
+    pdf_path = str(tmp_path / "hires.pdf")
+    # 800×600 source displayed in a 200×150 pt box (~288 DPI equivalent).
+    src = Image.new("RGB", (800, 600), color=(20, 100, 180))
+    for x in range(0, 800, 10):
+        for y in range(0, 600, 10):
+            src.putpixel((x, y), (255, 220, 0))
+    buf = io.BytesIO()
+    src.save(buf, format="PNG")
+    buf.seek(0)
+
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    c.drawImage(ImageReader(buf), 72, 400, width=200, height=150)
+    c.setFont("Helvetica", 11)
+    c.drawString(72, 380, "caption")
+    c.save()
+
+    pages = extract_document(pdf_path)
+    images = [b for b in pages[0].blocks if isinstance(b, ImageBlock)]
+    assert images, "expected embedded image block"
+    pil = Image.open(io.BytesIO(images[0].image_bytes))
+    # Must retain native (or higher) resolution — not the old 144 DPI crop
+    # which would be only ~400×300 for a 200×150 pt box.
+    assert pil.size[0] >= 700 and pil.size[1] >= 500, pil.size
+    assert abs(images[0].width_pt - 200) < 1
+    assert abs(images[0].height_pt - 150) < 1
+
+
+def test_image_only_page_keeps_partial_native_image(tmp_path):
+    """A page with only a photo (no text) must not re-rasterise the whole page."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+    from PIL import Image
+    import io
+    from converter.pdf_reader import ImageBlock
+
+    pdf_path = str(tmp_path / "photo_only.pdf")
+    src = Image.new("RGB", (1200, 900), color=(10, 20, 30))
+    for x in range(0, 1200, 8):
+        src.putpixel((x, 50), (255, 0, 0))
+    buf = io.BytesIO()
+    src.save(buf, format="JPEG", quality=95)
+    buf.seek(0)
+
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    # Partial-page image, no text operators at all.
+    c.drawImage(ImageReader(buf), 50, 350, width=300, height=225)
+    c.save()
+
+    pages = extract_document(pdf_path)
+    images = [b for b in pages[0].blocks if isinstance(b, ImageBlock)]
+    assert images, "expected image block"
+    pil = Image.open(io.BytesIO(images[0].image_bytes))
+    # Native 1200×900 — not a full-page 220 DPI A4 (~1819×2573) re-render.
+    assert pil.size[0] >= 1000 and pil.size[1] >= 700, pil.size
+    assert pil.size[0] < 1600, f"looks like full-page re-render: {pil.size}"
+    assert abs(images[0].width_pt - 300) < 2
+
+
+def test_image_render_dpi_default_raised():
+    from converter import pdf_reader
+
+    assert pdf_reader.IMAGE_RENDER_DPI >= 200
+
+
 def test_image_h_align_helper():
     from converter.pdf_reader import _image_h_align
 

@@ -17,7 +17,15 @@ LINE_GAP = 3.0              # max vertical gap (pt) to group words into one text
 TEXT_COL_GAP = 40.0
 MIN_IMAGE_AREA = 40.0 * 40.0  # skip decorative icons smaller than this (pt²)
 MAX_IMAGES_PER_PAGE = 15
-IMAGE_RENDER_DPI = 144
+# Fallback rasterisation DPI when the PDF stream cannot be extracted natively.
+# 144 made screenshots/photos look soft in Word; 220 is a better default for
+# print-like sharpness without huge DOCX payloads. Override with PDF2WORD_IMAGE_DPI.
+IMAGE_RENDER_DPI = int(os.environ.get("PDF2WORD_IMAGE_DPI", "220"))
+# Cap the long edge of rendered bitmaps (px) to keep memory / file size bounded.
+IMAGE_RENDER_MAX_PX = int(os.environ.get("PDF2WORD_IMAGE_MAX_PX", "3500"))
+# Prefer native embedded streams when their pixel density is at least this
+# many pixels per PDF point on either axis (≈96 DPI ≈ 1.33 px/pt).
+IMAGE_NATIVE_MIN_PX_PER_PT = 1.2
 # Thin filled rectangles / strokes treated as horizontal rules (pt).
 HLINE_MAX_THICKNESS = 2.5
 HLINE_MIN_WIDTH = 40.0
@@ -26,7 +34,7 @@ TABLE_OVERLAP_REJECT = 0.45
 # Word bbox must cover this fraction of a grid cell to claim a merge span.
 SPAN_COVER_RATIO = 0.55
 # OCR render resolution (higher than display images for better recognition).
-OCR_RENDER_DPI = 200
+OCR_RENDER_DPI = int(os.environ.get("PDF2WORD_OCR_DPI", "250"))
 # Borderless (text-strategy) tables: reject grids that look like prose / multi-col
 # layout rather than real forms. Line-based tables bypass these limits.
 TEXT_TABLE_MAX_COLS = 6
@@ -1218,20 +1226,221 @@ def _bbox_overlap_ratio(a, b) -> float:
     return inter / area
 
 
-def _render_region_png(page, bbox, resolution: int = IMAGE_RENDER_DPI) -> Optional[bytes]:
+def _clamp_render_dpi(width_pt: float, height_pt: float, base_dpi: int) -> int:
+    """Lower DPI when the region would exceed IMAGE_RENDER_MAX_PX on a side."""
+    dpi = max(72, int(base_dpi))
+    w_px = width_pt * dpi / 72.0
+    h_px = height_pt * dpi / 72.0
+    long_edge = max(w_px, h_px, 1.0)
+    if long_edge <= IMAGE_RENDER_MAX_PX:
+        return dpi
+    scale = IMAGE_RENDER_MAX_PX / long_edge
+    return max(96, int(dpi * scale))
+
+
+def _pil_to_png_bytes(pil) -> Optional[bytes]:
+    try:
+        if pil.mode not in ("RGB", "RGBA", "L", "LA", "P"):
+            pil = pil.convert("RGB")
+        elif pil.mode == "P":
+            pil = pil.convert("RGBA" if "transparency" in pil.info else "RGB")
+        buf = io.BytesIO()
+        # optimize=True on huge images is slow and rarely shrinks photos much.
+        pil.save(buf, format="PNG", optimize=False, compress_level=6)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _pdf_name_str(value) -> str:
+    if value is None:
+        return ""
+    text = str(value)
+    if text.startswith("/"):
+        text = text[1:]
+    # pdfminer may yield "PSLiteral(DeviceRGB)"-like forms
+    if "Device" in text or "ICC" in text or "Indexed" in text or "Cal" in text:
+        for token in (
+            "DeviceRGB", "DeviceGray", "DeviceCMYK", "ICCBased",
+            "Indexed", "CalRGB", "CalGray",
+        ):
+            if token in text:
+                return token
+    return text.strip()
+
+
+def _colorspace_kind(colorspace) -> str:
+    """Map pdfplumber / pdfminer colorspace to a coarse kind."""
+    if colorspace is None:
+        return ""
+    if isinstance(colorspace, (list, tuple)) and colorspace:
+        return _colorspace_kind(colorspace[0])
+    name = _pdf_name_str(colorspace).lower()
+    if "cmyk" in name:
+        return "cmyk"
+    if "gray" in name or "grey" in name:
+        return "gray"
+    if "rgb" in name or "icc" in name or "calrgb" in name:
+        return "rgb"
+    if "index" in name:
+        return "indexed"
+    return name
+
+
+def _stream_filter_names(stream) -> List[str]:
+    attrs = getattr(stream, "attrs", None) or {}
+    filt = attrs.get("Filter")
+    if filt is None:
+        return []
+    if isinstance(filt, (list, tuple)):
+        return [_pdf_name_str(f) for f in filt]
+    return [_pdf_name_str(filt)]
+
+
+def _embedded_stream_png(img: dict) -> Optional[bytes]:
+    """Decode the PDF image XObject to PNG without re-rasterising the page.
+
+    Prefer native streams (JPEG / raw RGB / Gray / CMYK) so Word keeps the
+    source pixel resolution. Returns None when the stream is unsupported
+    (masks, exotic filters, JBIG2, JPX without codec, etc.).
+    """
+    stream = img.get("stream")
+    if stream is None or not hasattr(stream, "get_data"):
+        return None
+    try:
+        data = stream.get_data()
+    except Exception:
+        return None
+    if not data:
+        return None
+
+    filters = [f.lower() for f in _stream_filter_names(stream)]
+    # Encoded image formats that Pillow can open directly after decode.
+    if data[:3] == b"\xff\xd8\xff" or any("dct" in f for f in filters):
+        try:
+            from PIL import Image
+
+            pil = Image.open(io.BytesIO(data))
+            pil.load()
+            return _pil_to_png_bytes(pil)
+        except Exception:
+            pass
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return bytes(data)
+    if data[:2] == b"BM":
+        try:
+            from PIL import Image
+
+            pil = Image.open(io.BytesIO(data))
+            pil.load()
+            return _pil_to_png_bytes(pil)
+        except Exception:
+            pass
+
+    # Raw samples (typically FlateDecode → uncompressed pixels).
+    src = img.get("srcsize") or (0, 0)
+    try:
+        width, height = int(src[0]), int(src[1])
+    except (TypeError, ValueError, IndexError):
+        attrs = getattr(stream, "attrs", None) or {}
+        try:
+            width = int(attrs.get("Width") or 0)
+            height = int(attrs.get("Height") or 0)
+        except (TypeError, ValueError):
+            width = height = 0
+    if width < 2 or height < 2:
+        return None
+
+    bits = int(img.get("bits") or (getattr(stream, "attrs", None) or {}).get("BitsPerComponent") or 8)
+    if bits != 8:
+        return None
+    if img.get("imagemask"):
+        return None
+
+    kind = _colorspace_kind(img.get("colorspace"))
+    attrs = getattr(stream, "attrs", None) or {}
+    if not kind:
+        kind = _colorspace_kind(attrs.get("ColorSpace"))
+
+    try:
+        from PIL import Image
+    except Exception:
+        return None
+
+    expected = {
+        "rgb": width * height * 3,
+        "gray": width * height,
+        "cmyk": width * height * 4,
+    }
+    try:
+        if kind == "rgb" and len(data) >= expected["rgb"]:
+            pil = Image.frombytes("RGB", (width, height), data[: expected["rgb"]])
+        elif kind == "gray" and len(data) >= expected["gray"]:
+            pil = Image.frombytes("L", (width, height), data[: expected["gray"]])
+        elif kind == "cmyk" and len(data) >= expected["cmyk"]:
+            pil = Image.frombytes("CMYK", (width, height), data[: expected["cmyk"]])
+            pil = pil.convert("RGB")
+        else:
+            # Last resort: try Pillow on the raw buffer (may work for some filters).
+            try:
+                pil = Image.open(io.BytesIO(data))
+                pil.load()
+            except Exception:
+                return None
+        return _pil_to_png_bytes(pil)
+    except Exception:
+        return None
+
+
+def _native_image_is_sharp_enough(img: dict, width_pt: float, height_pt: float) -> bool:
+    """True when embedded pixel size is dense enough for the on-page box.
+
+    Also accept the stream when it already has at least as many pixels as a
+    default high-DPI re-render would produce (avoids needlessly re-rasterising
+    large photos that are slightly under the px/pt threshold on one axis).
+    """
+    src = img.get("srcsize")
+    if not src:
+        return False
+    try:
+        pw, ph = float(src[0]), float(src[1])
+    except (TypeError, ValueError, IndexError):
+        return False
+    if width_pt <= 1 or height_pt <= 1 or pw < 2 or ph < 2:
+        return False
+    if (
+        pw / width_pt >= IMAGE_NATIVE_MIN_PX_PER_PT
+        and ph / height_pt >= IMAGE_NATIVE_MIN_PX_PER_PT
+    ):
+        return True
+    # Compare to what IMAGE_RENDER_DPI would yield for this box.
+    dpi = _clamp_render_dpi(width_pt, height_pt, IMAGE_RENDER_DPI)
+    target_w = width_pt * dpi / 72.0
+    target_h = height_pt * dpi / 72.0
+    return pw >= target_w * 0.9 and ph >= target_h * 0.9
+
+
+def _render_region_png(
+    page,
+    bbox,
+    resolution: Optional[int] = None,
+) -> Optional[bytes]:
     """Rasterise a page region to PNG bytes. Returns None on failure."""
     try:
+        x0, top, x1, bottom = bbox
+        width_pt = max(float(x1) - float(x0), 1.0)
+        height_pt = max(float(bottom) - float(top), 1.0)
+        base = IMAGE_RENDER_DPI if resolution is None else int(resolution)
+        dpi = _clamp_render_dpi(width_pt, height_pt, base)
         cropped = page.crop(bbox, strict=False)
-        pil = cropped.to_image(resolution=resolution).original
+        pil = cropped.to_image(resolution=dpi).original
         if pil is None:
             return None
         # Drop nearly-blank crops (e.g. failed extract of vector-only art).
         extrema = pil.convert("L").getextrema()
         if extrema is not None and extrema[0] == extrema[1]:
             return None
-        buf = io.BytesIO()
-        pil.save(buf, format="PNG", optimize=True)
-        return buf.getvalue()
+        return _pil_to_png_bytes(pil)
     except Exception:
         return None
 
@@ -1254,7 +1463,12 @@ def _image_h_align(x0: float, width: float, page_w: float) -> str:
 
 
 def _extract_images(page, table_bboxes) -> List[ImageBlock]:
-    """Pull embedded image regions that sit outside tables."""
+    """Pull embedded image regions that sit outside tables.
+
+    Prefer the native PDF image stream (full source resolution). Only fall
+    back to page-region rasterisation when the stream cannot be decoded or is
+    too low-density for the on-page display size.
+    """
     raw = getattr(page, "images", None) or []
     if not raw:
         return []
@@ -1288,7 +1502,16 @@ def _extract_images(page, table_bboxes) -> List[ImageBlock]:
         bbox = (x0, top, x1, bottom)
         if any(_bbox_overlap_ratio(bbox, tb) > 0.5 for tb in table_bboxes):
             continue
-        png = _render_region_png(page, bbox)
+
+        png: Optional[bytes] = None
+        native = _embedded_stream_png(img)
+        if native and _native_image_is_sharp_enough(img, w, h):
+            png = native
+        if not png:
+            # High-DPI region render (or soft native stream as last resort).
+            png = _render_region_png(page, bbox)
+        if not png and native:
+            png = native
         if not png:
             continue
         blocks.append(ImageBlock(
@@ -1311,6 +1534,28 @@ def _render_full_page_image(page) -> Optional[ImageBlock]:
         h = float(getattr(page, "height", 0) or 0)
         if w <= 0 or h <= 0:
             return None
+        # Prefer the largest embedded full-page stream when present (true scan DPI).
+        for img in getattr(page, "images", None) or []:
+            try:
+                ix0, itop = float(img["x0"]), float(img["top"])
+                ix1, ibot = float(img["x1"]), float(img["bottom"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            iw, ih = ix1 - ix0, ibot - itop
+            if iw * ih / max(w * h, 1.0) < 0.85:
+                continue
+            native = _embedded_stream_png(img)
+            if native and _native_image_is_sharp_enough(img, iw, ih):
+                return ImageBlock(
+                    image_bytes=native,
+                    top=0.0,
+                    bottom=h,
+                    x0=0.0,
+                    width_pt=w,
+                    height_pt=h,
+                    page_width=w,
+                    align="center",
+                )
         png = _render_region_png(page, (0, 0, w, h), resolution=IMAGE_RENDER_DPI)
         if not png:
             return None
@@ -1450,7 +1695,10 @@ def _extract_page(page, *, ocr: bool = False, ocr_lang: Optional[str] = None) ->
             # OCR text alone is the editable output; caller can re-run without OCR
             # for image-only. Still attach page image only when OCR found nothing.
             blocks = sorted(ocr_blocks, key=lambda b: b.top)
-        else:
+        elif not any(isinstance(b, ImageBlock) for b in blocks):
+            # Only fall back to a full-page raster when nothing was extracted.
+            # Replacing already-decoded native XObjects with a page re-render
+            # was dropping sharpness (e.g. a lone photo with no caption text).
             full = _render_full_page_image(page)
             if full is not None:
                 blocks = [full]
