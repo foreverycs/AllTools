@@ -8,7 +8,9 @@
   font-family: var(--font);
   color: var(--ink);
   background: #f0f2f7;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 .admin-body,
 .admin-body *,
@@ -21,11 +23,30 @@
 .admin-layout {
   display: grid;
   grid-template-columns: 240px 1fr;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 @media (max-width: 860px) {
-  .admin-layout { grid-template-columns: 1fr; }
-  .admin-side { position: sticky; top: 0; z-index: 5; }
+  .admin-body { height: auto; min-height: 100vh; min-height: 100dvh; overflow: auto; }
+  .admin-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .admin-side {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    height: auto;
+    max-height: none;
+  }
+  .admin-main {
+    height: auto;
+    overflow: visible;
+  }
 }
 
 /* --- Sidebar --- */
@@ -38,6 +59,8 @@
   gap: 6px;
   border-right: 1px solid rgba(99, 102, 241, 0.08);
   position: relative;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 .admin-side::before {
@@ -157,6 +180,12 @@
 .admin-main {
   padding: 28px 32px 48px;
   width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   animation: admin-fade-in 0.25s ease-out;
 }
 @keyframes admin-fade-in {
