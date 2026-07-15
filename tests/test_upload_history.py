@@ -72,15 +72,17 @@ def test_cleanup_expired(hist_dir, tmp_path):
     )
     assert rec is not None
 
-    # Backdate the record past retention
-    path = h.file_dir() / "records.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
+    # Backdate the record past retention via SQLite
+    import sqlite3
+
+    db_path = h.file_dir() / "records.db"
     old_ts = (datetime.now(timezone.utc) - timedelta(days=6)).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
-    data[0]["created_at"] = old_ts
-    # also put files under an old day folder name is fine; cleanup uses created_at
-    path.write_text(json.dumps(data), encoding="utf-8")
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("UPDATE records SET created_at = ? WHERE id = ?", (old_ts, rec["id"]))
+    conn.commit()
+    conn.close()
 
     h._last_cleanup_ts = 0.0
     removed = h._do_cleanup()

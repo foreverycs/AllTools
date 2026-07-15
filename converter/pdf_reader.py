@@ -56,6 +56,68 @@ __all__ = [
     "content_warnings",
 ]
 
+# ----- spatial index for words -----------------------------------------------
+_BUCKET_SIZE = 20.0  # pt — covers typical text-line height
+
+
+class WordIndex:
+    """Y-coordinate bucketed spatial index over pdfplumber word dicts.
+
+    Built once per page; replaces O(N) linear scans with O(K) bucket lookups
+    where K is the number of words in the queried vertical band.
+    """
+
+    __slots__ = ("_buckets", "_bucket_size", "all_words")
+
+    def __init__(self, words: list, bucket_size: float = _BUCKET_SIZE):
+        self._bucket_size = bucket_size
+        self.all_words = words
+        self._buckets: dict[int, list] = {}
+        for w in words:
+            cy = (float(w["top"]) + float(w["bottom"])) / 2.0
+            key = int(cy / bucket_size)
+            bucket = self._buckets.get(key)
+            if bucket is None:
+                self._buckets[key] = [w]
+            else:
+                bucket.append(w)
+
+    def _candidate_keys(self, top: float, bottom: float) -> range:
+        lo = int(top / self._bucket_size) - 1
+        hi = int(bottom / self._bucket_size) + 1
+        return range(lo, hi + 1)
+
+    def query_rect(self, x0: float, top: float, x1: float, bottom: float,
+                   pad: float = 1.0) -> list:
+        """Return words whose centre falls inside the padded rectangle."""
+        out: list = []
+        for k in self._candidate_keys(top - pad, bottom + pad):
+            bucket = self._buckets.get(k)
+            if bucket is None:
+                continue
+            for w in bucket:
+                cx = (w["x0"] + w["x1"]) / 2.0
+                cy = (w["top"] + w["bottom"]) / 2.0
+                if x0 - pad <= cx <= x1 + pad and top - pad <= cy <= bottom + pad:
+                    out.append(w)
+        return out
+
+    def query_outside_rects(self, bboxes: list) -> list:
+        """Return words whose centre is NOT inside any of the bboxes."""
+        out: list = []
+        for w in self.all_words:
+            cx = (w["x0"] + w["x1"]) / 2.0
+            cy = (w["top"] + w["bottom"]) / 2.0
+            inside = False
+            for (bx0, btop, bx1, bbottom) in bboxes:
+                if bx0 - 1 <= cx <= bx1 + 1 and btop - 1 <= cy <= bbottom + 1:
+                    inside = True
+                    break
+            if not inside:
+                out.append(w)
+        return out
+
+
 # ----- low level helpers ----------------------------------------------------
 _CJK_RE = re.compile(
     r"[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]"
@@ -143,7 +205,7 @@ def _index_of(value: float, bounds: List[float]) -> Optional[int]:
     return None
 
 
-def _build_table(table, page, words) -> Optional[TableBlock]:
+def _build_table(table, page, widx: WordIndex) -> Optional[TableBlock]:
     # In pdfplumber >=0.11 `table.cells` is a flat list of (x0, top, x1, bottom)
     # rects describing the detected grid. A merged region is rendered as a
     # single rect that spans multiple column/row bands, so the rect geometry is
@@ -159,9 +221,9 @@ def _build_table(table, page, words) -> Optional[TableBlock]:
     # `extract()` gives the text of every (non-covered) cell.
     logical = table.extract()
 
-    # `words` is the page-level word list (extracted once by the caller) carrying
-    # font name/size; we only keep the ones inside this table's bbox.
+    # Use spatial index for words inside this table's bbox.
     x0, top, x1, bottom = table.bbox
+    table_words = widx.query_rect(x0, top, x1, bottom, pad=1.0)
     # Lines that lie within this table, used for per-edge border detection.
     table_lines = [
         ln for ln in page.lines
@@ -174,9 +236,7 @@ def _build_table(table, page, words) -> Optional[TableBlock]:
     # alignment line-by-line (a wrapped paragraph reveals its alignment on every
     # line, not on the union bounding box).
     word_lines: dict = {}
-    for w in words:
-        if w["x1"] < x0 - 1 or w["x0"] > x1 + 1 or w["bottom"] < top - 1 or w["top"] > bottom + 1:
-            continue
+    for w in table_words:
         cx = (w["x0"] + w["x1"]) / 2
         cy = (w["top"] + w["bottom"]) / 2
         ci = _index_of(cx, vx)
@@ -319,7 +379,7 @@ def _build_table(table, page, words) -> Optional[TableBlock]:
         borders = _cell_borders(table_lines, vx[c_start], vx[c_end + 1],
                                 hy[r_start], hy[r_end + 1])
         paragraphs = _region_paragraphs(
-            words, vx, hy, r_start, c_start, r_end, c_end
+            widx, vx, hy, r_start, c_start, r_end, c_end
         )
         if paragraphs and not text:
             text = _paragraphs_to_text(paragraphs)
@@ -344,7 +404,7 @@ def _build_table(table, page, words) -> Optional[TableBlock]:
 
     # Text-strategy / partial grids: grow merges when a word bbox spans
     # multiple empty neighbour cells (common for borderless tables).
-    _refine_merges_from_words(cells, owner, vx, hy, words, x0, top, x1, bottom)
+    _refine_merges_from_words(cells, owner, vx, hy, widx, x0, top, x1, bottom)
 
     # Fill still-empty anchors with word text when extract() left them blank.
     for r in range(nrows):
@@ -358,7 +418,7 @@ def _build_table(table, page, words) -> Optional[TableBlock]:
                 continue
             r1 = r + cell.rowspan - 1
             c1 = c + cell.colspan - 1
-            paragraphs = _region_paragraphs(words, vx, hy, r, c, r1, c1)
+            paragraphs = _region_paragraphs(widx, vx, hy, r, c, r1, c1)
             if not paragraphs:
                 continue
             cell.paragraphs = paragraphs
@@ -391,7 +451,7 @@ def _paragraphs_to_text(paragraphs: List[List[TextRun]]) -> str:
 
 
 def _region_paragraphs(
-    words,
+    widx: WordIndex,
     vx: List[float],
     hy: List[float],
     r0: int,
@@ -402,12 +462,7 @@ def _region_paragraphs(
     """Build nested paragraphs/runs for a cell region from page words."""
     cell_l, cell_r = vx[c0], vx[c1 + 1]
     cell_t, cell_b = hy[r0], hy[r1 + 1]
-    region_words = []
-    for w in words:
-        cx = (w["x0"] + w["x1"]) / 2
-        cy = (w["top"] + w["bottom"]) / 2
-        if cell_l - 1 <= cx <= cell_r + 1 and cell_t - 1 <= cy <= cell_b + 1:
-            region_words.append(w)
+    region_words = widx.query_rect(cell_l, cell_t, cell_r, cell_b, pad=1.0)
     if not region_words:
         return []
 
@@ -462,7 +517,7 @@ def _refine_merges_from_words(
     owner: List[List[Tuple[int, int]]],
     vx: List[float],
     hy: List[float],
-    words,
+    widx: WordIndex,
     table_x0: float,
     table_top: float,
     table_x1: float,
@@ -480,8 +535,11 @@ def _refine_merges_from_words(
     if nrows < 1 or ncols < 2:
         return
 
+    # Use spatial index instead of full word list scan.
+    table_words = widx.query_rect(table_x0, table_top, table_x1, table_bottom, pad=1.0)
+
     # Collect candidate horizontal spans per row from words.
-    for w in words:
+    for w in table_words:
         if (w["x1"] < table_x0 - 1 or w["x0"] > table_x1 + 1
                 or w["bottom"] < table_top - 1 or w["top"] > table_bottom + 1):
             continue
@@ -745,15 +803,9 @@ def _table_bbox_from_block(tb: TableBlock) -> Tuple[float, float, float, float]:
     return (tb.x0, tb.top, x1, tb.bottom)
 
 
-def _words_in_bbox(words, bbox: Tuple[float, float, float, float], pad: float = 1.0):
+def _words_in_bbox(widx: WordIndex, bbox: Tuple[float, float, float, float], pad: float = 1.0):
     x0, top, x1, bottom = bbox
-    out = []
-    for w in words:
-        cx = (w["x0"] + w["x1"]) / 2.0
-        cy = (w["top"] + w["bottom"]) / 2.0
-        if x0 - pad <= cx <= x1 + pad and top - pad <= cy <= bottom + pad:
-            out.append(w)
-    return out
+    return widx.query_rect(x0, top, x1, bottom, pad=pad)
 
 
 def _estimate_aligned_columns(words, x_tol: float = TEXT_COL_CLUSTER_TOL) -> int:
@@ -793,7 +845,7 @@ def _table_anchor_stats(tb: TableBlock) -> Tuple[List[Cell], List[str], List[int
     return anchors, filled_texts, col_fill, row_fill
 
 
-def _inter_column_text_gaps(tb: TableBlock, words) -> List[float]:
+def _inter_column_text_gaps(tb: TableBlock, widx: WordIndex) -> List[float]:
     """Horizontal gaps between consecutive non-empty cell texts on the same row.
 
     Large gaps (label …… value) are typical of forms; small gaps mean the
@@ -825,12 +877,9 @@ def _inter_column_text_gaps(tb: TableBlock, words) -> List[float]:
             cx0, cx1 = vx[c], vx[c + cell.colspan]
             cy0, cy1 = hy[r], hy[min(r + cell.rowspan, tb.rows)]
             xs0, xs1 = [], []
-            for w in words:
-                wcx = (w["x0"] + w["x1"]) / 2.0
-                wcy = (w["top"] + w["bottom"]) / 2.0
-                if cx0 - 1 <= wcx <= cx1 + 1 and cy0 - 1 <= wcy <= cy1 + 1:
-                    xs0.append(w["x0"])
-                    xs1.append(w["x1"])
+            for w in widx.query_rect(cx0, cy0, cx1, cy1, pad=1.0):
+                xs0.append(w["x0"])
+                xs1.append(w["x1"])
             if not xs0:
                 continue
             pieces.append((c, min(xs0), max(xs1)))
@@ -842,7 +891,7 @@ def _inter_column_text_gaps(tb: TableBlock, words) -> List[float]:
     return gaps
 
 
-def _is_plausible_borderless_table(tb: TableBlock, words) -> bool:
+def _is_plausible_borderless_table(tb: TableBlock, widx: WordIndex) -> bool:
     """Heuristic gate for tables found without a drawn grid (text strategy).
 
     pdfplumber's text/text strategy eagerly treats multi-column prose and even
@@ -884,7 +933,7 @@ def _is_plausible_borderless_table(tb: TableBlock, words) -> bool:
         return False
 
     bbox = _table_bbox_from_block(tb)
-    in_words = _words_in_bbox(words, bbox)
+    in_words = _words_in_bbox(widx, bbox)
     n_words = len(in_words)
     if n_words < TEXT_TABLE_MIN_FILLED:
         return False
@@ -902,7 +951,7 @@ def _is_plausible_borderless_table(tb: TableBlock, words) -> bool:
 
     # Adjacent cells with only word-spacing gaps → prose line, not form columns.
     # Real borderless forms leave a clear gutter (often 30–80+ pt) between fields.
-    gaps = _inter_column_text_gaps(tb, words)
+    gaps = _inter_column_text_gaps(tb, widx)
     gap_mid = None
     if gaps:
         gaps_sorted = sorted(gaps)
@@ -932,7 +981,7 @@ def _is_plausible_borderless_table(tb: TableBlock, words) -> bool:
     return True
 
 
-def _accept_table(tb: TableBlock, page, words) -> bool:
+def _accept_table(tb: TableBlock, page, widx: WordIndex) -> bool:
     """Keep line-grid tables; only accept borderless ones that look like forms."""
     bbox = _table_bbox_from_block(tb)
     _, filled_texts, _, _ = _table_anchor_stats(tb)
@@ -941,7 +990,7 @@ def _accept_table(tb: TableBlock, page, words) -> bool:
     if _has_drawn_grid(page, bbox):
         # Real ruled table: still require a minimal grid shape.
         return tb.rows >= 1 and tb.cols >= 1
-    return _is_plausible_borderless_table(tb, words)
+    return _is_plausible_borderless_table(tb, widx)
 
 
 def _find_tables(page):
@@ -996,6 +1045,11 @@ def _find_tables(page):
         },
     ]
     kept = []
+    page_area = max(
+        (float(getattr(page, "width", 0) or 0))
+        * (float(getattr(page, "height", 0) or 0)),
+        1.0,
+    )
     for settings in settings_list:
         try:
             found = page.find_tables(settings) or []
@@ -1012,16 +1066,15 @@ def _find_tables(page):
             ):
                 continue
             kept.append(t)
+        # Short-circuit: if line-based strategies already cover most of the page,
+        # skip the expensive text/text strategy (which often mis-detects prose).
+        if kept:
+            covered = sum(
+                (t.bbox[2] - t.bbox[0]) * (t.bbox[3] - t.bbox[1]) for t in kept
+            )
+            if covered / page_area > 0.5:
+                break
     return kept
-
-
-def _in_any_bbox(word: dict, bboxes: List[Tuple[float, float, float, float]]) -> bool:
-    cx = (word["x0"] + word["x1"]) / 2
-    cy = (word["top"] + word["bottom"]) / 2
-    for (bx0, btop, bx1, bbottom) in bboxes:
-        if bx0 - 1 <= cx <= bx1 + 1 and btop - 1 <= cy <= bbottom + 1:
-            return True
-    return False
 
 
 def _text_h_align(x0: float, x1: float, page_w: float) -> str:
@@ -1079,8 +1132,8 @@ def _words_same_visual_line(line: List[dict], w: dict) -> bool:
     return False
 
 
-def _extract_text_blocks(page, table_bboxes, words) -> List[TextBlock]:
-    outside = [w for w in words if not _in_any_bbox(w, table_bboxes)]
+def _extract_text_blocks(page, table_bboxes, widx: WordIndex) -> List[TextBlock]:
+    outside = widx.query_outside_rects(table_bboxes)
     if not outside:
         return []
 
@@ -1573,23 +1626,24 @@ def _extract_page(page, *, ocr: bool = False, ocr_lang: Optional[str] = None) ->
     words = page.extract_words(
         use_text_flow=False, keep_blank_chars=False, extra_attrs=["fontname", "size"]
     )
+    widx = WordIndex(words)
     page_w = float(getattr(page, "width", 0) or 0)
     page_h = float(getattr(page, "height", 0) or 0)
     raw_tables = _find_tables(page)
     tables = []          # list of (top, TableBlock)
     bboxes = []
     for t in raw_tables:
-        tb = _build_table(t, page, words)
+        tb = _build_table(t, page, widx)
         if tb is None:
             continue
         # Drop text-strategy false positives (plain prose / multi-col layout
         # misread as a grid) so content stays as TextBlock / ImageBlock.
-        if not _accept_table(tb, page, words):
+        if not _accept_table(tb, page, widx):
             continue
         tables.append((tb.top, tb))
         bboxes.append(t.bbox)
 
-    text_blocks = _extract_text_blocks(page, bboxes, words)
+    text_blocks = _extract_text_blocks(page, bboxes, widx)
     image_blocks = _extract_images(page, bboxes)
     line_blocks = _extract_hlines(page, bboxes)
 

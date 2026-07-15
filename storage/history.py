@@ -3,7 +3,7 @@
 Layout::
 
     file/
-      records.json          # metadata list (newest first)
+      records.db            # SQLite metadata (WAL mode)
       2026-07-12/
         20260712T153045_a1b2_in.pdf
 
@@ -22,6 +22,7 @@ import logging
 import os
 import re
 import shutil
+import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -33,12 +34,26 @@ from core.settings import get_settings
 logger = logging.getLogger("toolkit.storage")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-RECORDS_NAME = "records.json"
+DB_NAME = "records.db"
+LEGACY_JSON_NAME = "records.json"
 
 _SAFE_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 _lock = threading.Lock()
 _last_cleanup_ts: float = 0.0
 _CLEANUP_INTERVAL: float = 300.0  # seconds
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS records (
+    id          TEXT PRIMARY KEY,
+    tool        TEXT NOT NULL DEFAULT '',
+    original_name TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT '',
+    input_rel   TEXT NOT NULL DEFAULT '',
+    input_bytes INTEGER NOT NULL DEFAULT 0,
+    extra_json  TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_records_created ON records(created_at DESC);
+"""
 
 
 def file_dir() -> Path:
@@ -55,7 +70,6 @@ def retention_days() -> int:
 
 
 # Backward-compatible names used by tests / older imports.
-# Prefer file_dir() / retention_days() in new code.
 def __getattr__(name: str) -> Any:
     if name == "FILE_DIR":
         return file_dir()
@@ -100,31 +114,82 @@ def ensure_file_dir() -> Path:
     return path
 
 
-def _records_path() -> Path:
-    return ensure_file_dir() / RECORDS_NAME
+def _db_path() -> Path:
+    return ensure_file_dir() / DB_NAME
 
 
-def _load_records() -> List[Dict[str, Any]]:
-    path = _records_path()
-    if not path.is_file():
-        return []
+def _get_conn() -> sqlite3.Connection:
+    """Return a connection to the records DB (creates if needed)."""
+    path = _db_path()
+    conn = sqlite3.connect(str(path), timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(_SCHEMA)
+    return conn
+
+
+def _migrate_json_if_needed(conn: sqlite3.Connection) -> None:
+    """Import legacy records.json into SQLite (one-time migration)."""
+    json_path = ensure_file_dir() / LEGACY_JSON_NAME
+    if not json_path.is_file():
+        return
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(json_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
+        return
     if not isinstance(data, list):
-        return []
-    return [r for r in data if isinstance(r, dict)]
+        return
+    # Check if DB already has records (migration already done)
+    count = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+    if count > 0:
+        # Already migrated; remove legacy file
+        try:
+            json_path.unlink()
+        except OSError:
+            pass
+        return
+    rows = []
+    for rec in data:
+        if not isinstance(rec, dict):
+            continue
+        extra = {k: v for k, v in rec.items()
+                 if k not in ("id", "tool", "original_name", "created_at",
+                              "input_rel", "input_bytes")}
+        rows.append((
+            rec.get("id", ""),
+            rec.get("tool", ""),
+            rec.get("original_name", ""),
+            rec.get("created_at", ""),
+            rec.get("input_rel", ""),
+            int(rec.get("input_bytes") or 0),
+            json.dumps(extra, ensure_ascii=False),
+        ))
+    if rows:
+        conn.executemany(
+            "INSERT OR IGNORE INTO records "
+            "(id, tool, original_name, created_at, input_rel, input_bytes, extra_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        conn.commit()
+    try:
+        json_path.unlink()
+    except OSError:
+        pass
+    logger.info("Migrated %d records from legacy JSON to SQLite", len(rows))
 
 
-def _save_records(records: List[Dict[str, Any]]) -> None:
-    path = _records_path()
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(records, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    tmp.replace(path)
+def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    d = dict(row)
+    extra = {}
+    try:
+        extra = json.loads(d.get("extra_json") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        pass
+    d.pop("extra_json", None)
+    d.update(extra)
+    return d
 
 
 def _cutoff() -> datetime:
@@ -151,7 +216,6 @@ def _unlink_quiet(path: Path) -> None:
 
 
 def _remove_record_files(record: Dict[str, Any]) -> None:
-    # Prefer input_rel; also drop legacy output_rel if present from older builds.
     root = file_dir()
     for key in ("input_rel", "output_rel"):
         rel = record.get(key)
@@ -180,42 +244,52 @@ def cleanup_expired() -> int:
 def _do_cleanup() -> int:
     root = ensure_file_dir()
     cutoff = _cutoff()
+    cutoff_iso = _iso(cutoff)
     removed = 0
     with _lock:
-        records = _load_records()
-        kept: List[Dict[str, Any]] = []
-        for rec in records:
-            if _is_expired(rec, cutoff):
+        conn = _get_conn()
+        try:
+            _migrate_json_if_needed(conn)
+            expired = conn.execute(
+                "SELECT * FROM records WHERE created_at < ? OR created_at = ''",
+                (cutoff_iso,),
+            ).fetchall()
+            for row in expired:
+                rec = _row_to_dict(row)
                 _remove_record_files(rec)
-                removed += 1
-            else:
-                kept.append(rec)
-        if removed:
-            _save_records(kept)
+            removed = len(expired)
+            if removed:
+                conn.execute(
+                    "DELETE FROM records WHERE created_at < ? OR created_at = ''",
+                    (cutoff_iso,),
+                )
+                conn.commit()
 
-        for child in list(root.iterdir()):
-            if not child.is_dir():
-                continue
-            try:
-                day = datetime.strptime(child.name, "%Y-%m-%d").replace(
-                    tzinfo=timezone.utc
-                )
-            except ValueError:
-                continue
-            day_start = cutoff.replace(hour=0, minute=0, second=0, microsecond=0)
-            if day >= day_start:
-                continue
-            try:
-                newest = max(
-                    (p.stat().st_mtime for p in child.rglob("*") if p.is_file()),
-                    default=0,
-                )
-            except OSError:
-                newest = 0
-            if newest == 0 or datetime.fromtimestamp(
-                newest, tz=timezone.utc
-            ) < cutoff:
-                shutil.rmtree(child, ignore_errors=True)
+            for child in list(root.iterdir()):
+                if not child.is_dir():
+                    continue
+                try:
+                    day = datetime.strptime(child.name, "%Y-%m-%d").replace(
+                        tzinfo=timezone.utc
+                    )
+                except ValueError:
+                    continue
+                day_start = cutoff.replace(hour=0, minute=0, second=0, microsecond=0)
+                if day >= day_start:
+                    continue
+                try:
+                    newest = max(
+                        (p.stat().st_mtime for p in child.rglob("*") if p.is_file()),
+                        default=0,
+                    )
+                except OSError:
+                    newest = 0
+                if newest == 0 or datetime.fromtimestamp(
+                    newest, tz=timezone.utc
+                ) < cutoff:
+                    shutil.rmtree(child, ignore_errors=True)
+        finally:
+            conn.close()
     return removed
 
 
@@ -285,33 +359,56 @@ def _archive_conversion(
         "input_rel": f"{day}/{stored_in}",
         "input_bytes": dest_in.stat().st_size,
     }
+    # Collect extra fields that are not in the core schema.
+    extra_fields: Dict[str, Any] = {}
     if extra:
         for k, v in extra.items():
             if k in record:
                 continue
             if isinstance(v, (str, int, float, bool)) or v is None:
-                record[k] = v
+                extra_fields[k] = v
             else:
-                record[k] = str(v)
+                extra_fields[k] = str(v)
 
     with _lock:
-        records = _load_records()
-        records.insert(0, record)
-        cutoff = _cutoff()
-        kept: List[Dict[str, Any]] = []
-        for rec in records:
-            if _is_expired(rec, cutoff):
-                if rec is not record:
+        conn = _get_conn()
+        try:
+            _migrate_json_if_needed(conn)
+            conn.execute(
+                "INSERT INTO records "
+                "(id, tool, original_name, created_at, input_rel, input_bytes, extra_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    uid, tool, record["original_name"], record["created_at"],
+                    record["input_rel"], record["input_bytes"],
+                    json.dumps(extra_fields, ensure_ascii=False),
+                ),
+            )
+            # Purge expired records inline.
+            cutoff = _cutoff()
+            cutoff_iso = _iso(cutoff)
+            expired = conn.execute(
+                "SELECT * FROM records WHERE created_at < ? OR created_at = ''",
+                (cutoff_iso,),
+            ).fetchall()
+            for row in expired:
+                rec = _row_to_dict(row)
+                if rec.get("id") != uid:
                     _remove_record_files(rec)
-            else:
-                kept.append(rec)
-        _save_records(kept)
+            conn.execute(
+                "DELETE FROM records WHERE created_at < ? OR created_at = ''",
+                (cutoff_iso,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     try:
         _do_cleanup()
     except Exception:
         logger.warning("post-archive cleanup failed", exc_info=True)
 
+    record.update(extra_fields)
     return record
 
 
@@ -322,13 +419,21 @@ def list_records(limit: int = 50) -> List[Dict[str, Any]]:
     except Exception:
         logger.warning("list_records cleanup failed", exc_info=True)
     root = file_dir()
-    with _lock:
-        records = _load_records()
     limit = max(1, min(int(limit), 200))
+    with _lock:
+        conn = _get_conn()
+        try:
+            _migrate_json_if_needed(conn)
+            rows = conn.execute(
+                "SELECT * FROM records ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        finally:
+            conn.close()
     out: List[Dict[str, Any]] = []
-    for rec in records[:limit]:
-        item = dict(rec)
-        rel = rec.get("input_rel")
+    for row in rows:
+        item = _row_to_dict(row)
+        rel = item.get("input_rel")
         item["input_exists"] = bool(rel) and (root / str(rel)).is_file()
         out.append(item)
     return out
@@ -341,7 +446,12 @@ def record_count() -> int:
     except Exception:
         pass
     with _lock:
-        return len(_load_records())
+        conn = _get_conn()
+        try:
+            _migrate_json_if_needed(conn)
+            return conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+        finally:
+            conn.close()
 
 
 def resolve_stored(rel: str) -> Optional[Path]:
@@ -368,14 +478,20 @@ def get_record(record_id: str) -> Optional[Dict[str, Any]]:
         return None
     root = file_dir()
     with _lock:
-        records = _load_records()
-    for rec in records:
-        if rec.get("id") == record_id:
-            item = dict(rec)
-            rel = rec.get("input_rel")
-            item["input_exists"] = bool(rel) and (root / str(rel)).is_file()
-            return item
-    return None
+        conn = _get_conn()
+        try:
+            _migrate_json_if_needed(conn)
+            row = conn.execute(
+                "SELECT * FROM records WHERE id = ?", (record_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+    if row is None:
+        return None
+    item = _row_to_dict(row)
+    rel = item.get("input_rel")
+    item["input_exists"] = bool(rel) and (root / str(rel)).is_file()
+    return item
 
 
 def delete_record(record_id: str) -> bool:
@@ -383,19 +499,21 @@ def delete_record(record_id: str) -> bool:
     if not record_id:
         return False
     with _lock:
-        records = _load_records()
-        kept: List[Dict[str, Any]] = []
-        removed_rec: Optional[Dict[str, Any]] = None
-        for rec in records:
-            if rec.get("id") == record_id and removed_rec is None:
-                removed_rec = rec
-            else:
-                kept.append(rec)
-        if removed_rec is None:
-            return False
-        _remove_record_files(removed_rec)
-        _save_records(kept)
-        return True
+        conn = _get_conn()
+        try:
+            _migrate_json_if_needed(conn)
+            row = conn.execute(
+                "SELECT * FROM records WHERE id = ?", (record_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            rec = _row_to_dict(row)
+            _remove_record_files(rec)
+            conn.execute("DELETE FROM records WHERE id = ?", (record_id,))
+            conn.commit()
+        finally:
+            conn.close()
+    return True
 
 
 def storage_stats() -> Dict[str, Any]:
@@ -406,8 +524,16 @@ def storage_stats() -> Dict[str, Any]:
         logger.warning("storage_stats cleanup failed", exc_info=True)
     root = file_dir()
     with _lock:
-        records = _load_records()
+        conn = _get_conn()
+        try:
+            _migrate_json_if_needed(conn)
+            rows = conn.execute(
+                "SELECT * FROM records ORDER BY created_at DESC"
+            ).fetchall()
+        finally:
+            conn.close()
 
+    records = [_row_to_dict(r) for r in rows]
     by_tool: Dict[str, int] = {}
     total_bytes = 0
     with_file = 0

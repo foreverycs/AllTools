@@ -915,7 +915,7 @@ def test_cell_nested_runs_written_to_docx():
 
 def test_refine_merges_from_words_horizontal_span():
     """Word boxes spanning multiple empty columns grow colspan."""
-    from converter.pdf_reader import Cell, _refine_merges_from_words
+    from converter.pdf_reader import Cell, WordIndex, _refine_merges_from_words
 
     # 1 row × 3 cols; left cell holds a wide title word.
     cells = [[Cell(text="总标题"), Cell(text=""), Cell(text="")]]
@@ -926,7 +926,7 @@ def test_refine_merges_from_words_horizontal_span():
         {"text": "总标题", "x0": 5.0, "x1": 280.0, "top": 5.0, "bottom": 20.0,
          "size": 12.0, "fontname": "SimSun"},
     ]
-    _refine_merges_from_words(cells, owner, vx, hy, words, 0, 0, 300, 30)
+    _refine_merges_from_words(cells, owner, vx, hy, WordIndex(words), 0, 0, 300, 30)
     assert cells[0][0].colspan == 3
     assert owner[0][1] == (0, 0)
     assert owner[0][2] == (0, 0)
@@ -935,7 +935,7 @@ def test_refine_merges_from_words_horizontal_span():
 
 
 def test_region_paragraphs_splits_font_runs():
-    from converter.pdf_reader import _region_paragraphs
+    from converter.pdf_reader import WordIndex, _region_paragraphs
 
     vx = [0.0, 200.0]
     hy = [0.0, 40.0]
@@ -947,7 +947,7 @@ def test_region_paragraphs_splits_font_runs():
         {"text": "下行", "x0": 10, "x1": 40, "top": 22, "bottom": 34,
          "size": 10.0, "fontname": "SimSun"},
     ]
-    paras = _region_paragraphs(words, vx, hy, 0, 0, 0, 0)
+    paras = _region_paragraphs(WordIndex(words), vx, hy, 0, 0, 0, 0)
     assert len(paras) == 2
     assert len(paras[0]) == 2
     assert paras[0][0].font_size == 14.0

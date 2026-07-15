@@ -11,6 +11,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import Response
 
 from core.settings import get_settings, load_dotenv, validate_security_settings
+from core.errors import ToolkitError
 from core.version import __version__
 from storage import (
     ensure_file_dir,
@@ -98,6 +99,15 @@ except Exception:
     pass
 
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+@app.exception_handler(ToolkitError)
+async def toolkit_error_handler(request: Request, exc: ToolkitError):
+    """Map unified ToolkitError hierarchy to HTTP responses."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
 
 
 @app.middleware("http")

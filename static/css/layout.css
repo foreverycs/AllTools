@@ -223,6 +223,9 @@
   gap: 16px;
 }
 .tool-card {
+  --c: #4f46e5;
+  --c2: #8b5cf6;
+  --soft: #eef2ff;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -267,10 +270,12 @@
 .tool-card[data-accent="emerald"] { --c: #059669; --c2: #10b981; --soft: #ecfdf5; }
 .tool-card[data-accent="amber"] { --c: #d97706; --c2: #f59e0b; --soft: #fffbeb; }
 .tool-card[data-accent="sky"] { --c: #0284c7; --c2: #0ea5e9; --soft: #f0f9ff; }
+.tool-card[data-accent="violet"] { --c: #7c3aed; --c2: #8b5cf6; --soft: #f5f3ff; }
 .tool-card[data-accent="indigo"] .glow { background: radial-gradient(circle, #c7d2fe 0%, transparent 70%); }
 .tool-card[data-accent="emerald"] .glow { background: radial-gradient(circle, #a7f3d0 0%, transparent 70%); }
 .tool-card[data-accent="amber"] .glow { background: radial-gradient(circle, #fde68a 0%, transparent 70%); }
 .tool-card[data-accent="sky"] .glow { background: radial-gradient(circle, #bae6fd 0%, transparent 70%); }
+.tool-card[data-accent="violet"] .glow { background: radial-gradient(circle, #ddd6fe 0%, transparent 70%); }
 .tool-card:hover { border-color: rgba(79, 70, 229, 0.28); }
 
 .tool-card-top {

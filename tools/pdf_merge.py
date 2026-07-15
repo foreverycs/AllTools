@@ -13,6 +13,7 @@ from pypdf import PageObject, PdfReader, PdfWriter, Transformation
 from starlette.requests import Request
 
 from core.concurrency import run_conversion
+from core.errors import PDFParseError, ToolkitError, ValidationError
 from storage import archive_conversion
 from tools.common import (
     PDF_MEDIA,
@@ -55,7 +56,7 @@ def _make_divider() -> bytes:
 def _scale_to_fit(src_w: float, src_h: float, dst_w: float, dst_h: float) -> float:
     """Return uniform scale that fits src into dst preserving aspect ratio."""
     if src_w <= 0 or src_h <= 0:
-        raise ValueError("Invalid page dimensions")
+        raise ValidationError("Invalid page dimensions")
     return min(dst_w / src_w, dst_h / src_h)
 
 
@@ -67,7 +68,7 @@ def _load_invoice_page(path: str) -> Tuple[PdfWriter, PageObject]:
     """
     reader = PdfReader(path)
     if not reader.pages:
-        raise ValueError("PDF has no pages")
+        raise PDFParseError("PDF has no pages")
 
     owner = PdfWriter()
     owner.add_page(reader.pages[0])
@@ -107,7 +108,7 @@ def _place_transform(page: PageObject, *, top: bool) -> Transformation:
     ox = float(box.left)
     oy = float(box.bottom)
     if src_w <= 0 or src_h <= 0:
-        raise ValueError("Invalid page dimensions")
+        raise ValidationError("Invalid page dimensions")
 
     usable_w = A4_W - 2 * MARGIN
     usable_h = HALF_H - MARGIN
@@ -137,7 +138,7 @@ def _merge_pair(
     A lone invoice is placed only on the upper half; the lower half stays empty.
     """
     if top_page is None and bottom_page is None:
-        raise ValueError("At least one page is required")
+        raise ValidationError("At least one page is required")
 
     # Use PdfWriter blank page so the result is part of a document graph from
     # the start (more reliable resource cloning than a free-standing PageObject).
@@ -263,6 +264,9 @@ async def convert(
     except HTTPException:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
+    except ToolkitError as exc:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except ValueError as exc:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc

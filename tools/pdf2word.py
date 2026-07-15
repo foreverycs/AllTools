@@ -13,7 +13,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from converter import content_warnings, count_blocks, extract_document, ocr_info, write_document
-from core.concurrency import run_conversion
+from core.concurrency import run_conversion, run_conversion_process, should_use_process_pool
+from core.errors import ConversionError, PDFParseError, ToolkitError
 from storage import archive_conversion
 from tools.common import (
     DOCX_MEDIA,
@@ -52,12 +53,12 @@ def _convert_one(
 ) -> dict:
     pages = extract_document(pdf_path, page_range=page_range, ocr=ocr)
     if not pages:
-        raise ValueError("No content extracted from PDF")
+        raise PDFParseError("No content extracted from PDF")
     write_document(pages, docx_path, page_breaks=page_breaks)
     stats = count_blocks(pages)
     stats["warnings"] = content_warnings(pages)
     if "empty" in stats["warnings"]:
-        raise ValueError(
+        raise ConversionError(
             "No extractable content (empty or unsupported PDF). "
             "Scanned PDFs without a renderable image cannot be converted. "
             "Enable OCR if Tesseract is installed."
@@ -128,12 +129,17 @@ async def convert(
 
     try:
         await save_upload(file, pdf_path)
-        stats = await run_conversion(
+        file_size = os.path.getsize(pdf_path)
+        runner = run_conversion_process if should_use_process_pool(file_size) else run_conversion
+        stats = await runner(
             _convert_one, pdf_path, docx_path, range_spec, page_breaks, use_ocr
         )
     except HTTPException:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
+    except ToolkitError as exc:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except ValueError as exc:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -224,7 +230,9 @@ async def convert_batch(
             idx: int, name: str, pdf_path: str, docx_path: str
         ) -> Tuple[int, str, str, str, dict]:
             try:
-                stats = await run_conversion(
+                file_size = os.path.getsize(pdf_path)
+                runner = run_conversion_process if should_use_process_pool(file_size) else run_conversion
+                stats = await runner(
                     _convert_one,
                     pdf_path,
                     docx_path,
