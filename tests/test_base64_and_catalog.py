@@ -177,9 +177,17 @@ def test_health_includes_categories():
     from app import app
 
     client = TestClient(app)
-    r = client.get("/health")
+    # Lightweight liveness — no heavy engine probes
+    light = client.get("/health")
+    assert light.status_code == 200
+    assert light.json()["status"] == "ok"
+    assert "categories" not in light.json()
+
+    r = client.get("/health?detail=1")
     assert r.status_code == 200
     body = r.json()
     assert body["tools"] >= 3
     assert any(c["id"] == "document" for c in body["categories"])
     assert any(c["id"] == "coding" for c in body["categories"])
+    assert "word2pdf" in body
+    assert "ocr" in body

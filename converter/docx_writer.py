@@ -10,7 +10,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
-from .pdf_reader import (
+from .models import (
     PageContent,
     TextBlock,
     TableBlock,

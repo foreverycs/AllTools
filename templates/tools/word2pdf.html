@@ -241,6 +241,7 @@
     }
   </style>
   <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
+  <script src="{{ static_url('/static/js/upload.js') }}"></script>
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
@@ -329,35 +330,11 @@
     /** @type {File[]} */
     let selected = [];
 
+    const { fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl } = window.ToolkitUpload;
+
     function isWord(name) {
       const n = (name || '').toLowerCase();
       return n.endsWith('.docx') || n.endsWith('.doc');
-    }
-
-    function fmtSize(n) {
-      if (n < 1024) return n + ' B';
-      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-      return (n / (1024 * 1024)).toFixed(1) + ' MB';
-    }
-
-    function downloadName(disposition, fallback) {
-      if (!disposition) return fallback;
-      const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition);
-      if (star) {
-        try { return decodeURIComponent(star[1].replace(/\+/g, ' ')); }
-        catch (e) { /* fall through */ }
-      }
-      const ascii = /filename="?([^";]+)"?/i.exec(disposition);
-      if (ascii) return ascii[1];
-      return fallback;
-    }
-
-    function errDetail(detail) {
-      if (typeof detail === 'string') return detail;
-      if (Array.isArray(detail)) {
-        return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
-      }
-      return '转换失败';
     }
 
     function setProgress(pct) {
@@ -444,40 +421,12 @@
       fileInput.value = '';
     }
 
-    fileInput.addEventListener('change', e => addFiles(e.target.files));
-
-    ['dragover', 'dragenter'].forEach(ev =>
-      drop.addEventListener(ev, e => { e.preventDefault(); if (ENGINE_READY) drop.classList.add('drag'); }));
-    ['dragleave', 'drop'].forEach(ev =>
-      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
-    drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
-
-    function xhrPost(url, formData) {
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', url);
-        xhr.responseType = 'blob';
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            setProgress((e.loaded / e.total) * 70);
-            status.className = 'info';
-            status.textContent = `上传中… ${Math.round((e.loaded / e.total) * 100)}%`;
-          }
-        };
-        xhr.upload.onload = () => {
-          setProgress(75);
-          status.className = 'info';
-          status.textContent = '上传完成，正在转换…';
-        };
-        xhr.onload = () => {
-          setProgress(100);
-          resolve(xhr);
-        };
-        xhr.onerror = () => reject(new Error('网络错误'));
-        xhr.onabort = () => reject(new Error('已取消'));
-        xhr.send(formData);
-      });
-    }
+    bindDropZone({
+      drop,
+      input: fileInput,
+      onFiles: addFiles,
+      enabled: () => ENGINE_READY,
+    });
 
     btn.addEventListener('click', async () => {
       if (!selected.length || !ENGINE_READY) return;
@@ -496,28 +445,20 @@
         fd.append('file', selected[0]);
       }
 
-      const url = (window.__ROOT__||'')+(multi ? '/tools/word2pdf/convert-batch' : '/tools/word2pdf/convert');
+      const url = appUrl(multi ? '/tools/word2pdf/convert-batch' : '/tools/word2pdf/convert');
       try {
-        const xhr = await xhrPost(url, fd);
+        const xhr = await xhrPost(url, fd, {
+          onProgress: (pct) => setProgress(pct),
+          onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
+        });
         if (xhr.status < 200 || xhr.status >= 300) {
-          let msg = `HTTP ${xhr.status}`;
-          try {
-            const text = await xhr.response.text();
-            const err = JSON.parse(text);
-            msg = errDetail(err.detail) || msg;
-          } catch (e) { /* keep msg */ }
-          throw new Error(msg);
+          throw new Error(await xhrErrorMessage(xhr));
         }
         const blob = xhr.response;
         const fallback = multi
           ? 'word2pdf_batch.zip'
           : selected[0].name.replace(/\.docx?$/i, '') + '.pdf';
-        const a = document.createElement('a');
-        const href = URL.createObjectURL(blob);
-        a.href = href;
-        a.download = downloadName(xhr.getResponseHeader('content-disposition'), fallback);
-        a.click();
-        URL.revokeObjectURL(href);
+        saveBlob(blob, downloadName(xhr.getResponseHeader('content-disposition'), fallback));
 
         const engine = xhr.getResponseHeader('X-Engine') || '';
         const files = xhr.getResponseHeader('X-Files');

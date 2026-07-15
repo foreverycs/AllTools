@@ -18,14 +18,23 @@ from admin.auth import (
     require_admin,
     set_session_cookie,
 )
+from admin.csrf import (
+    FIELD_NAME as CSRF_FIELD,
+    get_or_create_csrf_token,
+    set_csrf_cookie,
+    verify_csrf,
+)
+from admin.rate_limit import clear_failures, client_key, is_locked, register_failure
 from core.settings import dotenv_status, get_settings
+from core.version import __version__
 from storage import (
-    RETENTION_DAYS,
     cleanup_expired,
     delete_record,
+    file_dir,
     get_record,
     list_records,
     resolve_stored,
+    retention_days,
     storage_stats,
 )
 from tools import TOOL_REGISTRY, tools_by_category
@@ -44,13 +53,18 @@ _HEALTH_TTL: float = 60.0
 
 
 def _tpl(request: Request, name: str, **ctx):
+    csrf = get_or_create_csrf_token(request)
     data = {
         "request": request,
         "is_admin": is_admin(request),
-        "app_version": "0.7.0",
+        "app_version": __version__,
+        "csrf_token": csrf,
+        "csrf_field": CSRF_FIELD,
         **ctx,
     }
-    return templates.TemplateResponse(request, name, data)
+    resp = templates.TemplateResponse(request, name, data)
+    set_csrf_cookie(resp, csrf)
+    return resp
 
 
 def _safe_next(next_url: Optional[str], request: Optional[Request] = None) -> str:
@@ -124,23 +138,60 @@ async def login_submit(
     request: Request,
     password: str = Form(...),
     next: Optional[str] = Form(None),
+    csrf_token: Optional[str] = Form(None),
 ):
-    if not check_password(password):
+    if not verify_csrf(request, csrf_token):
         dest = (
             _admin_url("/admin/login", request)
             + "?error="
-            + quote("password error")
+            + quote("invalid session token; refresh and try again")
             + "&next="
             + quote(_safe_next(next, request))
         )
         return _redirect(dest)
+
+    key = client_key(request)
+    locked, retry_after = is_locked(key)
+    if locked:
+        dest = (
+            _admin_url("/admin/login", request)
+            + "?error="
+            + quote(f"too many attempts; retry in {retry_after}s")
+            + "&next="
+            + quote(_safe_next(next, request))
+        )
+        return _redirect(dest)
+
+    if not check_password(password):
+        locked, retry_after = register_failure(key)
+        err = (
+            f"too many attempts; retry in {retry_after}s"
+            if locked
+            else "password error"
+        )
+        dest = (
+            _admin_url("/admin/login", request)
+            + "?error="
+            + quote(err)
+            + "&next="
+            + quote(_safe_next(next, request))
+        )
+        return _redirect(dest)
+
+    clear_failures(key)
     resp = _redirect(_safe_next(next, request))
     set_session_cookie(resp, create_session_token())
+    set_csrf_cookie(resp, get_or_create_csrf_token(request))
     return resp
 
 
 @router.post("/logout")
-async def logout(request: Request):
+async def logout(
+    request: Request,
+    csrf_token: Optional[str] = Form(None),
+):
+    if not verify_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
     resp = _redirect(_admin_url("/admin/login", request))
     clear_session_cookie(resp)
     return resp
@@ -148,6 +199,7 @@ async def logout(request: Request):
 
 @router.get("/logout")
 async def logout_get(request: Request):
+    """GET logout kept for bookmarks; prefer POST with CSRF."""
     resp = _redirect(_admin_url("/admin/login", request))
     clear_session_cookie(resp)
     return resp
@@ -209,16 +261,22 @@ async def uploads_page(
         tool_filter=tool_f,
         q=q or "",
         tools_used=tools_used,
-        retention_days=RETENTION_DAYS,
+        retention_days=retention_days(),
         flash=request.query_params.get("msg"),
     )
 
 
 @router.post("/uploads/{record_id}/delete")
-async def uploads_delete(request: Request, record_id: str):
+async def uploads_delete(
+    request: Request,
+    record_id: str,
+    csrf_token: Optional[str] = Form(None),
+):
     redir = require_admin(request)
     if redir:
         return redir
+    if not verify_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
     ok = delete_record(record_id)
     msg = "deleted" if ok else "not found"
     return _redirect(_admin_url("/admin/uploads", request) + "?msg=" + quote(msg))
@@ -283,10 +341,15 @@ async def uploads_preview(request: Request, record_id: str):
 
 
 @router.post("/cleanup")
-async def run_cleanup(request: Request):
+async def run_cleanup(
+    request: Request,
+    csrf_token: Optional[str] = Form(None),
+):
     redir = require_admin(request)
     if redir:
         return redir
+    if not verify_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
     removed = cleanup_expired()
     return _redirect(
         _admin_url("/admin/uploads", request) + "?msg=" + quote("cleaned %d" % removed)
@@ -308,8 +371,8 @@ async def system_page(request: Request):
         categories=_categories_cache,
         env_hints={
             **get_settings().admin_security_summary(),
-            "UPLOAD_RETENTION_DAYS": str(RETENTION_DAYS),
-            "UPLOAD_FILE_DIR": os.environ.get("UPLOAD_FILE_DIR") or "(default ./file)",
+            "UPLOAD_RETENTION_DAYS": str(retention_days()),
+            "UPLOAD_FILE_DIR": str(file_dir()),
             "LIBREOFFICE_PATH": os.environ.get("LIBREOFFICE_PATH") or "(auto)",
             "PDF2WORD_OCR": os.environ.get("PDF2WORD_OCR") or "0",
             "MAX_UPLOAD_BYTES": str(get_settings().max_upload_bytes),

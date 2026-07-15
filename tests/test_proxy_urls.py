@@ -48,6 +48,9 @@ def test_home_html_static_links_ok(tmp_path, monkeypatch):
     assert "/static/css/home.css" in html
     # Cache-busting query so reverse-proxy/browser stale CSS cannot stick forever
     assert "tokens.css?v=" in html or "tokens.css?v=" in html.replace("&amp;", "&")
+    # Security headers on HTML responses
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("x-frame-options") == "SAMEORIGIN"
     assert "?v=" in html
 
     for path in (

@@ -44,8 +44,6 @@ def merge_client(tmp_path, monkeypatch):
 
     import core.settings as settings_mod
     import core.concurrency as concurrency_mod
-    import storage.history as h
-    import storage as s
     import admin.auth as auth
     import admin.routes as routes
     import tools.common as common
@@ -54,8 +52,6 @@ def merge_client(tmp_path, monkeypatch):
     settings_mod.clear_settings_cache()
     concurrency_mod.reset_semaphore()
     common.refresh_limits()
-    importlib.reload(h)
-    importlib.reload(s)
     importlib.reload(auth)
     importlib.reload(routes)
     importlib.reload(app_mod)

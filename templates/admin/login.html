@@ -25,6 +25,7 @@
       {% endif %}
       <form method="post" action="{{ url_path('/admin/login') }}">
         <input type="hidden" name="next" value="{{ next_url or '/admin' }}" />
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
         <label for="password">管理密码</label>
         <input id="password" name="password" type="password" required autocomplete="current-password" autofocus placeholder="请输入密码" />
         <button class="admin-btn admin-btn-primary" type="submit">

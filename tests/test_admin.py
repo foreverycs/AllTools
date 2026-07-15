@@ -21,23 +21,24 @@ def admin_client(tmp_path, monkeypatch):
     import core.settings as settings_mod
     import core.concurrency as concurrency_mod
     import storage.history as h
-    import storage as s
     import admin.auth as auth
     import admin.routes as routes
+    import admin.rate_limit as rate_limit
     import tools.common as common
     import app as app_mod
 
     settings_mod.clear_settings_cache()
     concurrency_mod.reset_semaphore()
+    rate_limit.reset_all()
     common.refresh_limits()
-    importlib.reload(h)
-    importlib.reload(s)
     importlib.reload(auth)
     importlib.reload(routes)
     importlib.reload(app_mod)
 
     client = TestClient(app_mod.app)
     yield client, h, tmp_path
+    rate_limit.reset_all()
+    settings_mod.clear_settings_cache()
 
 
 @pytest.fixture()
@@ -46,18 +47,32 @@ def hist_only(tmp_path, monkeypatch):
     d.mkdir()
     monkeypatch.setenv("UPLOAD_FILE_DIR", str(d))
     monkeypatch.setenv("UPLOAD_RETENTION_DAYS", "5")
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    import core.settings as settings_mod
     import storage.history as h
-    import storage as s
 
-    importlib.reload(h)
-    importlib.reload(s)
+    settings_mod.clear_settings_cache()
     return h, tmp_path
 
 
+def _csrf_token(client: TestClient) -> str:
+    """Load login page so the double-submit CSRF cookie is set."""
+    page = client.get("/admin/login")
+    assert page.status_code == 200
+    token = client.cookies.get("toolkit_csrf")
+    assert token, "CSRF cookie missing after GET /admin/login"
+    return token
+
+
 def _login(client: TestClient, password: str = "test-pass"):
+    token = _csrf_token(client)
     return client.post(
         "/admin/login",
-        data={"password": password, "next": "/admin"},
+        data={
+            "password": password,
+            "next": "/admin",
+            "csrf_token": token,
+        },
         follow_redirects=False,
     )
 
@@ -84,6 +99,48 @@ def test_admin_login_and_dashboard(admin_client):
     assert dash.status_code == 200
     assert "仪表盘" in dash.text
     assert "上传" in dash.text
+    assert "v0.9.0" in dash.text
+
+
+def test_admin_login_requires_csrf(admin_client):
+    client, _, _ = admin_client
+    # No prior GET → no CSRF cookie / form token
+    r = client.post(
+        "/admin/login",
+        data={"password": "test-pass", "next": "/admin"},
+        follow_redirects=False,
+    )
+    assert r.status_code in (303, 307, 302)
+    assert "token" in (r.headers.get("location") or "").lower()
+
+
+def test_admin_login_rate_limit(admin_client, monkeypatch):
+    """After repeated failures the same client is locked out briefly."""
+    from urllib.parse import unquote
+
+    import admin.rate_limit as rate_limit
+
+    client, _, _ = admin_client
+    rate_limit.reset_all()
+    monkeypatch.setattr(rate_limit, "DEFAULT_MAX_FAILURES", 3)
+    monkeypatch.setattr(rate_limit, "DEFAULT_LOCKOUT_SEC", 60.0)
+
+    try:
+        for _ in range(3):
+            r = _login(client, "wrong-password")
+            assert r.status_code in (303, 307, 302)
+
+        locked = _login(client, "test-pass")
+        assert locked.status_code in (303, 307, 302)
+        loc = unquote(locked.headers.get("location", ""))
+        assert "too many" in loc
+
+        rate_limit.reset_all()
+        ok = _login(client, "test-pass")
+        assert ok.status_code in (303, 307, 302)
+        assert "error" not in unquote(ok.headers.get("location", ""))
+    finally:
+        rate_limit.reset_all()
 
 
 def test_admin_uploads_delete_and_download(admin_client):
@@ -107,8 +164,12 @@ def test_admin_uploads_delete_and_download(admin_client):
     assert dl.status_code == 200
     assert dl.content.startswith(b"%PDF")
 
+    # CSRF cookie already set by login page + dashboard navigation
+    csrf = client.cookies.get("toolkit_csrf")
+    assert csrf
     deleted = client.post(
         f"/admin/uploads/{rec['id']}/delete",
+        data={"csrf_token": csrf},
         follow_redirects=False,
     )
     assert deleted.status_code in (303, 307, 302)

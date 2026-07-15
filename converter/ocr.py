@@ -13,7 +13,7 @@ import shutil
 from functools import lru_cache
 from typing import List, Optional
 
-from .pdf_reader import TextBlock
+from .models import TextBlock
 
 # Default languages: simplified Chinese + English (common for this toolbox).
 DEFAULT_OCR_LANG = "chi_sim+eng"

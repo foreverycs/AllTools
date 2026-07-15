@@ -5,7 +5,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -133,7 +133,11 @@ async def convert_batch(
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
 ):
-    """Convert multiple Word documents; returns a ZIP of PDFs."""
+    """Convert multiple Word documents; returns a ZIP of PDFs.
+
+    Uploads are sequential; conversions run concurrently up to
+    ``CONVERT_CONCURRENCY`` (via ``run_conversion``).
+    """
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
     batch_limit = max_batch_files()
@@ -147,35 +151,50 @@ async def convert_batch(
 
     tmp_dir = tempfile.mkdtemp(prefix="word2pdf_batch_")
     zip_path = os.path.join(tmp_dir, "output.zip")
-    used_names: set = set()
-    converted = 0
-    engines_used: set = set()
-    total_bytes = 0
+    jobs: List[Tuple[int, str, str, str]] = []
 
     try:
+        for idx, file in enumerate(files):
+            if not _is_word_filename(file.filename):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File {idx + 1}: only .docx / .doc are supported",
+                )
+            check_upload_size_header(file)
+
+            ext = os.path.splitext(file.filename or "input.docx")[1].lower() or ".docx"
+            doc_path = os.path.join(tmp_dir, f"in_{idx}{ext}")
+            pdf_path = os.path.join(tmp_dir, f"out_{idx}.pdf")
+            await save_upload(file, doc_path)
+            jobs.append(
+                (idx, file.filename or f"input_{idx}.docx", doc_path, pdf_path)
+            )
+
+        async def _run_job(
+            idx: int, name: str, doc_path: str, pdf_path: str
+        ) -> Tuple[int, str, str, str, dict]:
+            try:
+                stats = await run_conversion(_convert_one, doc_path, pdf_path)
+            except ConversionError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{name}: {exc}",
+                ) from exc
+            return idx, name, doc_path, pdf_path, stats
+
+        results = await asyncio.gather(
+            *[_run_job(idx, name, doc, pdf) for idx, name, doc, pdf in jobs]
+        )
+        results = sorted(results, key=lambda r: r[0])
+
+        used_names: set = set()
+        converted = 0
+        engines_used: set = set()
+        total_bytes = 0
+
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for idx, file in enumerate(files):
-                if not _is_word_filename(file.filename):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"File {idx + 1}: only .docx / .doc are supported",
-                    )
-                check_upload_size_header(file)
-
-                ext = os.path.splitext(file.filename or "input.docx")[1].lower() or ".docx"
-                doc_path = os.path.join(tmp_dir, f"in_{idx}{ext}")
-                pdf_path = os.path.join(tmp_dir, f"out_{idx}.pdf")
-                await save_upload(file, doc_path)
-
-                try:
-                    stats = await run_conversion(_convert_one, doc_path, pdf_path)
-                except ConversionError as exc:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"{file.filename}: {exc}",
-                    ) from exc
-
-                stem = safe_stem(file.filename)
+            for idx, name, doc_path, pdf_path, stats in results:
+                stem = safe_stem(name)
                 out_name = f"{stem}.pdf"
                 if out_name in used_names:
                     out_name = f"{stem}_{idx + 1}.pdf"
@@ -185,7 +204,7 @@ async def convert_batch(
                 await asyncio.to_thread(
                     archive_conversion,
                     tool="word2pdf",
-                    original_name=file.filename or f"input_{idx}.docx",
+                    original_name=name,
                     input_path=doc_path,
                     extra={
                         "engine": stats.get("engine"),

@@ -11,11 +11,14 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import Response
 
 from core.settings import get_settings, load_dotenv, validate_security_settings
+from core.version import __version__
 from storage import (
-    RETENTION_DAYS,
     ensure_file_dir,
+    get_record,
     list_records,
+    record_count,
     resolve_stored,
+    retention_days,
 )
 from admin import admin_router
 from admin.auth import is_admin
@@ -80,7 +83,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="工具集",
-    version="0.9.0",
+    version=__version__,
     lifespan=lifespan,
     root_path=_import_root_path(),
 )
@@ -98,9 +101,16 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 @app.middleware("http")
-async def static_cache_headers(request: Request, call_next):
+async def security_and_cache_headers(request: Request, call_next):
     response: Response = await call_next(request)
     path = request.url.path
+    # Baseline hardening for HTML/API responses (static files get a lighter set).
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
     # Templates use static_url(...?v=mtime); allow long cache for versioned assets.
     if "/static/" in path:
         if request.url.query and "v=" in request.url.query:
@@ -184,54 +194,81 @@ async def api_tools():
     )
 
 
-@app.get("/health")
-async def health():
+# Lightweight cache for expensive /health details (engines + storage).
+_health_detail_cache: dict = {}
+_health_detail_ts: float = 0.0
+_HEALTH_DETAIL_TTL: float = 60.0
+
+
+def _health_details(*, force: bool = False) -> dict:
+    """Engine/OCR/storage snapshot; cached so probes stay cheap."""
+    global _health_detail_cache, _health_detail_ts
+    import time
+
+    now = time.monotonic()
+    if (
+        not force
+        and _health_detail_cache
+        and now - _health_detail_ts < _HEALTH_DETAIL_TTL
+    ):
+        return _health_detail_cache
+
     from word2pdf import engine_info
     from converter import ocr_info
 
     w2p = engine_info()
     ocr = ocr_info()
-    return JSONResponse(
-        {
-            "status": "ok",
-            "version": app.version,
-            "tools": _tool_count,
-            "categories": [
-                {
-                    "id": c["id"],
-                    "name": c["name"],
-                    "count": len(c["tools"]),
-                    "route": c.get("route"),
-                }
-                for c in _categories_cache
-            ],
-            "word2pdf": {
-                "ready": w2p.get("ready", False),
-                "engines": w2p.get("engines") or [],
-                "preferred": w2p.get("preferred"),
-            },
-            "ocr": {
-                "available": ocr.get("available", False),
-                "lang": ocr.get("lang"),
-            },
-            "upload_history": {
-                "retention_days": RETENTION_DAYS,
-                "count": len(list_records(limit=200)),
-            },
-            "convert_concurrency": get_settings().convert_concurrency,
-            "root_path": get_settings().root_path or "",
-        }
-    )
+    _health_detail_cache = {
+        "word2pdf": {
+            "ready": w2p.get("ready", False),
+            "engines": w2p.get("engines") or [],
+            "preferred": w2p.get("preferred"),
+        },
+        "ocr": {
+            "available": ocr.get("available", False),
+            "lang": ocr.get("lang"),
+        },
+        "upload_history": {
+            "retention_days": retention_days(),
+            "count": record_count(),
+        },
+        "convert_concurrency": get_settings().convert_concurrency,
+        "root_path": get_settings().root_path or "",
+    }
+    _health_detail_ts = now
+    return _health_detail_cache
+
+
+@app.get("/health")
+async def health(detail: int = Query(0, ge=0, le=1)):
+    """Liveness probe. Pass ``?detail=1`` for engines, OCR, and storage stats."""
+    body: dict = {
+        "status": "ok",
+        "version": app.version,
+        "tools": _tool_count,
+    }
+    if detail:
+        body["categories"] = [
+            {
+                "id": c["id"],
+                "name": c["name"],
+                "count": len(c["tools"]),
+                "route": c.get("route"),
+            }
+            for c in _categories_cache
+        ]
+        body.update(_health_details())
+    return JSONResponse(body)
 
 
 @app.get("/api/uploads")
 async def api_uploads(request: Request, limit: int = Query(50, ge=1, le=200)):
-    """JSON list of recent uploads (admin only; last ``RETENTION_DAYS`` days)."""
+    """JSON list of recent uploads (admin only; last retention window)."""
     if not is_admin(request):
         raise HTTPException(status_code=401, detail="Unauthorized")
     return JSONResponse(
         {
-            "retention_days": RETENTION_DAYS,
+            "retention_days": retention_days(),
             "items": list_records(limit=limit),
         }
     )
@@ -242,8 +279,7 @@ async def download_upload(request: Request, record_id: str):
     """Download the archived input file for a history record (admin only)."""
     if not is_admin(request):
         raise HTTPException(status_code=401, detail="Unauthorized")
-    items = list_records(limit=200)
-    rec = next((r for r in items if r.get("id") == record_id), None)
+    rec = get_record(record_id)
     if not rec:
         raise HTTPException(status_code=404, detail="Record not found")
     rel = rec.get("input_rel")

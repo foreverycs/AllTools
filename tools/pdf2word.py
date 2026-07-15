@@ -5,7 +5,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
@@ -172,7 +172,11 @@ async def convert_batch(
     page_breaks: bool = Form(True),
     ocr: Optional[str] = Form(None),
 ):
-    """Convert multiple PDFs; returns a ZIP of .docx files."""
+    """Convert multiple PDFs; returns a ZIP of .docx files.
+
+    Uploads are sequential; conversions run concurrently up to
+    ``CONVERT_CONCURRENCY`` (via ``run_conversion``).
+    """
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
     batch_limit = max_batch_files()
@@ -198,41 +202,57 @@ async def convert_batch(
     range_spec = (page_range or "").strip() or None
     tmp_dir = tempfile.mkdtemp(prefix="pdf2word_batch_")
     zip_path = os.path.join(tmp_dir, "output.zip")
-    used_names: set = set()
-    total_pages = total_tables = total_texts = total_images = 0
-    converted = 0
-    all_warns: set = set()
+
+    # (idx, original_name, pdf_path, docx_path)
+    jobs: List[Tuple[int, str, str, str]] = []
 
     try:
+        for idx, file in enumerate(files):
+            if not file.filename or not file.filename.lower().endswith(".pdf"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File {idx + 1}: only PDF files are supported",
+                )
+            check_upload_size_header(file)
+
+            pdf_path = os.path.join(tmp_dir, f"in_{idx}.pdf")
+            docx_path = os.path.join(tmp_dir, f"out_{idx}.docx")
+            await save_upload(file, pdf_path)
+            jobs.append((idx, file.filename or f"input_{idx}.pdf", pdf_path, docx_path))
+
+        async def _run_job(
+            idx: int, name: str, pdf_path: str, docx_path: str
+        ) -> Tuple[int, str, str, str, dict]:
+            try:
+                stats = await run_conversion(
+                    _convert_one,
+                    pdf_path,
+                    docx_path,
+                    range_spec,
+                    page_breaks,
+                    use_ocr,
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{name}: {exc}",
+                ) from exc
+            return idx, name, pdf_path, docx_path, stats
+
+        results = await asyncio.gather(
+            *[_run_job(idx, name, pdf, docx) for idx, name, pdf, docx in jobs]
+        )
+        # Preserve upload order in the ZIP
+        results = sorted(results, key=lambda r: r[0])
+
+        used_names: set = set()
+        total_pages = total_tables = total_texts = total_images = 0
+        converted = 0
+        all_warns: set = set()
+
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for idx, file in enumerate(files):
-                if not file.filename or not file.filename.lower().endswith(".pdf"):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"File {idx + 1}: only PDF files are supported",
-                    )
-                check_upload_size_header(file)
-
-                pdf_path = os.path.join(tmp_dir, f"in_{idx}.pdf")
-                docx_path = os.path.join(tmp_dir, f"out_{idx}.docx")
-                await save_upload(file, pdf_path)
-
-                try:
-                    stats = await run_conversion(
-                        _convert_one,
-                        pdf_path,
-                        docx_path,
-                        range_spec,
-                        page_breaks,
-                        use_ocr,
-                    )
-                except ValueError as exc:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"{file.filename}: {exc}",
-                    ) from exc
-
-                stem = safe_stem(file.filename)
+            for idx, name, pdf_path, docx_path, stats in results:
+                stem = safe_stem(name)
                 out_name = f"{stem}.docx"
                 if out_name in used_names:
                     out_name = f"{stem}_{idx + 1}.docx"
@@ -242,7 +262,7 @@ async def convert_batch(
                 await asyncio.to_thread(
                     archive_conversion,
                     tool="pdf2word",
-                    original_name=file.filename or f"input_{idx}.pdf",
+                    original_name=name,
                     input_path=pdf_path,
                     extra={
                         "pages": stats.get("pages"),

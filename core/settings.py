@@ -82,16 +82,20 @@ def load_dotenv(path: Optional[os.PathLike | str] = None, *, override: bool = Fa
         _dotenv_path_used = None
         return False
 
-    # If DOTENV_OVERRIDE already in process env, honour it; else read file first
-    # pass to see if .env itself sets DOTENV_OVERRIDE=1.
-    force = override or _env_bool("DOTENV_OVERRIDE", False)
+    # Process-env DOTENV_OVERRIDE always wins when already set (including "0"),
+    # so tests / Docker can force "prefer process env" without the file flipping
+    # override back on. Only when unset do we pre-scan .env for DOTENV_OVERRIDE=1.
     try:
         text = chosen.read_text(encoding="utf-8-sig")  # strip BOM if present
     except OSError:
         return False
 
-    # Pre-scan for DOTENV_OVERRIDE inside the file when not already forced.
-    if not force:
+    if override:
+        force = True
+    elif "DOTENV_OVERRIDE" in os.environ:
+        force = _env_bool("DOTENV_OVERRIDE", False)
+    else:
+        force = False
         for raw_line in text.splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#") or "=" not in line:

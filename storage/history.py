@@ -8,13 +8,17 @@ Layout::
         20260712T153045_a1b2_in.pdf
 
 Only the uploaded input is archived. Conversion outputs are not stored.
-Files and index entries older than ``RETENTION_DAYS`` are deleted on each
-write and can also be purged explicitly.
+Files and index entries older than the configured retention window are
+deleted on each write and can also be purged explicitly.
+
+Paths and retention come from ``core.settings.get_settings()`` so env
+changes (and test cache clears) stay consistent with the rest of the app.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -24,15 +28,40 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from core.settings import get_settings
+
+logger = logging.getLogger("toolkit.storage")
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-FILE_DIR = Path(os.environ.get("UPLOAD_FILE_DIR", str(BASE_DIR / "file")))
 RECORDS_NAME = "records.json"
-RETENTION_DAYS = int(os.environ.get("UPLOAD_RETENTION_DAYS", "5"))
 
 _SAFE_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 _lock = threading.Lock()
 _last_cleanup_ts: float = 0.0
 _CLEANUP_INTERVAL: float = 300.0  # seconds
+
+
+def file_dir() -> Path:
+    """Absolute directory for archived uploads (from settings)."""
+    configured = get_settings().upload_file_dir
+    if configured:
+        return Path(configured)
+    return BASE_DIR / "file"
+
+
+def retention_days() -> int:
+    """How many days to keep archived inputs."""
+    return max(1, int(get_settings().upload_retention_days))
+
+
+# Backward-compatible names used by tests / older imports.
+# Prefer file_dir() / retention_days() in new code.
+def __getattr__(name: str) -> Any:
+    if name == "FILE_DIR":
+        return file_dir()
+    if name == "RETENTION_DAYS":
+        return retention_days()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _now() -> datetime:
@@ -66,8 +95,9 @@ def _safe_name(name: str, default: str = "file") -> str:
 
 
 def ensure_file_dir() -> Path:
-    FILE_DIR.mkdir(parents=True, exist_ok=True)
-    return FILE_DIR
+    path = file_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _records_path() -> Path:
@@ -98,7 +128,7 @@ def _save_records(records: List[Dict[str, Any]]) -> None:
 
 
 def _cutoff() -> datetime:
-    return _now() - timedelta(days=max(RETENTION_DAYS, 1))
+    return _now() - timedelta(days=retention_days())
 
 
 def _is_expired(record: Dict[str, Any], cutoff: datetime) -> bool:
@@ -122,13 +152,14 @@ def _unlink_quiet(path: Path) -> None:
 
 def _remove_record_files(record: Dict[str, Any]) -> None:
     # Prefer input_rel; also drop legacy output_rel if present from older builds.
+    root = file_dir()
     for key in ("input_rel", "output_rel"):
         rel = record.get(key)
         if not rel:
             continue
-        candidate = (FILE_DIR / str(rel)).resolve()
+        candidate = (root / str(rel)).resolve()
         try:
-            candidate.relative_to(FILE_DIR.resolve())
+            candidate.relative_to(root.resolve())
         except ValueError:
             continue
         _unlink_quiet(candidate)
@@ -147,7 +178,7 @@ def cleanup_expired() -> int:
 
 
 def _do_cleanup() -> int:
-    ensure_file_dir()
+    root = ensure_file_dir()
     cutoff = _cutoff()
     removed = 0
     with _lock:
@@ -162,7 +193,7 @@ def _do_cleanup() -> int:
         if removed:
             _save_records(kept)
 
-        for child in list(FILE_DIR.iterdir()):
+        for child in list(root.iterdir()):
             if not child.is_dir():
                 continue
             try:
@@ -211,6 +242,12 @@ def archive_conversion(
             extra=extra,
         )
     except Exception:
+        logger.warning(
+            "archive_conversion failed tool=%s name=%s",
+            tool,
+            original_name,
+            exc_info=True,
+        )
         return None
 
 
@@ -273,7 +310,7 @@ def _archive_conversion(
     try:
         _do_cleanup()
     except Exception:
-        pass
+        logger.warning("post-archive cleanup failed", exc_info=True)
 
     return record
 
@@ -283,7 +320,8 @@ def list_records(limit: int = 50) -> List[Dict[str, Any]]:
     try:
         cleanup_expired()
     except Exception:
-        pass
+        logger.warning("list_records cleanup failed", exc_info=True)
+    root = file_dir()
     with _lock:
         records = _load_records()
     limit = max(1, min(int(limit), 200))
@@ -291,9 +329,19 @@ def list_records(limit: int = 50) -> List[Dict[str, Any]]:
     for rec in records[:limit]:
         item = dict(rec)
         rel = rec.get("input_rel")
-        item["input_exists"] = bool(rel) and (FILE_DIR / str(rel)).is_file()
+        item["input_exists"] = bool(rel) and (root / str(rel)).is_file()
         out.append(item)
     return out
+
+
+def record_count() -> int:
+    """Number of non-expired history records (lightweight; no per-file stat)."""
+    try:
+        cleanup_expired()
+    except Exception:
+        pass
+    with _lock:
+        return len(_load_records())
 
 
 def resolve_stored(rel: str) -> Optional[Path]:
@@ -303,9 +351,10 @@ def resolve_stored(rel: str) -> Optional[Path]:
     parts = Path(rel.replace("\\", "/")).parts
     if ".." in parts:
         return None
-    candidate = (FILE_DIR / rel).resolve()
+    root = file_dir()
+    candidate = (root / rel).resolve()
     try:
-        candidate.relative_to(FILE_DIR.resolve())
+        candidate.relative_to(root.resolve())
     except ValueError:
         return None
     if candidate.is_file():
@@ -317,13 +366,14 @@ def get_record(record_id: str) -> Optional[Dict[str, Any]]:
     """Return one record by id (with ``input_exists``), or None."""
     if not record_id:
         return None
+    root = file_dir()
     with _lock:
         records = _load_records()
     for rec in records:
         if rec.get("id") == record_id:
             item = dict(rec)
             rel = rec.get("input_rel")
-            item["input_exists"] = bool(rel) and (FILE_DIR / str(rel)).is_file()
+            item["input_exists"] = bool(rel) and (root / str(rel)).is_file()
             return item
     return None
 
@@ -353,7 +403,8 @@ def storage_stats() -> Dict[str, Any]:
     try:
         cleanup_expired()
     except Exception:
-        pass
+        logger.warning("storage_stats cleanup failed", exc_info=True)
+    root = file_dir()
     with _lock:
         records = _load_records()
 
@@ -368,12 +419,12 @@ def storage_stats() -> Dict[str, Any]:
         except (TypeError, ValueError):
             pass
         rel = rec.get("input_rel")
-        if rel and (FILE_DIR / str(rel)).is_file():
+        if rel and (root / str(rel)).is_file():
             with_file += 1
 
     disk_bytes = 0
     try:
-        for p in FILE_DIR.rglob("*"):
+        for p in root.rglob("*"):
             if p.is_file():
                 try:
                     disk_bytes += p.stat().st_size
@@ -383,8 +434,8 @@ def storage_stats() -> Dict[str, Any]:
         pass
 
     return {
-        "retention_days": RETENTION_DAYS,
-        "file_dir": str(FILE_DIR),
+        "retention_days": retention_days(),
+        "file_dir": str(root),
         "record_count": len(records),
         "files_present": with_file,
         "bytes_indexed": total_bytes,

@@ -58,6 +58,23 @@ def test_convert_concurrency_env(monkeypatch):
     assert s.convert_concurrency == 3
 
 
+def test_storage_reads_settings(monkeypatch, tmp_path):
+    """Upload dir / retention come from get_settings(), not import-time env."""
+    d = tmp_path / "uploads"
+    d.mkdir()
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    monkeypatch.setenv("UPLOAD_FILE_DIR", str(d))
+    monkeypatch.setenv("UPLOAD_RETENTION_DAYS", "9")
+    settings_mod.clear_settings_cache()
+
+    import storage.history as h
+
+    assert h.file_dir() == d
+    assert h.retention_days() == 9
+    assert h.FILE_DIR == d
+    assert h.RETENTION_DAYS == 9
+
+
 @pytest.mark.asyncio
 async def test_conversion_slot_limits_parallelism(monkeypatch):
     monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")

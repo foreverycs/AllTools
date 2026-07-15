@@ -4,136 +4,57 @@ import io
 import os
 import re
 from collections import Counter
-from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 import pdfplumber
 
-# ----- tuning constants -----------------------------------------------------
-SNAP_TOLERANCE = 3.0        # grid line snapping tolerance (pt)
-LINE_GAP = 3.0              # max vertical gap (pt) to group words into one text line
-# max horizontal gap (pt) to keep words in the same text segment; larger gaps
-# split one visual line into multiple blocks (e.g. "检验：" … "审核：").
-TEXT_COL_GAP = 40.0
-MIN_IMAGE_AREA = 40.0 * 40.0  # skip decorative icons smaller than this (pt²)
-MAX_IMAGES_PER_PAGE = 15
-# Fallback rasterisation DPI when the PDF stream cannot be extracted natively.
-# 144 made screenshots/photos look soft in Word; 220 is a better default for
-# print-like sharpness without huge DOCX payloads. Override with PDF2WORD_IMAGE_DPI.
-IMAGE_RENDER_DPI = int(os.environ.get("PDF2WORD_IMAGE_DPI", "220"))
-# Cap the long edge of rendered bitmaps (px) to keep memory / file size bounded.
-IMAGE_RENDER_MAX_PX = int(os.environ.get("PDF2WORD_IMAGE_MAX_PX", "3500"))
-# Prefer native embedded streams when their pixel density is at least this
-# many pixels per PDF point on either axis (≈96 DPI ≈ 1.33 px/pt).
-IMAGE_NATIVE_MIN_PX_PER_PT = 1.2
-# Thin filled rectangles / strokes treated as horizontal rules (pt).
-HLINE_MAX_THICKNESS = 2.5
-HLINE_MIN_WIDTH = 40.0
-# Table detection: text-strategy tables must not heavily overlap line tables.
-TABLE_OVERLAP_REJECT = 0.45
-# Word bbox must cover this fraction of a grid cell to claim a merge span.
-SPAN_COVER_RATIO = 0.55
-# OCR render resolution (higher than display images for better recognition).
-OCR_RENDER_DPI = int(os.environ.get("PDF2WORD_OCR_DPI", "250"))
-# Borderless (text-strategy) tables: reject grids that look like prose / multi-col
-# layout rather than real forms. Line-based tables bypass these limits.
-TEXT_TABLE_MAX_COLS = 6
-TEXT_TABLE_MAX_ROWS = 25
-TEXT_TABLE_MAX_CELLS = 40
-TEXT_TABLE_MIN_FILLED = 4
-# Cluster word left edges within this gap (pt) when estimating real columns.
-TEXT_COL_CLUSTER_TOL = 18.0
+from .constants import (
+    HLINE_MAX_THICKNESS,
+    HLINE_MIN_WIDTH,
+    IMAGE_NATIVE_MIN_PX_PER_PT,
+    IMAGE_RENDER_DPI,
+    IMAGE_RENDER_MAX_PX,
+    LINE_GAP,
+    MAX_IMAGES_PER_PAGE,
+    MIN_IMAGE_AREA,
+    OCR_RENDER_DPI,
+    SNAP_TOLERANCE,
+    SPAN_COVER_RATIO,
+    TABLE_OVERLAP_REJECT,
+    TEXT_COL_CLUSTER_TOL,
+    TEXT_COL_GAP,
+    TEXT_TABLE_MAX_CELLS,
+    TEXT_TABLE_MAX_COLS,
+    TEXT_TABLE_MAX_ROWS,
+    TEXT_TABLE_MIN_FILLED,
+)
+from .models import (
+    Cell,
+    ImageBlock,
+    LineBlock,
+    PageContent,
+    TableBlock,
+    TextBlock,
+    TextRun,
+)
 
-
-@dataclass
-class TextRun:
-    """A contiguous styled span inside a cell or paragraph."""
-    text: str
-    font_size: Optional[float] = None
-    font_name: Optional[str] = None
-
-
-@dataclass
-class Cell:
-    text: str
-    rowspan: int = 1
-    colspan: int = 1
-    font_size: Optional[float] = None   # dominant font size (pt) in the cell
-    font_name: Optional[str] = None     # dominant PDF font name in the cell
-    align: str = "left"                 # horizontal alignment: left/center/right
-    valign: str = "top"                 # vertical alignment: top/center/bottom
-    bg_color: Optional[str] = None        # cell fill colour as RRGGBB hex
-    # per-edge borders: dict with keys top/left/bottom/right, each
-    # (width_pt, color_hex, dashed) or omitted when no line exists on that edge.
-    borders: Optional[dict] = None
-    # Nested styles: list of paragraphs, each a list of TextRun spans.
-    # When set, the writer prefers this over the flat ``text`` + single font.
-    paragraphs: Optional[List[List[TextRun]]] = None
-
-
-@dataclass
-class TableBlock:
-    rows: int
-    cols: int
-    # cells[r][c] holds a Cell only at the top-left (anchor) of a (possibly merged)
-    # region. Covered cells are None. owner[r][c] points to the anchor (r, c).
-    cells: List[List[Optional[Cell]]]
-    owner: List[List[Tuple[int, int]]]
-    col_widths: List[float] = field(default_factory=list)   # column widths (pt)
-    row_heights: List[float] = field(default_factory=list)  # row heights (pt)
-    border_outer: float = 0.5           # outer border width (pt)
-    border_inner: float = 0.5           # inner grid line width (pt)
-    border_color: str = "000000"        # border colour as RRGGBB hex
-    border_dashed: bool = False         # whether borders are dashed
-    top: float = 0.0                    # vertical position on page (pt)
-    bottom: float = 0.0
-    x0: float = 0.0                     # left edge of table bbox (pt)
-
-
-@dataclass
-class TextBlock:
-    text: str
-    top: float = 0.0
-    bottom: float = 0.0
-    x0: float = 0.0                     # left edge on the PDF page (pt)
-    x1: float = 0.0                     # right edge on the PDF page (pt)
-    font_size: Optional[float] = None
-    font_name: Optional[str] = None
-    align: str = "left"                 # horizontal alignment: left/center/right
-    from_ocr: bool = False              # produced by optional OCR on a scan
-
-
-
-@dataclass
-class ImageBlock:
-    """Raster image extracted (or rendered) from the PDF page."""
-    image_bytes: bytes                  # PNG bytes
-    top: float = 0.0
-    bottom: float = 0.0
-    x0: float = 0.0                     # left edge on the PDF page (pt)
-    width_pt: float = 0.0               # display width in PDF points
-    height_pt: float = 0.0
-    page_width: float = 0.0             # source page width (pt), for placement
-    align: str = "left"                 # left/center/right relative to page
-
-
-@dataclass
-class LineBlock:
-    """Standalone horizontal rule (header underline, separator, …)."""
-    top: float = 0.0
-    bottom: float = 0.0
-    x0: float = 0.0
-    x1: float = 0.0
-    thickness: float = 0.5              # stroke / fill height (pt)
-    color: str = "000000"
-
-
-@dataclass
-class PageContent:
-    blocks: List  # ordered TextBlock | TableBlock | ImageBlock | LineBlock
-    width: float = 0.0                  # page width (pt)
-    height: float = 0.0                 # page height (pt)
-
+# Re-export so ``from converter.pdf_reader import TableBlock`` keeps working.
+__all__ = [
+    "Cell",
+    "ImageBlock",
+    "LineBlock",
+    "PageContent",
+    "TableBlock",
+    "TextBlock",
+    "TextRun",
+    "IMAGE_RENDER_DPI",
+    "IMAGE_RENDER_MAX_PX",
+    "OCR_RENDER_DPI",
+    "extract_document",
+    "parse_page_range",
+    "count_blocks",
+    "content_warnings",
+]
 
 # ----- low level helpers ----------------------------------------------------
 _CJK_RE = re.compile(

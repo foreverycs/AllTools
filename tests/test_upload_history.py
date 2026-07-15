@@ -15,15 +15,15 @@ def hist_dir(tmp_path, monkeypatch):
     d.mkdir()
     monkeypatch.setenv("UPLOAD_FILE_DIR", str(d))
     monkeypatch.setenv("UPLOAD_RETENTION_DAYS", "5")
-    # Reload module paths after env change
-    import importlib
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    import core.settings as settings_mod
     import storage.history as h
-    import storage as s
 
-    importlib.reload(h)
-    importlib.reload(s)
+    settings_mod.clear_settings_cache()
+    # Bypass cleanup throttle between archive and explicit purge tests
+    h._last_cleanup_ts = 0.0
     yield h
-    # leave tmp_path to pytest cleanup
+    settings_mod.clear_settings_cache()
 
 
 def _touch(path: Path, content: bytes = b"hello") -> Path:
@@ -49,10 +49,11 @@ def test_archive_and_list(hist_dir, tmp_path):
     assert rec is not None
     assert rec["tool"] == "pdf2word"
     assert rec["original_name"] == "报告.pdf"
-    assert (h.FILE_DIR / rec["input_rel"]).is_file()
+    root = h.file_dir()
+    assert (root / rec["input_rel"]).is_file()
     assert rec.get("output_rel") in (None, "")
     # no *_out* files written
-    outs = list(h.FILE_DIR.rglob("*_out*"))
+    outs = list(root.rglob("*_out*"))
     assert outs == []
 
     items = h.list_records()
@@ -72,7 +73,7 @@ def test_cleanup_expired(hist_dir, tmp_path):
     assert rec is not None
 
     # Backdate the record past retention
-    path = h.FILE_DIR / "records.json"
+    path = h.file_dir() / "records.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     old_ts = (datetime.now(timezone.utc) - timedelta(days=6)).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
@@ -81,7 +82,8 @@ def test_cleanup_expired(hist_dir, tmp_path):
     # also put files under an old day folder name is fine; cleanup uses created_at
     path.write_text(json.dumps(data), encoding="utf-8")
 
-    removed = h.cleanup_expired()
+    h._last_cleanup_ts = 0.0
+    removed = h._do_cleanup()
     assert removed >= 1
     items = h.list_records()
     assert all(r["id"] != rec["id"] for r in items)
@@ -106,18 +108,24 @@ def test_api_uploads_requires_admin(hist_dir, tmp_path, monkeypatch):
     monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
     monkeypatch.setenv("ADMIN_PASSWORD", "test-pass")
     monkeypatch.setenv("ADMIN_SECRET", "test-secret-for-unit-tests-only")
+    monkeypatch.setenv("DOTENV_OVERRIDE", "0")
 
     from fastapi.testclient import TestClient
     import app as app_mod
     import admin.auth as auth
     import admin.routes as routes
+    import admin.rate_limit as rate_limit
     import core.settings as settings_mod
     import importlib
 
     settings_mod.clear_settings_cache()
+    rate_limit.reset_all()
     importlib.reload(auth)
     importlib.reload(routes)
     importlib.reload(app_mod)
+    # Re-apply after lifespan/load_dotenv may have run at import time
+    settings_mod.clear_settings_cache()
+    settings_mod.validate_security_settings()
     client = TestClient(app_mod.app)
 
     # Unauthenticated: list and download must not leak history/files
@@ -127,12 +135,23 @@ def test_api_uploads_requires_admin(hist_dir, tmp_path, monkeypatch):
     assert dl.status_code == 401
 
     # Authenticated admin may list and download
+    rate_limit.reset_all()
+    login_page = client.get("/admin/login")
+    assert login_page.status_code == 200
+    csrf = client.cookies.get("toolkit_csrf")
+    assert csrf
     login = client.post(
         "/admin/login",
-        data={"password": "test-pass", "next": "/admin"},
+        data={
+            "password": "test-pass",
+            "next": "/admin",
+            "csrf_token": csrf,
+        },
         follow_redirects=False,
     )
     assert login.status_code in (303, 307, 302)
+    loc = login.headers.get("location") or ""
+    assert "error" not in loc
 
     r = client.get("/api/uploads")
     assert r.status_code == 200

@@ -13,8 +13,9 @@ services:
     image: pdf2word-toolbox:latest
     ports:
       - "8002:8000"
-    # Project .env is loaded by the app. Prefer env_file over hardcoding secrets.
-    # Variables listed under environment: OVERRIDE .env unless DOTENV_OVERRIDE=1.
+    # Secrets and admin flags live in project-root .env (required for production).
+    # Weak defaults are intentionally NOT injected here — set ADMIN_PASSWORD /
+    # ADMIN_SECRET (and ALLOW_INSECURE_ADMIN=1 only for local/dev) in .env.
     env_file:
       - .env
     environment:
@@ -24,12 +25,8 @@ services:
       UPLOAD_RETENTION_DAYS: "5"
       UPLOAD_FILE_DIR: /app/file
       CONVERT_CONCURRENCY: "2"
-      # Let container .env (env_file) win for admin keys when both exist:
+      # Prefer keys from env_file (.env) over any process shell leftovers:
       DOTENV_OVERRIDE: "1"
-      # Fallback only if .env missing these keys (dev). Production: put secrets in .env only.
-      ALLOW_INSECURE_ADMIN: ${ALLOW_INSECURE_ADMIN:-1}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
-      ADMIN_SECRET: ${ADMIN_SECRET:-dev-only-change-me-use-long-random}
     volumes:
       # Persist upload history on the host
       - ./file:/app/file

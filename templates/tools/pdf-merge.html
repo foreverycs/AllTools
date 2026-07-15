@@ -409,6 +409,7 @@
     }
   </style>
   <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
+  <script src="{{ static_url('/static/js/upload.js') }}"></script>
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
@@ -534,12 +535,12 @@
     var btnClearPreview = document.getElementById('btnClearPreview');
     var selected = [];
     var previewUrl = null;
-
-    function fmtSize(n) {
-      if (n < 1024) return n + ' B';
-      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-      return (n / (1024 * 1024)).toFixed(1) + ' MB';
-    }
+    var TU = window.ToolkitUpload;
+    var fmtSize = TU.fmtSize;
+    var xhrPost = TU.xhrPost;
+    var bindDropZone = TU.bindDropZone;
+    var xhrErrorMessage = TU.xhrErrorMessage;
+    var appUrl = TU.appUrl;
 
     function setProgress(pct) {
       progress.classList.add('show');
@@ -658,39 +659,7 @@
       fileInput.value = '';
     }
 
-    fileInput.addEventListener('change', function(e) { addFiles(e.target.files); });
-
-    ['dragover', 'dragenter'].forEach(function(ev) {
-      drop.addEventListener(ev, function(e) { e.preventDefault(); drop.classList.add('drag'); });
-    });
-    ['dragleave', 'drop'].forEach(function(ev) {
-      drop.addEventListener(ev, function(e) { e.preventDefault(); drop.classList.remove('drag'); });
-    });
-    drop.addEventListener('drop', function(e) { addFiles(e.dataTransfer.files); });
-
-    function xhrPost(url, formData) {
-      return new Promise(function(resolve, reject) {
-        var xhr = new XMLHttpRequest();
-        xhr.open('POST', url);
-        xhr.responseType = 'blob';
-        xhr.upload.onprogress = function(e) {
-          if (e.lengthComputable) {
-            setProgress((e.loaded / e.total) * 70);
-            status.className = 'info';
-            status.textContent = '\u4E0A\u4F20\u4E2D\u2026 ' + Math.round((e.loaded / e.total) * 100) + '%';
-          }
-        };
-        xhr.upload.onload = function() {
-          setProgress(75);
-          status.className = 'info';
-          status.textContent = '\u4E0A\u4F20\u5B8C\u6210\uFF0C\u6B63\u5728\u5408\u5E76\u2026';
-        };
-        xhr.onload = function() { setProgress(100); resolve(xhr); };
-        xhr.onerror = function() { reject(new Error('\u7F51\u7EDC\u9519\u8BEF')); };
-        xhr.onabort = function() { reject(new Error('\u5DF2\u53D6\u6D88')); };
-        xhr.send(formData);
-      });
-    }
+    bindDropZone({ drop: drop, input: fileInput, onFiles: addFiles });
 
     function printPreview() {
       if (!previewUrl) return;
@@ -746,15 +715,15 @@
       if (dividerCheck.checked) fd.append('divider', 'true');
 
       try {
-        var xhr = await xhrPost((window.__ROOT__||'')+'/tools/pdf-merge/convert', fd);
+        var xhr = await xhrPost(appUrl('/tools/pdf-merge/convert'), fd, {
+          onProgress: function(pct) { setProgress(pct); },
+          onStatus: function(text, cls) {
+            status.className = cls || 'info';
+            status.textContent = text;
+          },
+        });
         if (xhr.status < 200 || xhr.status >= 300) {
-          var msg = 'HTTP ' + xhr.status;
-          try {
-            var text = await xhr.response.text();
-            var err = JSON.parse(text);
-            msg = (typeof err.detail === 'string') ? err.detail : msg;
-          } catch (e) { /* keep msg */ }
-          throw new Error(msg);
+          throw new Error(await xhrErrorMessage(xhr));
         }
         showPreview(xhr.response);
 

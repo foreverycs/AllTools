@@ -1,18 +1,20 @@
-from .pdf_reader import (
-    extract_document,
-    parse_page_range,
-    count_blocks,
-    content_warnings,
-    PageContent,
-    TextBlock,
-    TableBlock,
+from .docx_writer import write_document
+from .models import (
+    Cell,
     ImageBlock,
     LineBlock,
-    Cell,
+    PageContent,
+    TableBlock,
+    TextBlock,
     TextRun,
 )
-from .docx_writer import write_document
 from .ocr import ocr_available, ocr_info
+from .pdf_reader import (
+    content_warnings,
+    count_blocks,
+    extract_document,
+    parse_page_range,
+)
 
 __all__ = [
     "extract_document",

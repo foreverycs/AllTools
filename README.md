@@ -9,11 +9,19 @@
 | **PDF 转 Word** | 纯文本 / 表格 PDF → 高保真 `.docx`（合并单元格、嵌套样式、图片、可选 OCR） |
 | **Word 转 PDF** | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word） |
 
+### 办公工具
+
+| 工具 | 说明 |
+|------|------|
+| **发票合并** | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
+| **人民币大写** | 阿拉伯数字金额转财务规范中文大写（角分、千分位） |
+
 ### 编码工具
 
 | 工具 | 说明 |
 |------|------|
 | **Base64 编解码** | 文本 / 文件 Base64 编码与解码（标准 / URL-safe、多字符集、换行折叠） |
+| **JSON 格式化** | 美化 / 压缩、键排序、语法校验，默认保留中文 |
 
 ## 特性
 
@@ -41,9 +49,10 @@
 
 ### 通用
 
-- **批量转换**：多文件一次上传，打包为 ZIP 下载。
+- **批量转换**：多文件一次上传，打包为 ZIP 下载；批量内转换受 `CONVERT_CONCURRENCY` 限制并行。
 - **上传归档**：转换成功后仅将**输入文件**写入后台 `file/` 目录（前端不展示）；**仅保留最近 5 天**（可配 `UPLOAD_RETENTION_DAYS`）。
 - Web 界面：拖拽上传、上传进度条、统计与警告提示。
+- **管理后台**：仪表盘、上传记录、系统状态；登录限流 + CSRF；生产须配置强 `ADMIN_PASSWORD` / `ADMIN_SECRET`。
 - 命令行：`python -m converter input.pdf` / `python -m word2pdf input.docx`。
 - 单文件最大 50 MB，批量最多 20 个；上传分块写盘，转换在线程池执行。
 
@@ -53,6 +62,8 @@
 python -m venv .venv
 .venv\Scripts\activate      # Windows
 pip install -r requirements.txt
+# 开发 / 跑测试：
+pip install -r requirements-dev.txt
 ```
 
 ## 运行
@@ -108,6 +119,12 @@ set ADMIN_SECRET=please-use-a-long-random-string-here
 | `CONVERT_CONCURRENCY` | 全局转换并发上限（PDF/Word/发票） | `2` |
 | `MAX_UPLOAD_BYTES` | 单文件上传上限（字节） | `52428800`（50 MB） |
 | `MAX_BATCH_FILES` | 批量最多文件数 | `20` |
+| `UPLOAD_RETENTION_DAYS` | 上传归档保留天数 | `5` |
+| `UPLOAD_FILE_DIR` | 归档目录（默认项目下 `file/`） | 空 |
+
+`GET /health` 为轻量探活；需要引擎/OCR/归档统计时使用 `GET /health?detail=1`。
+
+管理后台登录有进程内失败锁定（默认约 8 次 / 10 分钟 → 锁定 15 分钟），生产仍建议在 Nginx 层做限流。
 
 项目根目录 `.env` 会在启动时自动加载。
 
