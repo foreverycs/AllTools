@@ -10,12 +10,17 @@ The semaphore limits total concurrent jobs regardless of strategy.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import time
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Callable, Optional, Tuple
 
+from .request_id import get_request_id
 from .settings import get_settings
+
+logger = logging.getLogger("toolkit.convert")
 
 _sem: Optional[asyncio.Semaphore] = None
 _sem_limit: int = 0
@@ -80,10 +85,35 @@ async def conversion_slot() -> AsyncIterator[None]:
         sem.release()
 
 
+def _func_label(func: Callable[..., Any]) -> str:
+    return getattr(func, "__qualname__", None) or getattr(func, "__name__", repr(func))
+
+
 async def run_conversion(func, /, *args, **kwargs):
     """Run ``func`` in a worker thread while holding a conversion slot."""
+    label = _func_label(func)
+    rid = get_request_id() or "-"
+    t0 = time.perf_counter()
     async with conversion_slot():
-        return await asyncio.to_thread(func, *args, **kwargs)
+        try:
+            result = await asyncio.to_thread(func, *args, **kwargs)
+        except Exception:
+            ms = (time.perf_counter() - t0) * 1000
+            logger.exception(
+                "convert_failed mode=thread func=%s ms=%.1f request_id=%s",
+                label,
+                ms,
+                rid,
+            )
+            raise
+    ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "convert_ok mode=thread func=%s ms=%.1f request_id=%s",
+        label,
+        ms,
+        rid,
+    )
+    return result
 
 
 def _call_in_process(
@@ -102,12 +132,33 @@ async def run_conversion_process(func, /, *args, **kwargs):
     limits thread-based parallelism. The function and its arguments must
     be picklable (module-level callable; no lambdas, no open file handles).
     """
+    label = _func_label(func)
+    rid = get_request_id() or "-"
+    t0 = time.perf_counter()
     pool = _get_proc_pool()
     async with conversion_slot():
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            pool, _call_in_process, func, args, kwargs
-        )
+        try:
+            result = await loop.run_in_executor(
+                pool, _call_in_process, func, args, kwargs
+            )
+        except Exception:
+            ms = (time.perf_counter() - t0) * 1000
+            logger.exception(
+                "convert_failed mode=process func=%s ms=%.1f request_id=%s",
+                label,
+                ms,
+                rid,
+            )
+            raise
+    ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "convert_ok mode=process func=%s ms=%.1f request_id=%s",
+        label,
+        ms,
+        rid,
+    )
+    return result
 
 
 # Threshold in bytes: files larger than this use process pool for PDF conversion.

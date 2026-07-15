@@ -10,8 +10,16 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import Response
 
-from core.settings import get_settings, load_dotenv, validate_security_settings
 from core.errors import ToolkitError
+from core.logging_setup import configure_logging, get_logger
+from core.request_id import (
+    REQUEST_ID_HEADER,
+    get_request_id,
+    new_request_id,
+    reset_request_id,
+    set_request_id,
+)
+from core.settings import get_settings, load_dotenv, validate_security_settings
 from core.version import __version__
 from storage import (
     ensure_file_dir,
@@ -36,6 +44,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Load .env early so ROOT_PATH is available without forcing full security load.
 load_dotenv()
+configure_logging()
+logger = get_logger("toolkit.app")
 
 # Pre-compute static data that never changes at runtime
 _nav_items = nav_categories()
@@ -69,10 +79,12 @@ def _page_ctx(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from core.concurrency import shutdown_pools
+    from core.jobs import reclaim_expired
     from storage.history import _do_cleanup
 
     # Project-root .env for local runs (does not override real process env).
     load_dotenv()
+    configure_logging()
     # Fail fast on weak/missing admin credentials (unless ALLOW_INSECURE_ADMIN=1).
     validate_security_settings()
     ensure_file_dir()
@@ -81,10 +93,16 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     try:
+        await reclaim_expired()
+    except Exception:
+        pass
+    logger.info("toolkit started version=%s tools=%s", __version__, _tool_count)
+    try:
         yield
     finally:
         # Release ProcessPoolExecutor workers if any were started.
         shutdown_pools(wait=False)
+        logger.info("toolkit stopped")
 
 
 app = FastAPI(
@@ -109,15 +127,33 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 @app.exception_handler(ToolkitError)
 async def toolkit_error_handler(request: Request, exc: ToolkitError):
     """Map unified ToolkitError hierarchy to HTTP responses."""
+    rid = get_request_id()
+    body: dict = {"detail": exc.detail}
+    if rid:
+        body["request_id"] = rid
+    headers = {REQUEST_ID_HEADER: rid} if rid else {}
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail},
+        content=body,
+        headers=headers,
     )
 
 
 @app.middleware("http")
-async def security_and_cache_headers(request: Request, call_next):
-    response: Response = await call_next(request)
+async def request_context_and_security_headers(request: Request, call_next):
+    """Attach request id, security headers, and static cache policy."""
+    incoming = request.headers.get(REQUEST_ID_HEADER) or request.headers.get(
+        "X-Request-Id"
+    )
+    rid = (incoming or "").strip() or new_request_id()
+    token = set_request_id(rid)
+    request.state.request_id = rid
+    try:
+        response: Response = await call_next(request)
+    finally:
+        reset_request_id(token)
+
+    response.headers.setdefault(REQUEST_ID_HEADER, rid)
     path = request.url.path
     # Baseline hardening for HTML/API responses (static files get a lighter set).
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -274,6 +310,36 @@ async def health(detail: int = Query(0, ge=0, le=1)):
         ]
         body.update(_health_details())
     return JSONResponse(body)
+
+
+@app.get("/api/jobs/{job_id}")
+async def api_job_status(job_id: str):
+    """Poll an async conversion job (in-process store; lost on restart)."""
+    from core.jobs import get_job, job_public_dict
+
+    job = await get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JSONResponse(job_public_dict(job))
+
+
+@app.get("/api/jobs/{job_id}/download")
+async def api_job_download(job_id: str):
+    """Download the result file for a completed job (if still on disk)."""
+    from core.jobs import JobStatus, get_job
+
+    job = await get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != JobStatus.done or not job.output_path:
+        raise HTTPException(status_code=409, detail="Job has no downloadable result yet")
+    if not os.path.isfile(job.output_path):
+        raise HTTPException(status_code=410, detail="Job result expired or missing")
+    return FileResponse(
+        job.output_path,
+        filename=job.download_name or os.path.basename(job.output_path),
+        media_type=job.media_type or "application/octet-stream",
+    )
 
 
 @app.get("/api/uploads")

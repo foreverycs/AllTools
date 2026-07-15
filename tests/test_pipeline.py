@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from core.errors import ConversionError, PDFParseError, ValidationError
+from core.errors import (
+    ConversionError,
+    EngineNotFoundError,
+    PDFParseError,
+    ValidationError,
+)
 from tools.pipeline import TempWorkspace, map_conversion_error
 from word2pdf import ConversionError as WordConversionError
+
+
+def test_word_and_core_conversion_error_are_unified():
+    assert WordConversionError is ConversionError
 
 
 def test_map_toolkit_error_preserves_status():
@@ -22,10 +31,16 @@ def test_map_value_error_is_400():
     assert exc.detail == "range"
 
 
-def test_map_word_conversion_error_is_400():
-    exc = map_conversion_error(WordConversionError("no engine"))
-    assert exc.status_code == 400
-    assert "no engine" in exc.detail
+def test_map_word_conversion_error_status():
+    # Runtime conversion failures stay 500; validation uses ValidationError.
+    exc = map_conversion_error(WordConversionError("engine failed"))
+    assert exc.status_code == 500
+    assert "engine failed" in exc.detail
+
+
+def test_map_engine_not_found_is_503():
+    exc = map_conversion_error(EngineNotFoundError("no libreoffice"))
+    assert exc.status_code == 503
 
 
 def test_map_generic_is_500():

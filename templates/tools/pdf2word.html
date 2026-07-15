@@ -289,7 +289,7 @@
           </svg>
         </div>
         <div class="drop-title">点击或拖拽 <strong>PDF 文件</strong> 到此处</div>
-        <div class="drop-hint">最多 20 个 · 每个 ≤ 50 MB</div>
+        <div class="drop-hint">最多 20 个 · 每个 ≤ 50 MB · 大文件 / OCR 可能需数分钟</div>
       </label>
       <ul class="file-list" id="list"></ul>
 
@@ -477,6 +477,12 @@
         const xhr = await xhrPost(url, fd, {
           onProgress: (pct) => setProgress(pct),
           onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
+          processHint: multi
+            ? `上传完成，正在批量转换 ${selected.length} 个文件… 请勿关闭页面`
+            : (ocrEnabled && ocrEnabled.checked && !ocrEnabled.disabled
+              ? '上传完成，正在转换（含 OCR）… 扫描件可能需数分钟，请勿关闭页面'
+              : '上传完成，正在转换… 复杂表格可能较慢，请勿关闭页面'),
+          longWaitSec: 15,
         });
         if (xhr.status < 200 || xhr.status >= 300) {
           throw new Error(await xhrErrorMessage(xhr));

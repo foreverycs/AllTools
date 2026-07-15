@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .converter import ConversionError, convert_to_pdf, engine_info
+from core.errors import ToolkitError
+
+from .converter import convert_to_pdf, engine_info
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output,
             engine=args.engine,
         )
-    except ConversionError as exc:
+    except ToolkitError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:

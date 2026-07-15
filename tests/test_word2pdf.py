@@ -8,13 +8,22 @@ from unittest import mock
 
 import pytest
 
-from word2pdf.converter import (
+from core.errors import (
     ConversionError,
+    EngineNotFoundError,
+    UnsupportedFormatError,
+    ValidationError,
+)
+from word2pdf.converter import (
+    ConversionError as WordConversionError,
     _validate_input,
     available_engines,
     convert_to_pdf,
     engine_info,
 )
+
+# Same class after unification (word2pdf re-exports core.errors.ConversionError).
+assert WordConversionError is ConversionError
 
 
 def _make_docx(path: str) -> None:
@@ -26,21 +35,21 @@ def _make_docx(path: str) -> None:
 
 
 def test_validate_input_rejects_missing():
-    with pytest.raises(ConversionError, match="not found"):
+    with pytest.raises(ValidationError, match="not found"):
         _validate_input("no_such_file.docx")
 
 
 def test_validate_input_rejects_bad_ext(tmp_path: Path):
     p = tmp_path / "x.txt"
     p.write_text("hi", encoding="utf-8")
-    with pytest.raises(ConversionError, match="Unsupported"):
+    with pytest.raises(UnsupportedFormatError, match="Unsupported"):
         _validate_input(str(p))
 
 
 def test_validate_input_rejects_empty(tmp_path: Path):
     p = tmp_path / "empty.docx"
     p.write_bytes(b"")
-    with pytest.raises(ConversionError, match="Empty"):
+    with pytest.raises(ValidationError, match="Empty"):
         _validate_input(str(p))
 
 
@@ -117,7 +126,7 @@ def test_convert_no_engine_raises(tmp_path: Path):
     p = tmp_path / "a.docx"
     _make_docx(str(p))
     with mock.patch("word2pdf.converter.available_engines", return_value=[]):
-        with pytest.raises(ConversionError, match="No conversion engine"):
+        with pytest.raises(EngineNotFoundError, match="No conversion engine"):
             convert_to_pdf(str(p))
 
 
@@ -149,7 +158,7 @@ def test_convert_force_unavailable_engine(tmp_path: Path):
         "word2pdf.converter.available_engines",
         return_value=["libreoffice"],
     ):
-        with pytest.raises(ConversionError, match="not available"):
+        with pytest.raises(EngineNotFoundError, match="not available"):
             convert_to_pdf(str(src), engine="msword")
 
 

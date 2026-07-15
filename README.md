@@ -121,8 +121,17 @@ set ADMIN_SECRET=please-use-a-long-random-string-here
 | `MAX_BATCH_FILES` | 批量最多文件数 | `20` |
 | `UPLOAD_RETENTION_DAYS` | 上传归档保留天数 | `5` |
 | `UPLOAD_FILE_DIR` | 归档目录（默认项目下 `file/`） | 空 |
+| `LOG_LEVEL` | 日志级别（`DEBUG` / `INFO` / …） | `INFO` |
+| `PDF_PROCESS_POOL_THRESHOLD` | 大于该字节数的 PDF 走进程池转换 | `2097152`（2 MB） |
 
-`GET /health` 为轻量探活；需要引擎/OCR/归档统计时使用 `GET /health?detail=1`。
+`GET /health` 为轻量探活；需要引擎/OCR/归档统计时使用 `GET /health?detail=1`。  
+响应带 `X-Request-ID`（可客户端传入以便串联日志）。异步任务查询：`GET /api/jobs/{id}`（进程内存储，重启丢失；完整异步转换 API 仍在演进）。
+
+### 长转换 / 超时
+
+- PDF→Word（尤其 **OCR**）、Word→PDF 可能需数分钟；前端会在上传后提示「仍在处理」。
+- Nginx / 宝塔反代请设置 **`proxy_read_timeout` ≥ 600s**（见 `deploy/nginx-baota.conf.example`）。
+- 仍超时可：缩小页码范围、关闭 OCR、或调大反代与客户端超时。
 
 管理后台登录有进程内失败锁定（默认约 8 次 / 10 分钟 → 锁定 15 分钟），生产仍建议在 Nginx 层做限流。
 

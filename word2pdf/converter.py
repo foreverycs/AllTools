@@ -22,6 +22,13 @@ import zipfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from core.errors import (
+    ConversionError,
+    EngineNotFoundError,
+    UnsupportedFormatError,
+    ValidationError,
+)
+
 # Common LibreOffice install locations on Windows.
 _WIN_SOFFICE_CANDIDATES = (
     r"C:\Program Files\LibreOffice\program\soffice.exe",
@@ -39,9 +46,9 @@ _TIMEOUT_CAP_SEC = 600
 # LibreOffice PDF export filter: keep bookmarks, skip notes/comments noise.
 _LO_PDF_FILTER = "pdf:writer_pdf_Export"
 
-
-class ConversionError(Exception):
-    """Raised when Word → PDF conversion fails or no engine is available."""
+# Re-export for ``from word2pdf.converter import ConversionError``.
+# Input problems → ValidationError / UnsupportedFormatError (HTTP 400);
+# missing engine → EngineNotFoundError (HTTP 503); runtime failures → ConversionError.
 
 
 def _which_soffice() -> Optional[str]:
@@ -126,15 +133,15 @@ def engine_info() -> dict:
 def _validate_input(input_path: str) -> Path:
     path = Path(input_path)
     if not path.is_file():
-        raise ConversionError(f"File not found: {input_path}")
+        raise ValidationError(f"File not found: {input_path}")
     ext = path.suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
-        raise ConversionError(
+        raise UnsupportedFormatError(
             f"Unsupported format '{ext}'. "
             f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
         )
     if path.stat().st_size == 0:
-        raise ConversionError("Empty file")
+        raise ValidationError("Empty file")
     return path
 
 
@@ -435,11 +442,11 @@ def convert_to_pdf(
     if engine:
         chosen = engine.lower().strip()
         if chosen not in ("libreoffice", "msword"):
-            raise ConversionError(
+            raise ValidationError(
                 f"Unknown engine '{engine}'. Use 'libreoffice' or 'msword'."
             )
         if chosen not in engines:
-            raise ConversionError(
+            raise EngineNotFoundError(
                 f"Engine '{chosen}' is not available on this machine. "
                 f"Available: {', '.join(engines) or 'none'}"
             )
@@ -454,7 +461,7 @@ def convert_to_pdf(
             order = ["msword", "libreoffice"]
 
     if not order:
-        raise ConversionError(
+        raise EngineNotFoundError(
             "No conversion engine available. Install LibreOffice "
             "(recommended for servers) or Microsoft Word (Windows). "
             "You can set LIBREOFFICE_PATH to the soffice binary."

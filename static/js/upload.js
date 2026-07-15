@@ -42,17 +42,63 @@
    * @param {string} url
    * @param {FormData} formData
    * @param {{
-   *   onProgress?: (pct:number, phase:'upload'|'done') => void,
-   *   onStatus?: (text:string, cls?:string) => void
+   *   onProgress?: (pct:number, phase:'upload'|'done'|'process') => void,
+   *   onStatus?: (text:string, cls?:string) => void,
+   *   processHint?: string,
+   *   longWaitSec?: number
    * }} [opts]
    * @returns {Promise<XMLHttpRequest>}
    */
   function xhrPost(url, formData, opts) {
     opts = opts || {};
+    var processHint =
+      opts.processHint ||
+      "上传完成，正在转换… 大文件 / OCR 可能需要数分钟，请勿关闭页面";
+    var longWaitSec = typeof opts.longWaitSec === "number" ? opts.longWaitSec : 20;
     return new Promise(function (resolve, reject) {
       var xhr = new XMLHttpRequest();
+      var processTimer = null;
+      var tickTimer = null;
+      var processStarted = 0;
+
+      function clearTimers() {
+        if (processTimer) {
+          clearTimeout(processTimer);
+          processTimer = null;
+        }
+        if (tickTimer) {
+          clearInterval(tickTimer);
+          tickTimer = null;
+        }
+      }
+
+      function startProcessHints() {
+        processStarted = Date.now();
+        if (opts.onStatus) opts.onStatus(processHint, "info");
+        if (opts.onProgress) opts.onProgress(78, "process");
+        // Periodic “still working” hints so long conversions feel alive.
+        tickTimer = setInterval(function () {
+          var sec = Math.round((Date.now() - processStarted) / 1000);
+          if (opts.onProgress) {
+            // Creep slowly toward 95% while waiting (never claim 100% early).
+            var pct = Math.min(95, 78 + Math.log10(1 + sec) * 8);
+            opts.onProgress(pct, "process");
+          }
+          if (opts.onStatus && sec >= longWaitSec) {
+            opts.onStatus(
+              "仍在处理（已 " +
+                sec +
+                " 秒）… 复杂表格 / 扫描件 OCR 较慢，请继续等待",
+              "info"
+            );
+          }
+        }, 5000);
+      }
+
       xhr.open("POST", url);
       xhr.responseType = "blob";
+      // Client-side safety net; reverse proxies should still set ≥600s.
+      xhr.timeout = typeof opts.timeoutMs === "number" ? opts.timeoutMs : 0;
       xhr.upload.onprogress = function (e) {
         if (e.lengthComputable && opts.onProgress) {
           opts.onProgress((e.loaded / e.total) * 70, "upload");
@@ -66,17 +112,28 @@
       };
       xhr.upload.onload = function () {
         if (opts.onProgress) opts.onProgress(75, "upload");
-        if (opts.onStatus) opts.onStatus("上传完成，正在处理…", "info");
+        startProcessHints();
       };
       xhr.onload = function () {
+        clearTimers();
         if (opts.onProgress) opts.onProgress(100, "done");
         resolve(xhr);
       };
       xhr.onerror = function () {
+        clearTimers();
         reject(new Error("网络错误"));
       };
       xhr.onabort = function () {
+        clearTimers();
         reject(new Error("已取消"));
+      };
+      xhr.ontimeout = function () {
+        clearTimers();
+        reject(
+          new Error(
+            "请求超时。请检查反代 proxy_read_timeout（建议 ≥600s），或缩小页数 / 关闭 OCR 后重试"
+          )
+        );
       };
       xhr.send(formData);
     });

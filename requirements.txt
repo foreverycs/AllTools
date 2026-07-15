@@ -6,6 +6,8 @@ pdfplumber>=0.11
 python-docx>=1.1
 Pillow>=10.0
 pypdf>=3.17
+# invoice merge divider (pdf-merge tool)
+reportlab>=4.0
 
 # optional OCR (also needs system Tesseract binary + language packs)
 pytesseract>=0.3.10

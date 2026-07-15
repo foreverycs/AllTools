@@ -1,10 +1,16 @@
 """Word (.docx / .doc) → PDF conversion."""
 
+from core.errors import (
+    ConversionError,
+    EngineNotFoundError,
+    UnsupportedFormatError,
+    ValidationError,
+)
+
 from .converter import (
+    available_engines,
     convert_to_pdf,
     engine_info,
-    available_engines,
-    ConversionError,
 )
 
 __all__ = [
@@ -12,4 +18,7 @@ __all__ = [
     "engine_info",
     "available_engines",
     "ConversionError",
+    "EngineNotFoundError",
+    "UnsupportedFormatError",
+    "ValidationError",
 ]

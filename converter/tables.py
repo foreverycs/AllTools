@@ -824,6 +824,28 @@ def _accept_table(tb: TableBlock, page, widx: WordIndex) -> bool:
     return _is_plausible_borderless_table(tb, widx)
 
 
+def _page_has_table_strokes(page) -> bool:
+    """True when the page has line/edge/thin-rect strokes that may form a grid.
+
+    Used to skip useless line-based ``find_tables`` passes on plain-text pages.
+    """
+    if page.lines or getattr(page, "edges", None):
+        return True
+    for rct in page.rects or []:
+        try:
+            x0, top = float(rct["x0"]), float(rct["top"])
+            x1, bottom = float(rct["x1"]), float(rct["bottom"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        w = abs(x1 - x0)
+        h = abs(bottom - top)
+        if w >= HLINE_MIN_WIDTH and h <= HLINE_MAX_THICKNESS * 1.5:
+            return True
+        if h >= HLINE_MIN_WIDTH and w <= HLINE_MAX_THICKNESS * 1.5:
+            return True
+    return False
+
+
 def _find_tables(page):
     """Detect tables with a hybrid strategy.
 
@@ -832,49 +854,55 @@ def _find_tables(page):
     3. Pure text strategy for borderless grids, only when the region is not
        already covered by a line-based table.
 
+    On pages with **no** grid-like strokes, only the text/text strategy runs
+    (plain-text fast path: skip three empty line/mixed passes).
+
     Candidates are de-duplicated here; plausibility filtering (to drop prose
     mis-detected as tables) happens after :func:`_build_table` via
     :func:`_accept_table`.
     """
-    settings_list = [
-        {
-            "vertical_strategy": "lines",
-            "horizontal_strategy": "lines",
-            "snap_tolerance": SNAP_TOLERANCE,
-            "intersection_tolerance": SNAP_TOLERANCE,
-        },
-        {
-            "vertical_strategy": "lines",
-            "horizontal_strategy": "text",
-            "snap_tolerance": SNAP_TOLERANCE,
-            "intersection_tolerance": SNAP_TOLERANCE,
-            "text_tolerance": 3,
-            "text_x_tolerance": 3,
-            "text_y_tolerance": 3,
-        },
-        {
-            "vertical_strategy": "text",
-            "horizontal_strategy": "lines",
-            "snap_tolerance": SNAP_TOLERANCE,
-            "intersection_tolerance": SNAP_TOLERANCE,
-            "text_tolerance": 3,
-            "text_x_tolerance": 3,
-            "text_y_tolerance": 3,
-        },
-        {
-            "vertical_strategy": "text",
-            "horizontal_strategy": "text",
-            "snap_tolerance": SNAP_TOLERANCE,
-            "intersection_tolerance": SNAP_TOLERANCE,
-            "text_tolerance": 3,
-            "text_x_tolerance": 3,
-            "text_y_tolerance": 3,
-            # Slightly stricter than pdfplumber defaults so single-column prose
-            # is less likely to form a micro-grid of word chips.
-            "min_words_vertical": 3,
-            "min_words_horizontal": 2,
-        },
-    ]
+    line_settings = {
+        "vertical_strategy": "lines",
+        "horizontal_strategy": "lines",
+        "snap_tolerance": SNAP_TOLERANCE,
+        "intersection_tolerance": SNAP_TOLERANCE,
+    }
+    mixed_vh = {
+        "vertical_strategy": "lines",
+        "horizontal_strategy": "text",
+        "snap_tolerance": SNAP_TOLERANCE,
+        "intersection_tolerance": SNAP_TOLERANCE,
+        "text_tolerance": 3,
+        "text_x_tolerance": 3,
+        "text_y_tolerance": 3,
+    }
+    mixed_hv = {
+        "vertical_strategy": "text",
+        "horizontal_strategy": "lines",
+        "snap_tolerance": SNAP_TOLERANCE,
+        "intersection_tolerance": SNAP_TOLERANCE,
+        "text_tolerance": 3,
+        "text_x_tolerance": 3,
+        "text_y_tolerance": 3,
+    }
+    text_settings = {
+        "vertical_strategy": "text",
+        "horizontal_strategy": "text",
+        "snap_tolerance": SNAP_TOLERANCE,
+        "intersection_tolerance": SNAP_TOLERANCE,
+        "text_tolerance": 3,
+        "text_x_tolerance": 3,
+        "text_y_tolerance": 3,
+        # Slightly stricter than pdfplumber defaults so single-column prose
+        # is less likely to form a micro-grid of word chips.
+        "min_words_vertical": 3,
+        "min_words_horizontal": 2,
+    }
+    if _page_has_table_strokes(page):
+        settings_list = [line_settings, mixed_vh, mixed_hv, text_settings]
+    else:
+        # Plain / borderless: one text strategy only (no empty line passes).
+        settings_list = [text_settings]
     kept = []
     page_area = max(
         (float(getattr(page, "width", 0) or 0))

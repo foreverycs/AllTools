@@ -6,20 +6,12 @@ import asyncio
 import os
 import shutil
 import tempfile
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import Any, Dict, Optional
 
 from fastapi import BackgroundTasks, HTTPException
 
 from core.errors import ToolkitError
 from storage import archive_conversion
-
-_WORD_ERR: Tuple[Type[BaseException], ...]
-try:
-    from word2pdf import ConversionError as _WordConversionError
-
-    _WORD_ERR = (_WordConversionError,)
-except Exception:  # pragma: no cover
-    _WORD_ERR = ()
 
 
 class TempWorkspace:
@@ -56,17 +48,18 @@ def map_conversion_error(
     label: str = "Conversion failed",
     name_prefix: Optional[str] = None,
 ) -> HTTPException:
-    """Map conversion-layer exceptions to HTTPException."""
+    """Map conversion-layer exceptions to HTTPException.
+
+    ``ToolkitError`` subclasses (including Word→PDF failures) keep their
+    status codes. Prefer letting the global handler catch ToolkitError when
+    possible; this helper remains for route try/except that must clean temp dirs.
+    """
     if isinstance(exc, HTTPException):
         return exc
 
     if isinstance(exc, ToolkitError):
         status = exc.status_code
         detail = exc.detail
-    elif _WORD_ERR and isinstance(exc, _WORD_ERR):
-        # Match prior word2pdf routes: engine/layout failures → 400.
-        status = 400
-        detail = str(exc)
     elif isinstance(exc, ValueError):
         status = 400
         detail = str(exc)
