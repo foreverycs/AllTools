@@ -146,6 +146,7 @@
   const PREVIEW_EXTS = new Set(['pdf','png','jpg','jpeg','gif','webp','bmp','svg','txt','csv','json','html','htm','docx','doc']);
   const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','bmp','svg']);
   const WORD_EXTS = new Set(['docx','doc']);
+  var previewBlobUrl = null;
 
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.preview-btn');
@@ -154,6 +155,13 @@
     var name = btn.getAttribute('data-name');
     openPreview(id, name);
   });
+
+  function revokePreviewBlob() {
+    if (previewBlobUrl) {
+      try { URL.revokeObjectURL(previewBlobUrl); } catch (err) {}
+      previewBlobUrl = null;
+    }
+  }
 
   function showPreviewError(msg) {
     bodyEl.innerHTML = '';
@@ -178,6 +186,7 @@
       return;
     }
     titleEl.textContent = name;
+    revokePreviewBlob();
     bodyEl.innerHTML = '';
     var url = (window.__ROOT__||'')+'/admin/uploads/' + encodeURIComponent(id) + '/preview';
     overlay.classList.add('show');
@@ -192,9 +201,9 @@
       return;
     }
 
-    // Word: backend returns HTML (or JSON error for unsupported .doc).
+    // Word needs server-side PDF conversion; fetch so we can show errors/loading.
     if (WORD_EXTS.has(ext)) {
-      showPreviewLoading('正在加载 Word 预览…');
+      showPreviewLoading('正在生成 Word 预览…');
       fetch(url, { credentials: 'same-origin' })
         .then(function(r) {
           var ctype = (r.headers.get('content-type') || '').toLowerCase();
@@ -208,24 +217,17 @@
               throw new Error(t || ('预览失败 (' + r.status + ')'));
             });
           }
-          return r.text();
+          return r.blob();
         })
-        .then(function(htmlDoc) {
+        .then(function(blob) {
           if (!overlay.classList.contains('show')) return;
+          previewBlobUrl = URL.createObjectURL(blob);
           bodyEl.innerHTML = '';
           var iframe = document.createElement('iframe');
           iframe.className = 'preview-iframe';
+          iframe.src = previewBlobUrl;
           iframe.title = name;
-          iframe.setAttribute('sandbox', 'allow-same-origin');
           bodyEl.appendChild(iframe);
-          var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
-          if (doc) {
-            doc.open();
-            doc.write(htmlDoc);
-            doc.close();
-          } else {
-            iframe.srcdoc = htmlDoc;
-          }
         })
         .catch(function(err) {
           if (!overlay.classList.contains('show')) return;
@@ -244,6 +246,7 @@
   function closePreview(e) {
     if (e && e.target !== overlay) return;
     overlay.classList.remove('show');
+    revokePreviewBlob();
     bodyEl.innerHTML = '';
     document.body.style.overflow = '';
   }

@@ -206,6 +206,10 @@ def _remove_record_files(record: Dict[str, Any]) -> None:
         except ValueError:
             continue
         _unlink_quiet(candidate)
+        # Drop Word→PDF preview cache written next to archived inputs
+        # (see admin.routes uploads_preview).
+        if key == "input_rel":
+            _unlink_quiet(Path(str(candidate) + ".preview.pdf"))
 
 
 def cleanup_expired() -> int:

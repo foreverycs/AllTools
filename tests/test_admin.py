@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -267,18 +268,14 @@ def test_admin_uploads_preview(admin_client):
     assert client.get("/admin/uploads/nonexistent/preview").status_code == 404
 
 
-def test_admin_uploads_word_preview_html(admin_client):
-    """Word .docx preview is HTML (no LibreOffice conversion)."""
+def test_admin_uploads_word_preview_pdf(admin_client, monkeypatch):
+    """Word .docx/.doc preview converts to PDF via word2pdf (mocked)."""
     from docx import Document
 
     client, h, tmp_path = admin_client
     src = tmp_path / "note.docx"
     doc = Document()
-    doc.add_heading("预览标题", level=1)
     doc.add_paragraph("Hello Word preview")
-    table = doc.add_table(rows=1, cols=2)
-    table.rows[0].cells[0].text = "A"
-    table.rows[0].cells[1].text = "B"
     doc.save(str(src))
 
     rec = h.archive_conversion(
@@ -288,38 +285,93 @@ def test_admin_uploads_word_preview_html(admin_client):
     )
     assert rec is not None
 
+    def fake_convert(input_path, output_path=None, **kwargs):
+        out = Path(output_path or str(Path(input_path).with_suffix(".pdf")))
+        out.write_bytes(b"%PDF-1.4 fake preview")
+        return str(out), "libreoffice"
+
+    monkeypatch.setattr("word2pdf.convert_to_pdf", fake_convert)
+
     _login(client)
     pv = client.get(f"/admin/uploads/{rec['id']}/preview")
     assert pv.status_code == 200
-    ctype = (pv.headers.get("content-type") or "").lower()
-    assert "text/html" in ctype
-    assert pv.headers.get("x-preview-source") == "docx-html"
-    assert "inline" in pv.headers.get("content-disposition", "")
-    body = pv.text
-    assert "预览标题" in body
-    assert "Hello Word preview" in body
-    assert "<table>" in body
-    assert ">A<" in body
+    assert "application/pdf" in (pv.headers.get("content-type") or "")
+    assert pv.headers.get("x-preview-source") == "word"
+    assert "inline" in (pv.headers.get("content-disposition") or "")
+    assert pv.content.startswith(b"%PDF")
+
+    # Second request should hit disk cache (no convert call needed).
+    calls = {"n": 0}
+
+    def boom(*a, **k):
+        calls["n"] += 1
+        raise AssertionError("should use cache")
+
+    monkeypatch.setattr("word2pdf.convert_to_pdf", boom)
+    pv2 = client.get(f"/admin/uploads/{rec['id']}/preview")
+    assert pv2.status_code == 200
+    assert calls["n"] == 0
+    assert pv2.content.startswith(b"%PDF")
 
 
-def test_admin_uploads_doc_preview_unsupported(admin_client):
-    """Legacy .doc cannot be previewed without conversion engines."""
+def test_admin_uploads_word_preview_chinese_filename(admin_client, monkeypatch):
+    """Non-ASCII original names must not 500 on Content-Disposition."""
+    from docx import Document
+
     client, h, tmp_path = admin_client
-    src = tmp_path / "legacy.doc"
-    src.write_bytes(b"\xd0\xcf\x11\xe0 fake ole doc")
+    src = tmp_path / "cn.docx"
+    doc = Document()
+    doc.add_paragraph("中文内容预览")
+    doc.save(str(src))
+
     rec = h.archive_conversion(
         tool="word2pdf",
-        original_name="legacy.doc",
+        original_name="中文报告.docx",
         input_path=str(src),
     )
     assert rec is not None
 
+    def fake_convert(input_path, output_path=None, **kwargs):
+        out = Path(output_path or str(Path(input_path).with_suffix(".pdf")))
+        out.write_bytes(b"%PDF-1.4 cn preview")
+        return str(out), "libreoffice"
+
+    monkeypatch.setattr("word2pdf.convert_to_pdf", fake_convert)
+
     _login(client)
     pv = client.get(f"/admin/uploads/{rec['id']}/preview")
-    assert pv.status_code == 415
-    assert "docx" in (pv.json().get("detail") or "").lower() or "doc" in (
-        pv.json().get("detail") or ""
-    ).lower()
+    assert pv.status_code == 200, pv.text[:500]
+    assert "application/pdf" in (pv.headers.get("content-type") or "")
+    cd = pv.headers.get("content-disposition") or ""
+    assert "inline" in cd
+    cd.encode("latin-1")
+    assert "filename*=" in cd
+
+
+def test_admin_uploads_word_preview_no_engine(admin_client, monkeypatch):
+    """Missing conversion engine returns 503."""
+    from core.errors import EngineNotFoundError
+    from docx import Document
+
+    client, h, tmp_path = admin_client
+    src = tmp_path / "note.docx"
+    Document().save(str(src))
+    rec = h.archive_conversion(
+        tool="word2pdf",
+        original_name="note.docx",
+        input_path=str(src),
+    )
+    assert rec is not None
+
+    def no_engine(*a, **k):
+        raise EngineNotFoundError("No conversion engine available")
+
+    monkeypatch.setattr("word2pdf.convert_to_pdf", no_engine)
+
+    _login(client)
+    pv = client.get(f"/admin/uploads/{rec['id']}/preview")
+    assert pv.status_code == 503
+    assert "engine" in (pv.json().get("detail") or "").lower()
 
 
 def test_admin_api_stats_unauthorized(admin_client):
