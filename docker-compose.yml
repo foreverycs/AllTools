@@ -27,6 +27,8 @@ services:
       CONVERT_CONCURRENCY: "2"
       # Prefer keys from env_file (.env) over any process shell leftovers:
       DOTENV_OVERRIDE: "1"
+      # In-process job store (async convert). Do not scale replicas without Redis jobs.
+      JOBS_BACKEND: memory
     volumes:
       # Persist upload history on the host
       - ./file:/app/file

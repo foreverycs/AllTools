@@ -49,12 +49,13 @@
 
 ### 通用
 
+- **异步转换（推荐）**：PDF→Word / Word→PDF 支持「提交 → 轮询 → 下载」，降低 Nginx/反代读超时风险；页面默认走异步，仅在路由缺失或网络失败时回退同步。
 - **批量转换**：多文件一次上传，打包为 ZIP 下载；批量内转换受 `CONVERT_CONCURRENCY` 限制并行。
 - **上传归档**：转换成功后仅将**输入文件**写入后台 `file/` 目录（前端不展示）；**仅保留最近 5 天**（可配 `UPLOAD_RETENTION_DAYS`）。
 - Web 界面：拖拽上传、上传进度条、统计与警告提示。
 - **管理后台**：仪表盘、上传记录、系统状态；登录限流 + CSRF；生产须配置强 `ADMIN_PASSWORD` / `ADMIN_SECRET`。
 - 命令行：`python -m converter input.pdf` / `python -m word2pdf input.docx`。
-- 单文件最大 50 MB，批量最多 20 个；上传分块写盘，转换在线程池执行。
+- 单文件最大 50 MB，批量最多 20 个；上传分块写盘，转换在线程/进程池执行。
 
 ## 安装
 
@@ -70,9 +71,13 @@ pip install -r requirements-dev.txt
 
 ```bash
 python app.py
-# 或
-uvicorn app:app --host 127.0.0.1 --port 8000
+# 或（务必单 worker：异步任务存在进程内存中）
+uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
+
+> **单 worker 约束**：`GET /api/jobs/{id}` 与任务结果默认存在**当前进程内存**中。  
+> 使用 `--workers N`（N>1）或多个副本时，提交与轮询可能打到不同进程 → 任务 404。  
+> Docker / 生产请保持 **1 个 uvicorn worker**。多实例需 `JOBS_BACKEND=redis`（完整共享存储仍在演进；当前会回退到内存并打日志）。
 
 ### 宝塔 / Nginx 反代（域名访问布局错乱）
 
@@ -123,17 +128,37 @@ set ADMIN_SECRET=please-use-a-long-random-string-here
 | `UPLOAD_FILE_DIR` | 归档目录（默认项目下 `file/`） | 空 |
 | `LOG_LEVEL` | 日志级别（`DEBUG` / `INFO` / …） | `INFO` |
 | `PDF_PROCESS_POOL_THRESHOLD` | 大于该字节数的 PDF 走进程池转换 | `2097152`（2 MB） |
+| `API_RATE_LIMIT` | 公开转换/下载接口每窗口最大请求数（`0` 关闭） | `30` |
+| `API_RATE_WINDOW_SEC` | 限流窗口（秒） | `60` |
+| `JOBS_BACKEND` | 任务存储：`memory`（默认）；`redis` 为多实例预留 | `memory` |
+| `REDIS_URL` | 可选 Redis（`JOBS_BACKEND=redis` 时） | 空 |
+| `JOB_TTL_SEC` | 完成/失败任务元数据保留秒数 | `3600` |
 
-`GET /health` 为轻量探活；需要引擎/OCR/归档统计时使用 `GET /health?detail=1`。  
-响应带 `X-Request-ID`（可客户端传入以便串联日志）。异步任务查询：`GET /api/jobs/{id}`（进程内存储，重启丢失；完整异步转换 API 仍在演进）。
+`GET /health` 为轻量探活；需要引擎/OCR/归档/任务后端时使用 `GET /health?detail=1`。  
+响应带 `X-Request-ID`（可客户端传入以便串联日志）。
+
+### 异步转换 API（已就绪）
+
+| 工具 | 提交 | 轮询 | 下载 |
+|------|------|------|------|
+| PDF→Word 单文件 | `POST /tools/pdf2word/convert-async` → **202** | `GET /api/jobs/{id}` | `GET /api/jobs/{id}/download` |
+| PDF→Word 批量 | `POST /tools/pdf2word/convert-batch-async` | 同上 | 同上（ZIP） |
+| Word→PDF 单文件 | `POST /tools/word2pdf/convert-async` → **202** | 同上 | 同上 |
+| Word→PDF 批量 | `POST /tools/word2pdf/convert-batch-async` | 同上 | 同上（ZIP） |
+
+流程：`multipart` 上传 → 响应 JSON（`id` / `poll_url` / `download_url`）→ 轮询至 `status=done` → 下载结果。  
+下载成功后服务端会清理临时文件；同步 `/convert` 仍可用作兼容回退。
+
+前端仅在 **网络错误 / 404·405（异步路由不存在）** 时回退同步；业务错误（坏文件、引擎未就绪、任务 `error`）不会重复打同步接口。
 
 ### 长转换 / 超时
 
-- PDF→Word（尤其 **OCR**）、Word→PDF 可能需数分钟；前端会在上传后提示「仍在处理」。
-- Nginx / 宝塔反代请设置 **`proxy_read_timeout` ≥ 600s**（见 `deploy/nginx-baota.conf.example`）。
+- PDF→Word（尤其 **OCR**）、Word→PDF 可能需数分钟；**优先使用异步 API**，页面会轮询进度（按页/按文件）。
+- Nginx / 宝塔反代请设置 **`proxy_read_timeout` ≥ 600s**（见 `deploy/nginx-baota.conf.example`）。异步模式下上传接口可较快返回 202，但仍建议保留长超时以兼容同步回退。
 - 仍超时可：缩小页码范围、关闭 OCR、或调大反代与客户端超时。
 
-管理后台登录有进程内失败锁定（默认约 8 次 / 10 分钟 → 锁定 15 分钟），生产仍建议在 Nginx 层做限流。
+管理后台登录有进程内失败锁定（默认约 8 次 / 10 分钟 → 锁定 15 分钟）。  
+公开 `/tools/*/convert*` 与任务下载有进程内 IP 限流（`API_RATE_LIMIT`）；生产仍建议在 Nginx 层做限流。
 
 项目根目录 `.env` 会在启动时自动加载。
 

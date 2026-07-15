@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -139,9 +139,25 @@ async def toolkit_error_handler(request: Request, exc: ToolkitError):
     )
 
 
+def _is_public_convert_path(path: str) -> bool:
+    """Paths that accept heavy uploads / create jobs (rate-limited)."""
+    if not path:
+        return False
+    # Strip ROOT_PATH if present is handled by ASGI; path is app-relative.
+    if path.startswith("/api/jobs") and path.rstrip("/").endswith("/download"):
+        return True  # download is lighter but still abuse-sensitive
+    markers = (
+        "/convert-async",
+        "/convert-batch-async",
+        "/convert-batch",
+        "/convert",
+    )
+    return any(m in path for m in markers)
+
+
 @app.middleware("http")
 async def request_context_and_security_headers(request: Request, call_next):
-    """Attach request id, security headers, and static cache policy."""
+    """Attach request id, security headers, rate limit, and static cache policy."""
     incoming = request.headers.get(REQUEST_ID_HEADER) or request.headers.get(
         "X-Request-Id"
     )
@@ -149,6 +165,39 @@ async def request_context_and_security_headers(request: Request, call_next):
     token = set_request_id(rid)
     request.state.request_id = rid
     try:
+        path = request.url.path
+        # Public convert / job download rate limit (process-local).
+        if request.method in ("POST", "GET") and _is_public_convert_path(path):
+            # Only rate-limit write-ish convert POSTs and job downloads.
+            if request.method == "POST" or path.rstrip("/").endswith("/download"):
+                from core.api_rate_limit import check_rate, client_key_from_request
+
+                s = get_settings()
+                if s.api_rate_limit > 0:
+                    key = f"api:{client_key_from_request(request)}"
+                    allowed, retry_after, remaining = check_rate(
+                        key,
+                        limit=s.api_rate_limit,
+                        window_sec=float(s.api_rate_window_sec),
+                    )
+                    if not allowed:
+                        return JSONResponse(
+                            status_code=429,
+                            content={
+                                "detail": (
+                                    f"Too many requests. Retry after {retry_after}s"
+                                ),
+                                "request_id": rid,
+                            },
+                            headers={
+                                REQUEST_ID_HEADER: rid,
+                                "Retry-After": str(retry_after),
+                                "X-RateLimit-Limit": str(s.api_rate_limit),
+                                "X-RateLimit-Remaining": "0",
+                            },
+                        )
+                    request.state.rate_limit_remaining = remaining
+
         response: Response = await call_next(request)
     finally:
         reset_request_id(token)
@@ -169,6 +218,12 @@ async def request_context_and_security_headers(request: Request, call_next):
         else:
             # Unversioned /static requests: short cache so reverse-proxy mistakes heal faster
             response.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
+    remaining = getattr(request.state, "rate_limit_remaining", None)
+    if remaining is not None:
+        response.headers.setdefault(
+            "X-RateLimit-Limit", str(get_settings().api_rate_limit)
+        )
+        response.headers.setdefault("X-RateLimit-Remaining", str(remaining))
     return response
 
 
@@ -269,6 +324,9 @@ def _health_details(*, force: bool = False) -> dict:
 
     w2p = engine_info()
     ocr = ocr_info()
+    from core.jobs import jobs_backend_name
+
+    settings = get_settings()
     _health_detail_cache = {
         "word2pdf": {
             "ready": w2p.get("ready", False),
@@ -283,8 +341,14 @@ def _health_details(*, force: bool = False) -> dict:
             "retention_days": retention_days(),
             "count": record_count(),
         },
-        "convert_concurrency": get_settings().convert_concurrency,
-        "root_path": get_settings().root_path or "",
+        "convert_concurrency": settings.convert_concurrency,
+        "root_path": settings.root_path or "",
+        "jobs": {
+            "backend": jobs_backend_name(),
+            "note": "process-local; use a single uvicorn worker",
+        },
+        "api_rate_limit": settings.api_rate_limit,
+        "api_rate_window_sec": settings.api_rate_window_sec,
     }
     _health_detail_ts = now
     return _health_detail_cache
@@ -324,9 +388,12 @@ async def api_job_status(job_id: str):
 
 
 @app.get("/api/jobs/{job_id}/download")
-async def api_job_download(job_id: str):
-    """Download the result file for a completed job (if still on disk)."""
-    from core.jobs import JobStatus, get_job
+async def api_job_download(job_id: str, background_tasks: BackgroundTasks):
+    """Download the result file for a completed job (if still on disk).
+
+    After the response is sent, temporary files are deleted (mark_downloaded).
+    """
+    from core.jobs import JobStatus, get_job, mark_downloaded
 
     job = await get_job(job_id)
     if job is None:
@@ -336,10 +403,21 @@ async def api_job_download(job_id: str):
     if not os.path.isfile(job.output_path):
         raise HTTPException(status_code=410, detail="Job result expired or missing")
     headers = dict(job.response_headers or {})
+    path = job.output_path
+    filename = job.download_name or os.path.basename(path)
+    media = job.media_type or "application/octet-stream"
+
+    async def _cleanup() -> None:
+        try:
+            await mark_downloaded(job_id)
+        except Exception:
+            logger.exception("job download cleanup failed id=%s", job_id)
+
+    background_tasks.add_task(_cleanup)
     return FileResponse(
-        job.output_path,
-        filename=job.download_name or os.path.basename(job.output_path),
-        media_type=job.media_type or "application/octet-stream",
+        path,
+        filename=filename,
+        media_type=media,
         headers=headers,
     )
 

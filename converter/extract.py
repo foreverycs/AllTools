@@ -211,6 +211,7 @@ def extract_document(
     *,
     ocr: bool = False,
     ocr_lang: Optional[str] = None,
+    on_page=None,
 ) -> List[PageContent]:
     """Extract structured content from a PDF.
 
@@ -220,6 +221,10 @@ def extract_document(
     Image-only / scanned pages are embedded as full-page rasters by default.
     Pass ``ocr=True`` to run optional Tesseract OCR (requires ``pytesseract``
     and a system Tesseract install) so scanned text becomes editable.
+
+    ``on_page``, if set, is called as ``on_page(done, total)`` after each page
+    (1-based done count) for progress reporting. Must be picklable when used
+    under a process pool (usually omit it there).
     """
     # Env override: PDF2WORD_OCR=1 enables OCR even if the caller omitted it.
     if not ocr:
@@ -239,7 +244,8 @@ def extract_document(
         if total == 0:
             raise ValueError("PDF has no pages")
         indices = parse_page_range(page_range, total)
-        for i in indices:
+        n = len(indices)
+        for seq, i in enumerate(indices, start=1):
             try:
                 pages.append(
                     _extract_page(pdf.pages[i], ocr=ocr, ocr_lang=ocr_lang)
@@ -250,6 +256,11 @@ def extract_document(
                     if any(k in str(exc).lower() for k in ("password", "encrypt", "crypt"))
                     else f"Failed to read page {i + 1}: {exc}"
                 ) from exc
+            if on_page is not None:
+                try:
+                    on_page(seq, n)
+                except Exception:
+                    pass
     finally:
         pdf.close()
     return pages

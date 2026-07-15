@@ -232,6 +232,14 @@ class Settings:
     # Leave empty when the domain root points at this app (typical Baota setup).
     root_path: str
 
+    # Public convert/job API rate limit (per client IP, process-local).
+    # ``api_rate_limit`` = max requests per ``api_rate_window_sec``; 0 disables.
+    api_rate_limit: int
+    api_rate_window_sec: int
+    # Job store: memory (default). redis is optional / multi-instance reserved.
+    jobs_backend: str
+    redis_url: Optional[str]
+
     def admin_security_summary(self) -> dict:
         return {
             "ALLOW_INSECURE_ADMIN": self.allow_insecure_admin,
@@ -241,6 +249,8 @@ class Settings:
             "ADMIN_COOKIE_SECURE": self.admin_cookie_secure,
             "CONVERT_CONCURRENCY": str(self.convert_concurrency),
             "ROOT_PATH": self.root_path or "(none)",
+            "API_RATE_LIMIT": str(self.api_rate_limit),
+            "JOBS_BACKEND": self.jobs_backend,
         }
 
 
@@ -332,6 +342,13 @@ def _load_settings() -> Settings:
         ),
         upload_file_dir=(os.environ.get("UPLOAD_FILE_DIR") or "").strip() or None,
         root_path=_normalize_root_path(os.environ.get("ROOT_PATH") or ""),
+        api_rate_limit=_env_int("API_RATE_LIMIT", 30, minimum=0, maximum=10000),
+        api_rate_window_sec=_env_int(
+            "API_RATE_WINDOW_SEC", 60, minimum=1, maximum=3600
+        ),
+        jobs_backend=(os.environ.get("JOBS_BACKEND") or "memory").strip().lower()
+        or "memory",
+        redis_url=(os.environ.get("REDIS_URL") or "").strip() or None,
     )
 
 

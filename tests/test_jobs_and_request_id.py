@@ -86,3 +86,29 @@ def test_api_request_id_header_and_jobs_404():
 
     missing = client.get("/api/jobs/does-not-exist")
     assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_mark_downloaded_clears_files(tmp_path):
+    work = tmp_path / "jobw"
+    work.mkdir()
+    out = work / "out.docx"
+    out.write_bytes(b"PK mock")
+    job = await create_job(
+        "pdf2word",
+        work_dir=str(work),
+        output_path=str(out),
+        download_name="out.docx",
+    )
+    await update_job(job.id, status=JobStatus.done)
+    from core.jobs import mark_downloaded
+
+    await mark_downloaded(job.id)
+    got = await get_job(job.id)
+    assert got is not None
+    assert got.output_path is None
+    assert got.work_dir is None
+    assert got.downloaded_at is not None
+    assert not work.exists()
+    pub = job_public_dict(got)
+    assert pub["has_result"] is False

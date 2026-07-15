@@ -330,7 +330,10 @@
     /** @type {File[]} */
     let selected = [];
 
-    const { fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl } = window.ToolkitUpload;
+    const {
+      fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl,
+      submitJobAndDownload, isAsyncFallbackError,
+    } = window.ToolkitUpload;
 
     function isWord(name) {
       const n = (name || '').toLowerCase();
@@ -445,27 +448,64 @@
         fd.append('file', selected[0]);
       }
 
-      const url = appUrl(multi ? '/tools/word2pdf/convert-batch' : '/tools/word2pdf/convert');
-      try {
-        const xhr = await xhrPost(url, fd, {
-          onProgress: (pct) => setProgress(pct),
-          onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
-          processHint: multi
-            ? `上传完成，正在批量转换 ${selected.length} 个文件… 请勿关闭页面`
-            : '上传完成，正在转换… LibreOffice / Word 可能需数十秒，请勿关闭页面',
-          longWaitSec: 15,
-        });
-        if (xhr.status < 200 || xhr.status >= 300) {
-          throw new Error(await xhrErrorMessage(xhr));
-        }
-        const blob = xhr.response;
-        const fallback = multi
-          ? 'word2pdf_batch.zip'
-          : selected[0].name.replace(/\.docx?$/i, '') + '.pdf';
-        saveBlob(blob, downloadName(xhr.getResponseHeader('content-disposition'), fallback));
+      const asyncUrl = appUrl(multi
+        ? '/tools/word2pdf/convert-batch-async'
+        : '/tools/word2pdf/convert-async');
+      const syncUrl = appUrl(multi
+        ? '/tools/word2pdf/convert-batch'
+        : '/tools/word2pdf/convert');
+      const fallbackName = multi
+        ? 'word2pdf_batch.zip'
+        : selected[0].name.replace(/\.docx?$/i, '') + '.pdf';
+      const processHint = multi
+        ? `上传完成，批量任务已提交（${selected.length} 个）…`
+        : '上传完成，任务已提交… LibreOffice / Word 可能需数十秒';
 
-        const engine = xhr.getResponseHeader('X-Engine') || '';
-        const files = xhr.getResponseHeader('X-Files');
+      try {
+        let engine = '';
+        let files = multi ? String(selected.length) : null;
+
+        try {
+          const got = await submitJobAndDownload(asyncUrl, fd, {
+            onProgress: (pct) => setProgress(pct),
+            onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
+            processHint,
+            fallbackName,
+          });
+          const h = got.headers;
+          engine = h.get('X-Engine') || (got.job.result && got.job.result.engine) || '';
+          files = h.get('X-Files') || (got.job.result && got.job.result.files) || files;
+        } catch (asyncErr) {
+          if (!isAsyncFallbackError(asyncErr)) {
+            throw asyncErr;
+          }
+          status.className = 'info';
+          status.textContent = '改用同步转换…';
+          const fd2 = new FormData();
+          if (multi) {
+            selected.forEach(f => fd2.append('files', f));
+          } else {
+            fd2.append('file', selected[0]);
+          }
+          const xhr = await xhrPost(syncUrl, fd2, {
+            onProgress: (pct) => setProgress(pct),
+            onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
+            processHint: multi
+              ? `上传完成，正在批量转换 ${selected.length} 个文件… 请勿关闭页面`
+              : '上传完成，正在转换… LibreOffice / Word 可能需数十秒，请勿关闭页面',
+            longWaitSec: 15,
+          });
+          if (xhr.status < 200 || xhr.status >= 300) {
+            throw new Error(await xhrErrorMessage(xhr));
+          }
+          saveBlob(
+            xhr.response,
+            downloadName(xhr.getResponseHeader('content-disposition'), fallbackName)
+          );
+          engine = xhr.getResponseHeader('X-Engine') || '';
+          files = xhr.getResponseHeader('X-Files') || files;
+        }
+
         status.className = 'ok';
         status.textContent = multi
           ? `完成：${files || selected.length} 个文件已打包下载${engine ? '（引擎：' + engine + '）' : ''}。`

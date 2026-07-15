@@ -11,9 +11,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from converter import content_warnings, count_blocks, extract_document, ocr_info, write_document
-from core.concurrency import run_heavy, should_use_process_pool
+from core.concurrency import run_conversion, run_heavy, should_use_process_pool
 from core.errors import ConversionError, PDFParseError
-from core.jobs import create_job, job_public_dict, schedule_job
+from core.jobs import create_job, job_public_dict, schedule_job, update_job
 from tools.common import (
     DOCX_MEDIA,
     ZIP_MEDIA,
@@ -49,8 +49,11 @@ def _convert_one(
     page_range: Optional[str],
     page_breaks: bool,
     ocr: bool = False,
+    on_page=None,
 ) -> dict:
-    pages = extract_document(pdf_path, page_range=page_range, ocr=ocr)
+    pages = extract_document(
+        pdf_path, page_range=page_range, ocr=ocr, on_page=on_page
+    )
     if not pages:
         raise PDFParseError("No content extracted from PDF")
     write_document(pages, docx_path, page_breaks=page_breaks)
@@ -127,15 +130,48 @@ async def _run_single_async_job(
     original_name: str,
     file_size: int,
 ) -> dict:
-    stats = await run_heavy(
-        _convert_one,
-        pdf_path,
-        docx_path,
-        range_spec,
-        page_breaks,
-        use_ocr,
-        file_size=file_size,
-    )
+    # Prefer thread pool so per-page progress can update the job store.
+    # Large files without progress still use process pool via run_heavy.
+    loop = asyncio.get_running_loop()
+    progress_pending: list = []
+
+    def on_page(done: int, total: int) -> None:
+        frac = 0.1 + 0.85 * (done / max(total, 1))
+        msg = f"page {done}/{total}"
+        fut = asyncio.run_coroutine_threadsafe(
+            update_job(job_id, progress=min(0.95, frac), message=msg),
+            loop,
+        )
+        progress_pending.append(fut)
+
+    use_proc = should_use_process_pool(file_size) or use_ocr
+    if use_proc:
+        # Process pool: progress callbacks are not available (pickling).
+        stats = await run_heavy(
+            _convert_one,
+            pdf_path,
+            docx_path,
+            range_spec,
+            page_breaks,
+            use_ocr,
+            file_size=file_size,
+            force_process=True,
+        )
+    else:
+        stats = await run_conversion(
+            _convert_one,
+            pdf_path,
+            docx_path,
+            range_spec,
+            page_breaks,
+            use_ocr,
+            on_page,
+        )
+        for fut in progress_pending:
+            try:
+                fut.result(timeout=1.0)
+            except Exception:
+                pass
     await archive_input(
         tool="pdf2word",
         original_name=original_name,
@@ -191,8 +227,26 @@ async def _run_batch_async_job(
         )
         return idx, name, pdf_path, docx_path, stats
 
+    total_files = max(len(items), 1)
+    done_count = 0
+    done_lock = asyncio.Lock()
+
+    async def _one_tracked(
+        idx: int, name: str, pdf_path: str, docx_path: str
+    ) -> Tuple[int, str, str, str, dict]:
+        nonlocal done_count
+        out = await _one(idx, name, pdf_path, docx_path)
+        async with done_lock:
+            done_count += 1
+            await update_job(
+                job_id,
+                progress=min(0.95, 0.1 + 0.85 * (done_count / total_files)),
+                message=f"file {done_count}/{total_files}",
+            )
+        return out
+
     results = await asyncio.gather(
-        *[_one(idx, name, pdf, docx) for idx, name, pdf, docx in items]
+        *[_one_tracked(idx, name, pdf, docx) for idx, name, pdf, docx in items]
     )
     results = sorted(results, key=lambda r: r[0])
 

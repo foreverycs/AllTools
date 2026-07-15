@@ -26,10 +26,15 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host  $host;
 
-        # 长转换任务
+        # 长转换任务（同步回退仍可能占用长连接；异步 202 很快返回）
         proxy_read_timeout  600s;
         proxy_send_timeout  600s;
         proxy_connect_timeout 60s;
+
+        # 建议：应用层保持 uvicorn --workers 1（任务在进程内存）
+        # 可选 Nginx 限流（与 API_RATE_LIMIT 叠加）：
+        # limit_req_zone $binary_remote_addr zone=toolkit:10m rate=30r/m;
+        # limit_req zone=toolkit burst=10 nodelay;
 
         # WebSocket（一般用不到，保留无害）
         proxy_set_header Upgrade    $http_upgrade;

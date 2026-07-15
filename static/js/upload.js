@@ -220,9 +220,29 @@
   }
 
   /**
+   * Error that may allow falling back from async submit to sync convert.
+   * Only infrastructure failures (network, missing route) should fallback —
+   * business errors (bad file, 400/422/503) must not retry as sync.
+   */
+  function AsyncFallbackError(message, reason) {
+    var e = new Error(message || "async unavailable");
+    e.name = "AsyncFallbackError";
+    e.fallback = true;
+    e.reason = reason || "unknown";
+    return e;
+  }
+
+  function isAsyncFallbackError(err) {
+    return !!(err && (err.fallback === true || err.name === "AsyncFallbackError"));
+  }
+
+  /**
    * POST FormData expecting a JSON body (e.g. 202 Accepted async job).
    *
-   * @returns {Promise<{status:number, body:any, headers:Headers}>}
+   * Rejects with AsyncFallbackError for network / 404 / 405 (route missing).
+   * Other HTTP errors are plain Errors (do not fallback to sync).
+   *
+   * @returns {Promise<{status:number, body:any, xhr:XMLHttpRequest}>}
    */
   function xhrPostJson(url, formData, opts) {
     opts = opts || {};
@@ -255,13 +275,19 @@
           body = { detail: xhr.responseText || "Invalid JSON" };
         }
         if (xhr.status < 200 || xhr.status >= 300) {
-          reject(new Error(errDetail(body && body.detail) || "HTTP " + xhr.status));
+          var msg = errDetail(body && body.detail) || "HTTP " + xhr.status;
+          // Missing async route or method → allow sync fallback.
+          if (xhr.status === 404 || xhr.status === 405) {
+            reject(AsyncFallbackError(msg, "http_" + xhr.status));
+            return;
+          }
+          reject(new Error(msg));
           return;
         }
         resolve({ status: xhr.status, body: body, xhr: xhr });
       };
       xhr.onerror = function () {
-        reject(new Error("网络错误"));
+        reject(AsyncFallbackError("网络错误", "network"));
       };
       xhr.onabort = function () {
         reject(new Error("已取消"));
@@ -418,6 +444,8 @@
     pollJob: pollJob,
     downloadJob: downloadJob,
     submitJobAndDownload: submitJobAndDownload,
+    isAsyncFallbackError: isAsyncFallbackError,
+    AsyncFallbackError: AsyncFallbackError,
     bindDropZone: bindDropZone,
     saveBlob: saveBlob,
     xhrErrorMessage: xhrErrorMessage,

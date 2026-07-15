@@ -367,7 +367,7 @@
 
     const {
       fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl,
-      submitJobAndDownload,
+      submitJobAndDownload, isAsyncFallbackError,
     } = window.ToolkitUpload;
 
     function setProgress(pct) {
@@ -517,10 +517,25 @@
             ? wHead.split(',').filter(Boolean)
             : ((got.job.result && got.job.result.warnings) || []);
         } catch (asyncErr) {
-          // Network / 404 on async route → legacy sync body download.
+          // Only infrastructure failures (network / missing async route) may use sync.
+          // Business errors (bad PDF, OCR unavailable, job conversion failed) must not.
+          if (!isAsyncFallbackError(asyncErr)) {
+            throw asyncErr;
+          }
           status.className = 'info';
           status.textContent = '改用同步转换…';
-          const xhr = await xhrPost(syncUrl, fd, {
+          // FormData body can only be consumed once in some browsers after XHR send;
+          // rebuild from the same selected files.
+          const fd2 = new FormData();
+          if (multi) {
+            selected.forEach(f => fd2.append('files', f));
+          } else {
+            fd2.append('file', selected[0]);
+          }
+          if (range) fd2.append('page_range', range);
+          fd2.append('page_breaks', pageBreaks.checked ? 'true' : 'false');
+          if (useOcr) fd2.append('ocr', 'true');
+          const xhr = await xhrPost(syncUrl, fd2, {
             onProgress: (pct) => setProgress(pct),
             onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
             processHint: multi

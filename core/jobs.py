@@ -1,13 +1,17 @@
 """In-process async conversion job store (foundation for long-running work).
 
 Jobs are process-local and lost on restart. Suitable for a single uvicorn
-worker; multi-worker deployments need a shared backend later.
+worker; multi-worker deployments need a shared backend (see JOBS_BACKEND).
+
+Optional Redis backend is selected via ``JOBS_BACKEND=redis`` + ``REDIS_URL``
+when redis is installed; otherwise memory is used and a warning is logged.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 import shutil
 import time
@@ -43,14 +47,72 @@ class Job:
     media_type: Optional[str] = None
     # Extra response headers for the download (e.g. X-Pages).
     response_headers: Optional[Dict[str, str]] = None
+    # After a successful download, files are removed; meta may remain briefly.
+    downloaded_at: Optional[float] = None
 
 
 _jobs: Dict[str, Job] = {}
 _lock = asyncio.Lock()
 # Drop finished jobs after this many seconds.
-_JOB_TTL_SEC = 3600.0
+_JOB_TTL_SEC = float(os.environ.get("JOB_TTL_SEC") or "3600")
+# How long after download before reclaim can drop the job entry (seconds).
+_DOWNLOAD_GRACE_SEC = float(os.environ.get("JOB_DOWNLOAD_GRACE_SEC") or "30")
 # Track background tasks so they are not GC'd mid-flight.
 _bg_tasks: set[asyncio.Task] = set()
+_backend_name: str = "memory"
+_backend_warned = False
+
+
+def jobs_backend_name() -> str:
+    """Active backend label for health / docs (memory | redis | redis-fallback)."""
+    return _backend_name
+
+
+def _configure_backend() -> None:
+    """Resolve JOBS_BACKEND; Redis is optional and falls back to memory."""
+    global _backend_name, _backend_warned
+    raw = (os.environ.get("JOBS_BACKEND") or "memory").strip().lower()
+    if raw in ("", "memory", "mem", "local"):
+        _backend_name = "memory"
+        return
+    if raw in ("redis", "remote"):
+        url = (os.environ.get("REDIS_URL") or "").strip()
+        if not url:
+            if not _backend_warned:
+                logger.warning(
+                    "JOBS_BACKEND=redis but REDIS_URL is empty; using in-memory jobs"
+                )
+                _backend_warned = True
+            _backend_name = "redis-fallback"
+            return
+        try:
+            import redis  # noqa: F401
+        except ImportError:
+            if not _backend_warned:
+                logger.warning(
+                    "JOBS_BACKEND=redis but redis package is not installed; "
+                    "using in-memory jobs. pip install redis to enable."
+                )
+                _backend_warned = True
+            _backend_name = "redis-fallback"
+            return
+        # Shared Redis job store is not fully wired yet: keep memory but advertise
+        # that the operator requested redis (multi-worker still needs workers=1
+        # until a full redis implementation ships).
+        if not _backend_warned:
+            logger.warning(
+                "JOBS_BACKEND=redis is reserved for multi-instance deployments; "
+                "this build still uses process-local memory. Run a single uvicorn "
+                "worker (--workers 1). Full Redis job store is planned."
+            )
+            _backend_warned = True
+        _backend_name = "redis-fallback"
+        return
+    logger.warning("Unknown JOBS_BACKEND=%r; using memory", raw)
+    _backend_name = "memory"
+
+
+_configure_backend()
 
 
 def _now() -> float:
@@ -91,23 +153,57 @@ def _cleanup_work_dir(work_dir: Optional[str]) -> None:
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+def _cleanup_job_files(job: Job) -> None:
+    """Remove work dir / output files; clear path fields on the job object."""
+    if job.work_dir:
+        _cleanup_work_dir(job.work_dir)
+    elif job.output_path and os.path.isfile(job.output_path):
+        try:
+            os.remove(job.output_path)
+        except OSError:
+            pass
+    job.work_dir = None
+    job.output_path = None
+
+
 def _reclaim_unlocked() -> int:
     cutoff = _now() - _JOB_TTL_SEC
-    dead = [
-        jid
-        for jid, j in _jobs.items()
-        if j.status in (JobStatus.done, JobStatus.error) and j.updated_at < cutoff
-    ]
+    dead = []
+    for jid, j in _jobs.items():
+        if j.status not in (JobStatus.done, JobStatus.error):
+            continue
+        # Prefer reclaim shortly after download when files already gone.
+        if j.downloaded_at and (_now() - j.downloaded_at) >= _DOWNLOAD_GRACE_SEC:
+            dead.append(jid)
+        elif j.updated_at < cutoff:
+            dead.append(jid)
     for jid in dead:
         job = _jobs.pop(jid, None)
         if job:
-            _cleanup_work_dir(job.work_dir)
+            _cleanup_job_files(job)
     return len(dead)
 
 
 async def reclaim_expired() -> int:
     async with _lock:
         return _reclaim_unlocked()
+
+
+async def mark_downloaded(job_id: str) -> Optional[Job]:
+    """After a successful download: delete files, keep metadata briefly.
+
+    Status stays ``done`` so a second download within grace may 410 if
+    files are gone — clients should download once.
+    """
+    async with _lock:
+        job = _jobs.get(job_id)
+        if job is None:
+            return None
+        _cleanup_job_files(job)
+        job.downloaded_at = _now()
+        job.updated_at = _now()
+        job.message = "downloaded"
+        return job
 
 
 async def run_job(
@@ -217,6 +313,11 @@ def schedule_job(
 
 def job_public_dict(job: Job) -> Dict[str, Any]:
     """JSON-safe view for clients (no absolute paths)."""
+    has_file = (
+        job.status == JobStatus.done
+        and bool(job.output_path)
+        and not job.downloaded_at
+    )
     body: Dict[str, Any] = {
         "id": job.id,
         "tool": job.tool,
@@ -226,7 +327,7 @@ def job_public_dict(job: Job) -> Dict[str, Any]:
         "error": job.error,
         "created_at": job.created_at,
         "updated_at": job.updated_at,
-        "has_result": job.status == JobStatus.done and bool(job.output_path),
+        "has_result": has_file,
         "download_name": job.download_name,
         "media_type": job.media_type,
     }
@@ -245,6 +346,8 @@ def job_public_dict(job: Job) -> Dict[str, Any]:
                 "warnings",
                 "files",
                 "batch",
+                "engine",
+                "bytes",
             )
         }
         if safe:
@@ -255,7 +358,7 @@ def job_public_dict(job: Job) -> Dict[str, Any]:
 def reset_jobs() -> None:
     """Clear all jobs (tests)."""
     for job in list(_jobs.values()):
-        _cleanup_work_dir(job.work_dir)
+        _cleanup_job_files(job)
     _jobs.clear()
     for t in list(_bg_tasks):
         t.cancel()
