@@ -1,4 +1,4 @@
-# Development / CI extras. Install with:
+# Development extras. Install with:
 #   pip install -r requirements.txt -r requirements-dev.txt
 -r requirements.txt
 
