@@ -240,6 +240,11 @@ class Settings:
     jobs_backend: str
     redis_url: Optional[str]
 
+    # File express (取件码分享)
+    express_max_bytes: int
+    express_default_ttl_hours: int
+    express_max_ttl_hours: int
+
     def admin_security_summary(self) -> dict:
         return {
             "ALLOW_INSECURE_ADMIN": self.allow_insecure_admin,
@@ -251,6 +256,8 @@ class Settings:
             "ROOT_PATH": self.root_path or "(none)",
             "API_RATE_LIMIT": str(self.api_rate_limit),
             "JOBS_BACKEND": self.jobs_backend,
+            "EXPRESS_MAX_BYTES": str(self.express_max_bytes),
+            "EXPRESS_DEFAULT_TTL_HOURS": str(self.express_default_ttl_hours),
         }
 
 
@@ -349,6 +356,24 @@ def _load_settings() -> Settings:
         jobs_backend=(os.environ.get("JOBS_BACKEND") or "memory").strip().lower()
         or "memory",
         redis_url=(os.environ.get("REDIS_URL") or "").strip() or None,
+        express_max_bytes=_env_int(
+            "EXPRESS_MAX_BYTES",
+            # Default: same as general upload limit (typically 50MB).
+            _env_int(
+                "MAX_UPLOAD_BYTES",
+                50 * 1024 * 1024,
+                minimum=1024 * 1024,
+                maximum=500 * 1024 * 1024,
+            ),
+            minimum=1024 * 1024,
+            maximum=500 * 1024 * 1024,
+        ),
+        express_default_ttl_hours=_env_int(
+            "EXPRESS_DEFAULT_TTL_HOURS", 24, minimum=1, maximum=168
+        ),
+        express_max_ttl_hours=_env_int(
+            "EXPRESS_MAX_TTL_HOURS", 168, minimum=1, maximum=720
+        ),
     )
 
 

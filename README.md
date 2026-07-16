@@ -26,6 +26,7 @@
 | **发票合并** | `/tools/pdf-merge` | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
 | **人民币大写** | `/tools/rmb` | 阿拉伯数字金额 → 财务规范中文大写（角分、千分位） |
 | **图片压缩** | `/tools/image-compress` | JPEG / PNG / GIF / SVG 高观感压缩，尽量保持清晰 |
+| **文件快递** | `/tools/express` | 上传生成 6 位取件码，对方输入取件码下载；可设有效期与下载次数 |
 
 ### 编码工具 · `/c/coding`
 
@@ -223,6 +224,10 @@ export ADMIN_SECRET='please-use-a-long-random-string-here'
 | `JOB_TTL_SEC` | 完成/失败任务元数据保留秒数 | `3600` |
 | `DOTENV_OVERRIDE` | `1` 时 `.env` 覆盖进程环境变量 | `0` |
 | `LIBREOFFICE_PATH` | `soffice` 可执行文件路径 | 系统探测 |
+| `EXPRESS_MAX_BYTES` | 文件快递单文件上限（字节） | 同 `MAX_UPLOAD_BYTES` |
+| `EXPRESS_DEFAULT_TTL_HOURS` | 取件码默认有效期（小时） | `24` |
+| `EXPRESS_MAX_TTL_HOURS` | 取件码最长有效期（小时） | `168` |
+| `EXPRESS_DIR` | 快递包存储目录（可选） | `file/express/` |
 
 ### 密码改了不生效？
 
@@ -344,6 +349,11 @@ docker compose down
 | `POST` | `/tools/markdown/render` | Markdown → HTML JSON |
 | `POST` | `/tools/markdown/export-html` | 导出独立 HTML |
 | `POST` | `/tools/rmb/convert` | 金额大写 |
+| `GET` | `/tools/express` | 文件快递页面（`?code=` 可预填取件码） |
+| `POST` | `/tools/express/send` | 上传文件 → 返回 6 位取件码 |
+| `POST` | `/tools/express/lookup` | 查询取件码元数据（不消耗下载次数） |
+| `POST` | `/tools/express/pickup` | 按取件码下载（表单） |
+| `GET` | `/tools/express/pickup/{code}` | 按取件码下载（路径，可收藏） |
 | `GET` | `/admin` | 管理后台（需登录） |
 | `GET` | `/admin/tools` | 功能开关页面（需管理员） |
 | `POST` | `/admin/tools` | 批量保存功能开关（需管理员 + CSRF） |
@@ -415,7 +425,7 @@ word2pdf/              # Word → PDF 引擎
 coding/                # Base64 / JSON / Markdown 逻辑
 office/                # 人民币大写等
 media/                 # 图片压缩
-storage/               # 上传归档（SQLite + file/）
+storage/               # 上传归档 + 文件快递（SQLite + file/）
 templates/             # Jinja2 页面
 static/                # CSS / JS
 deploy/                # Nginx 示例

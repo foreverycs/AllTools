@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="文件快递 — 上传文件生成取件码，对方输入取件码即可下载" />
+  <title>文件快递 — 工具集</title>
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    .bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 70% 50% at 12% 6%, rgba(99, 102, 241, 0.16), transparent 55%),
+        radial-gradient(ellipse 50% 40% at 92% 12%, rgba(14, 165, 233, 0.12), transparent 50%),
+        linear-gradient(165deg, #eef2ff 0%, #eef1f8 45%, #f5f7fb 100%);
+    }
+    .shell { position: relative; z-index: 1; width: 100%; }
+    .nav {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px; gap: 12px;
+    }
+    .back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      text-decoration: none; padding: 8px 12px;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 999px; backdrop-filter: blur(10px);
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .back:hover { color: #4f46e5; border-color: #c7d2fe; background: #fff; }
+    .back svg { width: 15px; height: 15px; }
+    .chip {
+      font-size: 11px; font-weight: 700; color: #4338ca;
+      background: #eef2ff; border: 1px solid #c7d2fe;
+      padding: 6px 11px; border-radius: 999px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px 22px 20px;
+      overflow: hidden;
+      position: relative;
+    }
+    .card::before {
+      content: "";
+      position: absolute; left: 0; right: 0; top: 0; height: 3px;
+      background: linear-gradient(90deg, #4f46e5, #0ea5e9, #06b6d4);
+    }
+    .card-head {
+      display: flex; gap: 14px; align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      display: grid; place-items: center; font-size: 22px; flex-shrink: 0;
+      background: linear-gradient(145deg, #818cf8, #4f46e5);
+      box-shadow: 0 10px 22px rgba(79, 70, 229, 0.28);
+    }
+    .card-head h1 {
+      font-size: 1.25rem; font-weight: 750; letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .card-head p { font-size: 13px; color: var(--muted); line-height: 1.55; }
+
+    .tabs {
+      display: flex; gap: 6px; padding: 4px;
+      background: #f1f5f9; border-radius: 12px; margin-bottom: 18px;
+    }
+    .tab {
+      flex: 1; border: 0; background: transparent; cursor: pointer;
+      font: inherit; font-size: 13.5px; font-weight: 700;
+      color: #64748b; padding: 10px 12px; border-radius: 10px;
+      transition: background .15s, color .15s, box-shadow .15s;
+    }
+    .tab.active {
+      background: #fff; color: #3730a3;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+    .pane { display: none; }
+    .pane.active { display: block; }
+
+    .drop {
+      border: 1.5px dashed #c7d2fe;
+      border-radius: 14px;
+      background: #f8faff;
+      padding: 28px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      margin-bottom: 14px;
+    }
+    .drop:hover, .drop.drag {
+      border-color: #818cf8;
+      background: #eef2ff;
+    }
+    .drop strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .drop span { font-size: 12px; color: var(--muted); }
+    .drop input { display: none; }
+    .file-name {
+      margin-top: 10px; font-size: 12.5px; font-weight: 650;
+      color: #4f46e5; word-break: break-all;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+    .field label {
+      display: block; font-size: 12px; font-weight: 700;
+      color: #475569; margin-bottom: 6px;
+    }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      font-size: 13.5px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: #a5b4fc;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+    .field .hint { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+    .field textarea { resize: vertical; min-height: 64px; }
+
+    .code-input {
+      font-family: var(--mono);
+      font-size: 1.5rem !important;
+      font-weight: 700;
+      letter-spacing: 0.28em;
+      text-align: center;
+      padding: 14px 12px !important;
+    }
+
+    .actions {
+      display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px;
+    }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink-2);
+      font: inherit; font-size: 13.5px; font-weight: 700;
+      padding: 11px 16px; border-radius: 11px;
+      cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+    }
+    .btn:hover { border-color: #c7d2fe; color: #4f46e5; background: #f8f9ff; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(79, 70, 229, 0.28);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #4f46e5, #4338ca);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .msg {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      display: none;
+    }
+    .msg.show { display: block; }
+    .msg.ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .msg.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .msg.info { background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
+
+    .result {
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 14px;
+      background: linear-gradient(145deg, #eef2ff, #f0f9ff);
+      border: 1px solid #c7d2fe;
+      display: none;
+    }
+    .result.show { display: block; }
+    .result-code {
+      font-family: var(--mono);
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 0.22em;
+      color: #312e81;
+      text-align: center;
+      margin: 6px 0 10px;
+    }
+    .result-meta {
+      font-size: 12.5px;
+      color: #475569;
+      line-height: 1.6;
+      text-align: center;
+    }
+    .result-actions {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+      margin-top: 12px;
+    }
+
+    .tips {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .tips strong { color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="shell site-page">
+    <div class="nav">
+      <a class="back" href="{{ url_path('/c/office') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+        办公工具
+      </a>
+      <span class="chip">取件码 · 临时分享</span>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">📦</div>
+        <div>
+          <h1>文件快递</h1>
+          <p>上传文件生成 6 位取件码，对方输入取件码即可下载。适合临时传文件，无需账号。</p>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="send" role="tab" aria-selected="true">寄送文件</button>
+        <button type="button" class="tab" data-tab="pickup" role="tab" aria-selected="false">取件下载</button>
+      </div>
+
+      <!-- SEND -->
+      <div class="pane active" id="pane-send" role="tabpanel">
+        <div class="drop" id="dropZone">
+          <strong>点击或拖拽文件到这里</strong>
+          <span>单文件，最大 {{ limits.max_mb }} MB</span>
+          <div class="file-name" id="fileLabel" hidden></div>
+          <input type="file" id="fileInput" />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="ttlHours">有效期</label>
+            <select id="ttlHours">
+              <option value="1">1 小时</option>
+              <option value="6">6 小时</option>
+              <option value="24" {% if limits.default_ttl_hours == 24 %}selected{% endif %}>24 小时</option>
+              <option value="72" {% if limits.default_ttl_hours == 72 %}selected{% endif %}>3 天</option>
+              <option value="168" {% if limits.default_ttl_hours == 168 %}selected{% endif %}>7 天</option>
+            </select>
+            <div class="hint">最长 {{ limits.max_ttl_hours }} 小时</div>
+          </div>
+          <div class="field">
+            <label for="maxDownloads">下载次数</label>
+            <select id="maxDownloads">
+              <option value="0" selected>不限制</option>
+              <option value="1">1 次</option>
+              <option value="3">3 次</option>
+              <option value="5">5 次</option>
+              <option value="10">10 次</option>
+            </select>
+            <div class="hint">用完后自动失效</div>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:12px">
+          <label for="note">备注（可选）</label>
+          <input type="text" id="note" maxlength="200" placeholder="给对方的提示，如「合同扫描件」" />
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="sendBtn">生成取件码</button>
+        </div>
+        <div class="msg" id="sendMsg"></div>
+        <div class="result" id="sendResult">
+          <div style="text-align:center;font-size:12px;font-weight:700;color:#6366f1">取件码</div>
+          <div class="result-code" id="resultCode">------</div>
+          <div class="result-meta" id="resultMeta"></div>
+          <div class="result-actions">
+            <button type="button" class="btn btn-primary" id="copyCodeBtn">复制取件码</button>
+            <button type="button" class="btn" id="copyLinkBtn">复制取件链接</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PICKUP -->
+      <div class="pane" id="pane-pickup" role="tabpanel">
+        <div class="field" style="margin-bottom:14px">
+          <label for="pickupCode">取件码</label>
+          <input class="code-input" type="text" id="pickupCode" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" value="{{ prefill_code or '' }}" />
+          <div class="hint">输入寄件方提供的 6 位数字</div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" id="lookupBtn">查询</button>
+          <button type="button" class="btn btn-primary" id="pickupBtn">下载文件</button>
+        </div>
+        <div class="msg" id="pickupMsg"></div>
+        <div class="result" id="pickupInfo">
+          <div class="result-meta" id="pickupMeta" style="text-align:left"></div>
+        </div>
+      </div>
+
+      <p class="tips">
+        <strong>说明：</strong>文件保存在服务器归档目录（<code>file/express/</code>），过期或达到下载次数后自动清理。
+        请勿上传敏感机密文件到不可信环境；生产环境建议配合 HTTPS 与访问限流。
+      </p>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var ROOT = (window.__ROOT__ || {{ root_path()|tojson }}) || '';
+      function api(path) {
+        if (!path) return ROOT || '/';
+        if (path.charAt(0) !== '/') path = '/' + path;
+        return (ROOT || '') + path;
+      }
+      function fmtBytes(n) {
+        n = Number(n) || 0;
+        if (n < 1024) return n + ' B';
+        if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+        return (n / 1048576).toFixed(2) + ' MB';
+      }
+      function fmtRemain(sec) {
+        sec = Math.max(0, Number(sec) || 0);
+        if (sec < 60) return sec + ' 秒';
+        if (sec < 3600) return Math.floor(sec / 60) + ' 分钟';
+        if (sec < 86400) return (sec / 3600).toFixed(1) + ' 小时';
+        return (sec / 86400).toFixed(1) + ' 天';
+      }
+      function showMsg(el, text, kind) {
+        el.className = 'msg show ' + (kind || 'info');
+        el.textContent = text;
+      }
+      function hideMsg(el) {
+        el.className = 'msg';
+        el.textContent = '';
+      }
+
+      // Tabs
+      var tabs = document.querySelectorAll('.tab');
+      tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          var id = tab.getAttribute('data-tab');
+          tabs.forEach(function (t) {
+            t.classList.toggle('active', t === tab);
+            t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+          });
+          document.getElementById('pane-send').classList.toggle('active', id === 'send');
+          document.getElementById('pane-pickup').classList.toggle('active', id === 'pickup');
+        });
+      });
+
+      // Prefill → open pickup tab
+      var prefill = (document.getElementById('pickupCode').value || '').trim();
+      if (prefill) {
+        document.querySelector('.tab[data-tab="pickup"]').click();
+      }
+
+      // Drop zone
+      var drop = document.getElementById('dropZone');
+      var fileInput = document.getElementById('fileInput');
+      var fileLabel = document.getElementById('fileLabel');
+      var chosenFile = null;
+      function setFile(f) {
+        chosenFile = f || null;
+        if (f) {
+          fileLabel.hidden = false;
+          fileLabel.textContent = f.name + ' · ' + fmtBytes(f.size);
+        } else {
+          fileLabel.hidden = true;
+          fileLabel.textContent = '';
+        }
+      }
+      drop.addEventListener('click', function () { fileInput.click(); });
+      fileInput.addEventListener('change', function () {
+        setFile(fileInput.files && fileInput.files[0]);
+      });
+      ['dragenter', 'dragover'].forEach(function (ev) {
+        drop.addEventListener(ev, function (e) {
+          e.preventDefault(); e.stopPropagation();
+          drop.classList.add('drag');
+        });
+      });
+      ['dragleave', 'drop'].forEach(function (ev) {
+        drop.addEventListener(ev, function (e) {
+          e.preventDefault(); e.stopPropagation();
+          drop.classList.remove('drag');
+        });
+      });
+      drop.addEventListener('drop', function (e) {
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) setFile(f);
+      });
+
+      var sendBtn = document.getElementById('sendBtn');
+      var sendMsg = document.getElementById('sendMsg');
+      var sendResult = document.getElementById('sendResult');
+      var resultCode = document.getElementById('resultCode');
+      var resultMeta = document.getElementById('resultMeta');
+      var lastPickupUrl = '';
+
+      sendBtn.addEventListener('click', async function () {
+        hideMsg(sendMsg);
+        sendResult.classList.remove('show');
+        if (!chosenFile) {
+          showMsg(sendMsg, '请先选择要寄送的文件', 'err');
+          return;
+        }
+        sendBtn.disabled = true;
+        sendBtn.textContent = '上传中…';
+        try {
+          var fd = new FormData();
+          fd.append('file', chosenFile, chosenFile.name);
+          fd.append('ttl_hours', document.getElementById('ttlHours').value);
+          fd.append('max_downloads', document.getElementById('maxDownloads').value);
+          var note = document.getElementById('note').value || '';
+          if (note) fd.append('note', note);
+          var res = await fetch(api('/tools/express/send'), { method: 'POST', body: fd });
+          var data = await res.json().catch(function () { return {}; });
+          if (!res.ok) {
+            showMsg(sendMsg, data.detail || ('寄送失败 (' + res.status + ')'), 'err');
+            return;
+          }
+          resultCode.textContent = data.code;
+          lastPickupUrl = data.pickup_url || (api('/tools/express?code=' + data.code));
+          var lines = [
+            '文件：' + (data.original_name || ''),
+            '大小：' + fmtBytes(data.size_bytes),
+            '过期：' + (data.expires_at || '') + '（约 ' + fmtRemain(data.seconds_remaining) + '）',
+          ];
+          if (data.max_downloads > 0) {
+            lines.push('可下载：' + data.max_downloads + ' 次');
+          } else {
+            lines.push('下载次数：不限制');
+          }
+          if (data.note) lines.push('备注：' + data.note);
+          resultMeta.innerHTML = lines.map(function (l) { return '<div>' + l + '</div>'; }).join('');
+          sendResult.classList.add('show');
+          showMsg(sendMsg, data.message || '寄送成功', 'ok');
+        } catch (e) {
+          showMsg(sendMsg, '网络错误：' + (e.message || e), 'err');
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.textContent = '生成取件码';
+        }
+      });
+
+      function copyText(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand('copy');
+            resolve();
+          } catch (e) { reject(e); }
+          document.body.removeChild(ta);
+        });
+      }
+      document.getElementById('copyCodeBtn').addEventListener('click', function () {
+        var c = resultCode.textContent || '';
+        copyText(c).then(function () {
+          showMsg(sendMsg, '已复制取件码 ' + c, 'ok');
+        }).catch(function () {
+          showMsg(sendMsg, '复制失败，请手动选择取件码', 'err');
+        });
+      });
+      document.getElementById('copyLinkBtn').addEventListener('click', function () {
+        var link = lastPickupUrl;
+        if (link && link.charAt(0) === '/') {
+          link = window.location.origin + link;
+        }
+        copyText(link || '').then(function () {
+          showMsg(sendMsg, '已复制取件链接', 'ok');
+        }).catch(function () {
+          showMsg(sendMsg, '复制失败', 'err');
+        });
+      });
+
+      // Pickup
+      var pickupCode = document.getElementById('pickupCode');
+      var pickupMsg = document.getElementById('pickupMsg');
+      var pickupInfo = document.getElementById('pickupInfo');
+      var pickupMeta = document.getElementById('pickupMeta');
+      pickupCode.addEventListener('input', function () {
+        pickupCode.value = pickupCode.value.replace(/\D/g, '').slice(0, 6);
+      });
+
+      document.getElementById('lookupBtn').addEventListener('click', async function () {
+        hideMsg(pickupMsg);
+        pickupInfo.classList.remove('show');
+        var code = pickupCode.value.trim();
+        if (code.length !== 6) {
+          showMsg(pickupMsg, '请输入 6 位取件码', 'err');
+          return;
+        }
+        try {
+          var fd = new FormData();
+          fd.append('code', code);
+          var res = await fetch(api('/tools/express/lookup'), { method: 'POST', body: fd });
+          var data = await res.json().catch(function () { return {}; });
+          if (!res.ok) {
+            showMsg(pickupMsg, data.detail || '查询失败', 'err');
+            return;
+          }
+          var lines = [
+            '<strong>文件</strong>：' + (data.original_name || ''),
+            '<strong>大小</strong>：' + fmtBytes(data.size_bytes),
+            '<strong>剩余有效</strong>：' + fmtRemain(data.seconds_remaining),
+          ];
+          if (data.max_downloads > 0) {
+            lines.push('<strong>剩余次数</strong>：' + (data.downloads_left == null ? '—' : data.downloads_left));
+          }
+          if (data.note) lines.push('<strong>备注</strong>：' + data.note);
+          pickupMeta.innerHTML = lines.map(function (l) { return '<div>' + l + '</div>'; }).join('');
+          pickupInfo.classList.add('show');
+          showMsg(pickupMsg, '文件可取，点击「下载文件」', 'ok');
+        } catch (e) {
+          showMsg(pickupMsg, '网络错误：' + (e.message || e), 'err');
+        }
+      });
+
+      document.getElementById('pickupBtn').addEventListener('click', function () {
+        hideMsg(pickupMsg);
+        var code = pickupCode.value.trim();
+        if (code.length !== 6) {
+          showMsg(pickupMsg, '请输入 6 位取件码', 'err');
+          return;
+        }
+        // Use GET for straightforward browser download
+        window.location.href = api('/tools/express/pickup/' + encodeURIComponent(code));
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base64_tool import router as base64_router
+from .express_tool import router as express_router
 from .image_compress_tool import router as image_compress_router
 from .json_tool import router as json_router
 from .markdown_tool import router as markdown_router
@@ -31,11 +32,11 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "id": "office",
         "name": "办公工具",
         "name_en": "Office",
-        "description": "发票合并、金额大写、图片压缩等日常办公小工具",
+        "description": "发票合并、金额大写、图片压缩、文件快递等日常办公小工具",
         "icon": "💼",
         "accent": "emerald",
         "route": "/c/office",
-        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩等。",
+        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩、文件快递等。",
     },
     {
         "id": "coding",
@@ -149,6 +150,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "cta": "开始压缩",
         "accent": "violet",
     },
+    {
+        "name": "文件快递",
+        "slug": "express",
+        "category": "office",
+        "description": "上传文件生成 6 位取件码，对方输入取件码即可下载；可设有效期与下载次数。",
+        "icon": "📦",
+        "route": "/tools/express",
+        "badge": "取件码分享",
+        "features": ["6 位取件码", "有效期", "下载次数", "一键复制"],
+        "cta": "开始寄送",
+        "accent": "indigo",
+    },
 ]
 
 # Routers to mount on the FastAPI app (order does not matter).
@@ -161,6 +174,7 @@ TOOL_ROUTERS = (
     markdown_router,
     rmb_router,
     image_compress_router,
+    express_router,
 )
 
 
@@ -262,4 +276,5 @@ __all__ = [
     "markdown_router",
     "rmb_router",
     "image_compress_router",
+    "express_router",
 ]

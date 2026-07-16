@@ -81,6 +81,7 @@ def _page_ctx(
 async def lifespan(app: FastAPI):
     from core.concurrency import shutdown_pools
     from core.jobs import reclaim_expired
+    from storage.express import cleanup_express
     from storage.history import _do_cleanup
 
     # Project-root .env for local runs (does not override real process env).
@@ -91,6 +92,10 @@ async def lifespan(app: FastAPI):
     ensure_file_dir()
     try:
         _do_cleanup()
+    except Exception:
+        pass
+    try:
+        cleanup_express(force=True)
     except Exception:
         pass
     try:
@@ -157,6 +162,8 @@ def _is_public_convert_path(path: str) -> bool:
         "/convert-batch",
         "/convert",
         "/compress",  # image-compress (and future media tools)
+        "/send",  # file express upload
+        "/pickup",  # file express download
     )
     return any(m in path for m in markers)
 
