@@ -11,3 +11,8 @@ reportlab>=4.0
 
 # optional OCR (also needs system Tesseract binary + language packs)
 pytesseract>=0.3.10
+
+# Markdown editor / preview (coding tool)
+markdown>=3.5
+bleach>=6.0
+tinycss2>=1.2

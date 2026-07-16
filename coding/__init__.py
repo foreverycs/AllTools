@@ -11,6 +11,11 @@ from .json_format import (
     format_json,
     validate_json,
 )
+from .markdown_render import (
+    MarkdownError,
+    render_markdown,
+    sample_markdown,
+)
 
 __all__ = [
     "encode_base64",
@@ -20,4 +25,7 @@ __all__ = [
     "format_json",
     "validate_json",
     "JsonError",
+    "render_markdown",
+    "sample_markdown",
+    "MarkdownError",
 ]

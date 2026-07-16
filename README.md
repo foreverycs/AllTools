@@ -1,393 +1,391 @@
 # 工具集（Toolkit Suite）
 
-基于 **FastAPI** 的可扩展工具集。工具按**集合（category）**注册，当前包含：
+基于 **FastAPI** 的可扩展自托管工具平台。工具按**分类**注册，提供 Web 界面、REST API、管理后台，以及 PDF / Word 命令行入口。
 
-### 文档处理
+| 项目 | 说明 |
+|------|------|
+| 版本 | `0.9.0` |
+| 运行时 | Python 3.11+（推荐 3.12） |
+| 默认端口 | `8000`（Docker Compose 映射 `8002→8000`） |
 
-| 工具                  | 说明                                                                           |
-| --------------------- | ------------------------------------------------------------------------------ |
-| **PDF 转 Word** | 纯文本 / 表格 PDF → 高保真`.docx`（合并单元格、嵌套样式、图片、可选 OCR）   |
-| **Word 转 PDF** | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word） |
+---
 
-### 办公工具
+## 功能一览
 
-| 工具                 | 说明                                                      |
-| -------------------- | --------------------------------------------------------- |
-| **发票合并**   | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
-| **人民币大写** | 阿拉伯数字金额转财务规范中文大写（角分、千分位）          |
-| **图片压缩**   | JPEG / PNG / GIF / SVG 高观感压缩，显著减小体积并尽量保持清晰 |
+### 文档处理 · `/c/document`
 
-### 编码工具
+| 工具 | 路径 | 说明 |
+|------|------|------|
+| **PDF 转 Word** | `/tools/pdf2word` | 纯文本 / 表格 PDF → 高保真 `.docx`（合并单元格、嵌套样式、图片、可选 OCR、批量 ZIP） |
+| **Word 转 PDF** | `/tools/word2pdf` | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word） |
 
-| 工具                    | 说明                                                                 |
-| ----------------------- | -------------------------------------------------------------------- |
-| **Base64 编解码** | 文本 / 文件 Base64 编码与解码（标准 / URL-safe、多字符集、换行折叠） |
-| **JSON 格式化**   | 美化 / 压缩、键排序、语法校验，默认保留中文                          |
+### 办公工具 · `/c/office`
 
-## 特性
+| 工具 | 路径 | 说明 |
+|------|------|------|
+| **发票合并** | `/tools/pdf-merge` | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
+| **人民币大写** | `/tools/rmb` | 阿拉伯数字金额 → 财务规范中文大写（角分、千分位） |
+| **图片压缩** | `/tools/image-compress` | JPEG / PNG / GIF / SVG 高观感压缩，尽量保持清晰 |
+
+### 编码工具 · `/c/coding`
+
+| 工具 | 路径 | 说明 |
+|------|------|------|
+| **Base64 编解码** | `/tools/base64` | 文本 / 文件 Base64（标准 / URL-safe、多字符集、换行折叠） |
+| **JSON 格式化** | `/tools/json` | 美化 / 压缩、键排序、语法校验，默认保留中文 |
+| **Markdown 编辑** | `/tools/markdown` | 左右分栏编辑与实时 HTML 预览，XSS 过滤，可导出 HTML |
+
+### 平台能力
+
+- **异步转换**：PDF ↔ Word 支持「提交 → 轮询 → 下载」，降低反代读超时风险
+- **批量转换**：多文件上传，结果打 ZIP；并发受 `CONVERT_CONCURRENCY` 限制
+- **上传归档**：成功后仅保存**输入文件**到 `file/`（默认保留 5 天），管理后台可查看
+- **管理后台**：仪表盘、上传记录、系统状态；登录限流 + CSRF
+- **可观测性**：`X-Request-ID`、`/health`、公开接口 IP 限流
+
+---
+
+## 特性说明
 
 ### PDF → Word
 
-- 高保真还原：合并单元格（`rowspan` / `colspan`）、表格边框、字号、对齐、背景色。
-- 文本与表格混排：按页面纵向顺序交错输出。
-- **图片嵌入**：提取页面内图片；纯图片/扫描页默认整页栅格化写入 Word。
-- **可选 OCR**：扫描页可启用 Tesseract（`ocr=true` / `--ocr`），输出可编辑文字（需系统 Tesseract + `pytesseract`）。
-- **表格算法**：线框 + 混合 + 无框线 text 策略融合；按词框推断跨列合并。
-- **单元格嵌套样式**：单元格内多段落、多字体/字号 run 级还原。
-- **水平定位**：按 PDF 内容边界推断 Word 页边距，文本/图片/表格 x 坐标 1:1 映射，避免整体偏左。
-- **同行布局**：Logo+公司名、签名栏等同一行元素用制表位写入同一段落（不用布局表格）。
-- **横线还原**：页眉下划线等细矩形/线段转为段落底边框（`pBdr`）。
-- **页码范围**：如 `1-3,5`，只转换指定页。
-- **分页保留**：可选在 Word 中按 PDF 页插入分页符。
+- 合并单元格（`rowspan` / `colspan`）、表格边框、字号、对齐、背景色
+- 文本与表格按页面纵向顺序交错输出
+- 图片嵌入；纯图片 / 扫描页可整页栅格化，或启用 **OCR**（Tesseract）生成可编辑文字
+- 页边距按 PDF 内容边界推断，坐标 1:1 映射；同行元素用制表位布局
+- 横线还原为段落底边框；支持页码范围（如 `1-3,5`）与 Word 分页符
 
 ### Word → PDF
 
-- 支持 `.docx` / `.doc`；单文件或批量 ZIP。
-- **LibreOffice** 无头模式（服务器 / Docker 推荐）；可设 `LIBREOFFICE_PATH`。
-- **Microsoft Word** COM 回退（仅 Windows，需本机安装 Word + `pywin32` 或 `docx2pdf`）。
-- 非 ASCII 路径暂存、超时按文件体积缩放、引擎失败自动回退；宏/ActiveX 禁用并给出明确错误提示。
-- 页面展示引擎状态；无引擎时返回 HTTP 503。
+- LibreOffice 无头模式（服务器 / Docker 推荐）
+- Windows 可回退 Microsoft Word COM（需本机 Word + `pywin32` / `docx2pdf`）
+- 非 ASCII 路径暂存、超时随体积缩放、引擎失败自动回退
+- 无可用引擎时返回 HTTP `503`
 
 ### 图片压缩
 
-- 支持 **JPEG / PNG / GIF / SVG**，保持原格式输出。
-- 预设：**高质量** / **均衡（推荐）** / **强压缩**；默认去除 EXIF 等元数据（方向先烘焙进像素）。
-- JPEG：渐进式 + optimize；PNG：无损优化，必要时调色板；GIF：调色板优化（含动图）；SVG：去注释与空白精简。
-- 若压缩后更大则保留原文件；可选最长边限制（强压缩默认 2560px）。
+- 保持原格式：JPEG / PNG / GIF / SVG
+- 预设：高质量 / 均衡（推荐）/ 强压缩；默认去除 EXIF 等元数据（方向先烘焙进像素）
+- 压缩后若更大则保留原文件；强压缩可限制最长边（默认 2560px）
 
-### 图片压缩
+### Markdown 编辑
 
-- 支持 **JPEG / PNG / GIF / SVG**，保持原格式输出。
-- 预设：**高质量** / **均衡（推荐）** / **强压缩**；默认去除 EXIF 等元数据（方向先烘焙进像素）。
-- JPEG：渐进式 + optimize；PNG：无损优化，必要时调色板；GIF：调色板优化（含动图）；SVG：去注释与空白精简。
-- 若压缩后更大则保留原文件；可选最长边限制（强压缩默认 2560px）。
+- 左源码、右实时预览（服务端渲染 + bleach 过滤 XSS）
+- 支持标题、列表、表格、代码块、引用等
+- 复制 MD / HTML、导出独立 HTML；内容可保存在浏览器 `localStorage`
 
-### 通用
-
-- **异步转换（推荐）**：PDF→Word / Word→PDF 支持「提交 → 轮询 → 下载」，降低 Nginx/反代读超时风险；页面默认走异步，仅在路由缺失或网络失败时回退同步。
-- **批量转换**：多文件一次上传，打包为 ZIP 下载；批量内转换受 `CONVERT_CONCURRENCY` 限制并行。
-- **上传归档**：转换成功后仅将**输入文件**写入后台 `file/` 目录（前端不展示）；**仅保留最近 5 天**（可配 `UPLOAD_RETENTION_DAYS`）。
-- Web 界面：拖拽上传、上传进度条、统计与警告提示。
-- **管理后台**：仪表盘、上传记录、系统状态；登录限流 + CSRF；生产须配置强 `ADMIN_PASSWORD` / `ADMIN_SECRET`。
-- 命令行：`python -m converter input.pdf` / `python -m word2pdf input.docx`。
-- 单文件最大 50 MB，批量最多 20 个；上传分块写盘，转换在线程/进程池执行。
+---
 
 ## 安装
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate      # Windows
+
+# Windows
+.venv\Scripts\activate
+
+# Linux / macOS
+# source .venv/bin/activate
+
 pip install -r requirements.txt
-# 开发 / 跑测试：
+
+# 开发 / 跑测试
 pip install -r requirements-dev.txt
 ```
+
+可选系统依赖：
+
+| 能力 | 依赖 |
+|------|------|
+| Word → PDF（推荐） | LibreOffice Writer |
+| Word → PDF（Windows 回退） | Microsoft Word + `pywin32` / `docx2pdf` |
+| PDF OCR | Tesseract + 语言包（如 `chi_sim`、`eng`）+ `pytesseract` |
+
+---
 
 ## 运行
 
 ```bash
+# 本地开发：复制环境文件
+copy .env.example .env          # Windows
+# cp .env.example .env          # Linux / macOS
+
 python app.py
-# 或（务必单 worker：异步任务存在进程内存中）
+# 或
 uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-> **单 worker 约束**：`GET /api/jobs/{id}` 与任务结果默认存在**当前进程内存**中。
-> 使用 `--workers N`（N>1）或多个副本时，提交与轮询可能打到不同进程 → 任务 404。
-> Docker / 生产请保持 **1 个 uvicorn worker**。多实例需 `JOBS_BACKEND=redis`（完整共享存储仍在演进；当前会回退到内存并打日志）。
+浏览器打开：
 
-### 管理后台
+| 地址 | 说明 |
+|------|------|
+| http://127.0.0.1:8000/ | 首页 |
+| http://127.0.0.1:8000/admin | 管理后台 |
+| http://127.0.0.1:8000/c/document | 文档处理 |
+| http://127.0.0.1:8000/c/office | 办公工具 |
+| http://127.0.0.1:8000/c/coding | 编码工具 |
 
-浏览器打开 http://127.0.0.1:8000/admin
+### 单 worker 约束
 
-**生产必须配置强密钥**（启动时会校验；弱口令会直接失败）。
+异步任务（`GET /api/jobs/{id}`）默认存在**当前进程内存**中。
 
-本地开发：复制环境文件后启动即可：
+- 必须使用 **`--workers 1`**
+- 多 worker / 多副本会导致提交与轮询打到不同进程 → 任务 404
+- `JOBS_BACKEND=redis` 为多实例预留；当前构建仍会回退内存并打日志
+
+### 宝塔 / Nginx 反代
+
+若 **IP:端口正常、域名访问布局错乱**，多为静态资源未反代到本应用。
+
+1. F12 → Network，确认 `/static/css/tokens.css` 等为 **200**
+2. 整站 `/` 反代到 `http://127.0.0.1:你的端口`，不要把 `/static` 指到其它站点
+3. 参考 `deploy/nginx-baota.conf.example`：`Host`、`X-Forwarded-*`、`client_max_body_size`、`proxy_read_timeout ≥ 600s`
+4. 仅子路径部署时设置 `ROOT_PATH`（如 `/toolkit`）；域名根目录反代**不要**设置
+5. HTTPS 下 Cookie 需 Secure 时可设 `ADMIN_COOKIE_SECURE=1`
+
+---
+
+## 管理后台
+
+地址：http://127.0.0.1:8000/admin
+
+生产环境**必须**配置强密钥，启动时会校验弱口令：
 
 ```bash
-copy .env.example .env
-# 或已有 .env 时直接：
-uvicorn app:app --reload --host 127.0.0.1 --port 8000
-```
-
-生产示例（请换成你自己的长随机串）：
-
-```bash
+# Windows
 set ADMIN_PASSWORD=Str0ng-Passw0rd!
 set ADMIN_SECRET=please-use-a-long-random-string-here
-# Linux/macOS: export ADMIN_PASSWORD=... ADMIN_SECRET=...
+
+# Linux / macOS
+export ADMIN_PASSWORD='Str0ng-Passw0rd!'
+export ADMIN_SECRET='please-use-a-long-random-string-here'
 ```
 
-| 环境变量                       | 说明                                                 | 默认                  |
-| ------------------------------ | ---------------------------------------------------- | --------------------- |
-| `ADMIN_PASSWORD`             | 后台登录密码（≥12 位，非常见弱口令）                | **必填**        |
-| `ADMIN_SECRET`               | 会话签名密钥（≥24 位，与密码独立）                  | **必填**        |
-| `ALLOW_INSECURE_ADMIN`       | `1` 时允许弱口令/缺省（仅本地开发/测试）           | `0`                 |
-| `ADMIN_SESSION_TTL`          | 会话有效期（秒）                                     | `43200`（12 小时）  |
-| `ADMIN_COOKIE_SECURE`        | Cookie 仅 HTTPS（`1`/`true`）                    | `0`                 |
-| `CONVERT_CONCURRENCY`        | 全局转换并发上限（PDF/Word/发票）                    | `2`                 |
-| `MAX_UPLOAD_BYTES`           | 单文件上传上限（字节）                               | `52428800`（50 MB） |
-| `MAX_BATCH_FILES`            | 批量最多文件数                                       | `20`                |
-| `UPLOAD_RETENTION_DAYS`      | 上传归档保留天数                                     | `5`                 |
-| `UPLOAD_FILE_DIR`            | 归档目录（默认项目下`file/`）                      | 空                    |
-| `LOG_LEVEL`                  | 日志级别（`DEBUG` / `INFO` / …）                | `INFO`              |
-| `PDF_PROCESS_POOL_THRESHOLD` | 大于该字节数的 PDF 走进程池转换                      | `2097152`（2 MB）   |
-| `API_RATE_LIMIT`             | 公开转换/下载接口每窗口最大请求数（`0` 关闭）      | `30`                |
-| `API_RATE_WINDOW_SEC`        | 限流窗口（秒）                                       | `60`                |
-| `JOBS_BACKEND`               | 任务存储：`memory`（默认）；`redis` 为多实例预留 | `memory`            |
-| `REDIS_URL`                  | 可选 Redis（`JOBS_BACKEND=redis` 时）              | 空                    |
-| `JOB_TTL_SEC`                | 完成/失败任务元数据保留秒数                          | `3600`              |
+本地开发可直接使用 `.env.example` 中的 `ALLOW_INSECURE_ADMIN=1`。
 
-`GET /health` 为轻量探活；需要引擎/OCR/归档/任务后端时使用 `GET /health?detail=1`。
-响应带 `X-Request-ID`（可客户端传入以便串联日志）。
+### 环境变量
 
-### 异步转换 API（已就绪）
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `ADMIN_PASSWORD` | 后台登录密码（≥12 位，非常见弱口令） | **必填** |
+| `ADMIN_SECRET` | 会话签名密钥（≥24 位，与密码独立） | **必填** |
+| `ALLOW_INSECURE_ADMIN` | `1` 允许弱口令 / 缺省（仅本地） | `0` |
+| `ADMIN_SESSION_TTL` | 会话有效期（秒） | `43200`（12h） |
+| `ADMIN_COOKIE_SECURE` | Cookie 仅 HTTPS | `0` |
+| `CONVERT_CONCURRENCY` | 全局转换并发上限 | `2` |
+| `MAX_UPLOAD_BYTES` | 单文件上传上限（字节） | `52428800`（50MB） |
+| `MAX_BATCH_FILES` | 批量最多文件数 | `20` |
+| `UPLOAD_RETENTION_DAYS` | 上传归档保留天数 | `5` |
+| `UPLOAD_FILE_DIR` | 归档目录（默认项目下 `file/`） | 空 |
+| `ROOT_PATH` | 反代子路径前缀 | 空 |
+| `LOG_LEVEL` | 日志级别 | `INFO` |
+| `PDF_PROCESS_POOL_THRESHOLD` | 大于该字节的 PDF 走进程池 | `2097152`（2MB） |
+| `API_RATE_LIMIT` | 公开转换/下载每窗口最大请求数（`0` 关闭） | `30` |
+| `API_RATE_WINDOW_SEC` | 限流窗口（秒） | `60` |
+| `JOBS_BACKEND` | 任务存储：`memory` / `redis`（预留） | `memory` |
+| `REDIS_URL` | Redis 连接（`JOBS_BACKEND=redis` 时） | 空 |
+| `JOB_TTL_SEC` | 完成/失败任务元数据保留秒数 | `3600` |
+| `DOTENV_OVERRIDE` | `1` 时 `.env` 覆盖进程环境变量 | `0` |
+| `LIBREOFFICE_PATH` | `soffice` 可执行文件路径 | 系统探测 |
 
-| 工具             | 提交                                                    | 轮询                   | 下载                            |
-| ---------------- | ------------------------------------------------------- | ---------------------- | ------------------------------- |
-| PDF→Word 单文件 | `POST /tools/pdf2word/convert-async` → **202** | `GET /api/jobs/{id}` | `GET /api/jobs/{id}/download` |
-| PDF→Word 批量   | `POST /tools/pdf2word/convert-batch-async`            | 同上                   | 同上（ZIP）                     |
-| Word→PDF 单文件 | `POST /tools/word2pdf/convert-async` → **202** | 同上                   | 同上                            |
-| Word→PDF 批量   | `POST /tools/word2pdf/convert-batch-async`            | 同上                   | 同上（ZIP）                     |
+### 密码改了不生效？
 
-流程：`multipart` 上传 → 响应 JSON（`id` / `poll_url` / `download_url`）→ 轮询至 `status=done` → 下载结果。
-下载成功后服务端会清理临时文件；同步 `/convert` 仍可用作兼容回退。
+1. **改完未重启**进程（uvicorn / Docker / 宝塔必须重启）
+2. **进程环境优先**：Docker `environment:`、宝塔环境变量、systemd 中若已有同名项，默认会忽略 `.env`
+   - 解决：在 `.env` 加 `DOTENV_OVERRIDE=1` 后重启，或改掉进程环境中的旧值
+3. **Docker 未挂载 `.env`**：compose 已支持 `env_file` 与挂载；纯 Docker 请用 `--env-file` 或 `-e`
+4. **文件位置**：必须是项目根目录（与 `app.py` 同级）的 `.env`
+5. 改密码后旧 Cookie 可能仍有效：清 Cookie 或更换 `ADMIN_SECRET`
 
-前端仅在 **网络错误 / 404·405（异步路由不存在）** 时回退同步；业务错误（坏文件、引擎未就绪、任务 `error`）不会重复打同步接口。
+管理后台 → **系统状态** 可查看 `.env` 路径，以及 `ADMIN_PASSWORD` 是 `set` 还是 `skipped_existing`。
 
-### 长转换 / 超时
+---
 
-- PDF→Word（尤其 **OCR**）、Word→PDF 可能需数分钟；**优先使用异步 API**，页面会轮询进度（按页/按文件）。
-- Nginx / 宝塔反代请设置 **`proxy_read_timeout` ≥ 600s**（见 `deploy/nginx-baota.conf.example`）。异步模式下上传接口可较快返回 202，但仍建议保留长超时以兼容同步回退。
-- 仍超时可：缩小页码范围、关闭 OCR、或调大反代与客户端超时。
+## 异步转换 API
 
-管理后台登录有进程内失败锁定（默认约 8 次 / 10 分钟 → 锁定 15 分钟）。
-公开 `/tools/*/convert*` 与任务下载有进程内 IP 限流（`API_RATE_LIMIT`）；生产仍建议在 Nginx 层做限流。
+| 工具 | 提交 | 轮询 | 下载 |
+|------|------|------|------|
+| PDF→Word 单文件 | `POST /tools/pdf2word/convert-async` → 202 | `GET /api/jobs/{id}` | `GET /api/jobs/{id}/download` |
+| PDF→Word 批量 | `POST /tools/pdf2word/convert-batch-async` | 同上 | 同上（ZIP） |
+| Word→PDF 单文件 | `POST /tools/word2pdf/convert-async` → 202 | 同上 | 同上 |
+| Word→PDF 批量 | `POST /tools/word2pdf/convert-batch-async` | 同上 | 同上（ZIP） |
 
-项目根目录 `.env` 会在启动时自动加载。
+流程：`multipart` 上传 → JSON（`id` / `poll_url` / `download_url`）→ 轮询至 `status=done` → 下载。  
+下载成功后服务端清理临时文件；同步 `/convert` 仍可用作兼容回退。
 
-**密码改了不生效？** 常见原因：
+前端仅在**网络错误或 404/405** 时回退同步；业务错误（坏文件、引擎未就绪、任务 `error`）不会重复请求同步接口。
 
-1. **改完没重启**进程（uvicorn / Docker / 宝塔 Python 项目必须重启）。
-2. **进程环境变量优先级更高**：Docker `environment:`、宝塔「环境变量」、systemd 里若已有 `ADMIN_PASSWORD=admin123`，默认会**忽略** `.env` 里的同名项。
-   - 解决：在 `.env` 加 `DOTENV_OVERRIDE=1` 后重启，或改掉 Docker/宝塔里的旧密码。
-3. **Docker 未挂载 `.env`**：容器内读不到宿主机 `.env`。compose 已支持 `env_file: .env` 与可选挂载；纯 Docker 请把 `.env` 放进镜像工作目录或用 `-e` / `--env-file`。
-4. **文件位置不对**：应用读的是**项目根目录**的 `.env`（与 `app.py` 同级），不是宝塔站点根目录随便一个文件。
-5. 登录后改了密码：旧 Cookie 仍可能有效（会话用 `ADMIN_SECRET` 签名）；改密码后请清 Cookie 或改 `ADMIN_SECRET` 使旧会话失效。
+长转换（尤其 OCR）可能需数分钟：优先异步 API；Nginx 建议 `proxy_read_timeout ≥ 600s`。
 
-管理后台 → **系统状态** 页可查看 `.env` 路径，以及 `ADMIN_PASSWORD` 是 `set` 还是 `skipped_existing`（被进程环境顶掉）。
+---
 
-功能：仪表盘统计、上传记录筛选/下载/删除、过期清理、引擎与 OCR 状态。
-
-| 栏目     | 路径                                   |
-| -------- | -------------------------------------- |
-| 首页     | `/`                                  |
-| 文档处理 | `/c/document`（别名 `/documents`） |
-| 办公工具 | `/c/office`（别名 `/office`）      |
-| 编码工具 | `/c/coding`（别名 `/coding`）      |
-
-### 命令行
+## 命令行
 
 ```bash
 # PDF → Word
 python -m converter input.pdf
 python -m converter input.pdf -o out.docx --pages 1-3,5
 python -m converter input.pdf --no-page-breaks
-python -m converter input.pdf --ocr                 # 扫描页 OCR
-python -m converter --ocr-info                      # 查看 Tesseract 状态
+python -m converter input.pdf --ocr
+python -m converter --ocr-info
 
 # Word → PDF（需 LibreOffice 或 Windows + Word）
 python -m word2pdf input.docx
 python -m word2pdf input.docx -o out.pdf
-python -m word2pdf --info          # 查看可用引擎
+python -m word2pdf --info
 ```
 
-### Word → PDF 引擎依赖
+---
 
-| 环境         | 推荐                                                                                                            |
-| ------------ | --------------------------------------------------------------------------------------------------------------- |
-| Docker       | 镜像已安装 LibreOffice Writer                                                                                   |
-| Linux 本机   | `sudo apt install libreoffice-writer`（或发行版等价包）                                                       |
-| Windows 本机 | 安装[LibreOffice](https://www.libreoffice.org/)；或安装 Microsoft Word 并 `pip install pywin32` / `docx2pdf` |
+## Docker
 
-可选环境变量：`LIBREOFFICE_PATH` / `SOFFICE_PATH` 指向 `soffice` 可执行文件。
-
-### Docker（推荐：Word → PDF 用 LibreOffice，本机无需安装）
-
-镜像已内置 **LibreOffice Writer** + 中文字体，本机只要有 Docker 即可。
+镜像内置 LibreOffice Writer、Tesseract（中/英）与中文字体，本机无需再装办公套件。
 
 ```bash
-# 构建并启动（端口 8002 → 容器 8000）
+# 准备 .env（生产务必改掉弱口令）
+copy .env.example .env
+
 docker compose up --build -d
 
-# 查看状态（应含 word2pdf.ready=true）
+# 默认映射 8002 → 容器 8000
 curl http://127.0.0.1:8002/health
-
-# 浏览器
-# http://127.0.0.1:8002          工具箱首页
-# http://127.0.0.1:8002/tools/word2pdf
+# 浏览器：http://127.0.0.1:8002
 ```
 
-**国内服务器拉不到 `python:3.12-slim`（docker.io 超时）时：**
-
-本仓库 Dockerfile 默认基础镜像为
-`docker.m.daocloud.io/library/python:3.12-slim`，一般可直接构建。
-
-若该镜像站也失败，可换源再构建：
+国内拉不到官方 Python 镜像时，Dockerfile 默认使用 DaoCloud 镜像；也可覆盖：
 
 ```bash
-# 备选 1
 docker compose build --build-arg PYTHON_IMAGE=docker.1ms.run/library/python:3.12-slim
 docker compose up -d
-
-# 备选 2：给 Docker 配 registry-mirror 后仍用官方名
-# 编辑 /etc/docker/daemon.json 后 systemctl restart docker，例如：
-# {
-#   "registry-mirrors": [
-#     "https://docker.m.daocloud.io",
-#     "https://docker.1ms.run"
-#   ]
-# }
-docker compose build --build-arg PYTHON_IMAGE=python:3.12-slim
-docker compose up -d
 ```
 
-首次构建会安装 LibreOffice，体积与时间较大，属正常现象。
-
 ```bash
-# 容器内查看引擎
 docker compose exec toolbox python -m word2pdf --info
-
-# 停止
 docker compose down
 ```
 
-## API
+> 异步任务为进程内存存储，compose 请保持单副本、单 worker（镜像 CMD 已指定 `--workers 1`）。
 
-| 方法     | 路径                              | 说明                               |
-| -------- | --------------------------------- | ---------------------------------- |
-| `GET`  | `/health`                       | 健康检查（含工具分类）             |
-| `GET`  | `/api/tools`                    | 工具目录 JSON（分类 + 列表）       |
-| `GET`  | `/api/uploads`                  | 最近上传记录 JSON（需管理员登录）  |
-| `GET`  | `/api/uploads/{id}/download`    | 下载归档的输入文件（需管理员登录） |
-| `GET`  | `/tools/pdf2word`               | PDF→Word 页面                     |
-| `GET`  | `/tools/pdf2word/ocr-status`    | OCR（Tesseract）状态               |
-| `POST` | `/tools/pdf2word/convert`       | 单 PDF →`.docx`                 |
-| `POST` | `/tools/pdf2word/convert-batch` | 多 PDF →`.zip`                  |
-| `GET`  | `/tools/word2pdf`               | Word→PDF 页面                     |
-| `GET`  | `/tools/word2pdf/status`        | 引擎状态 JSON                      |
-| `POST` | `/tools/word2pdf/convert`       | 单 Word →`.pdf`                 |
-| `POST` | `/tools/word2pdf/convert-batch` | 多 Word →`.zip`                 |
-| `GET`  | `/admin`                        | 管理后台（需登录）                 |
-| `GET`  | `/admin/login`                  | 管理员登录                         |
-| `GET`  | `/admin/uploads`                | 上传归档管理                       |
-| `GET`  | `/admin/system`                 | 系统状态                           |
-| `POST` | `/tools/base64/encode`          | 文本/文件 → Base64                |
-| `POST` | `/tools/base64/decode`          | Base64 → 文本/hex                 |
-| `POST` | `/tools/base64/probe`           | 粗检是否像 Base64                  |
-| `GET`  | `/tools/base64/presets`         | 选项与示例                         |
+---
+
+## 健康检查与目录 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/health` | 轻量探活 |
+| `GET` | `/health?detail=1` | 含引擎 / OCR / 归档 / 任务后端 |
+| `GET` | `/api/tools` | 工具目录 JSON（分类 + 列表） |
+
+响应带 `X-Request-ID`（客户端也可传入以便串联日志）。
+
+---
+
+## 主要 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/tools/pdf2word` | PDF→Word 页面 |
+| `GET` | `/tools/pdf2word/ocr-status` | OCR 状态 |
+| `POST` | `/tools/pdf2word/convert` | 单 PDF → `.docx` |
+| `POST` | `/tools/pdf2word/convert-batch` | 多 PDF → `.zip` |
+| `POST` | `/tools/pdf2word/convert-async` | 异步单文件 |
+| `POST` | `/tools/pdf2word/convert-batch-async` | 异步批量 |
+| `GET` | `/tools/word2pdf` | Word→PDF 页面 |
+| `GET` | `/tools/word2pdf/status` | 引擎状态 |
+| `POST` | `/tools/word2pdf/convert` | 单 Word → `.pdf` |
+| `POST` | `/tools/word2pdf/convert-batch` | 多 Word → `.zip` |
+| `POST` | `/tools/word2pdf/convert-async` | 异步单文件 |
+| `POST` | `/tools/word2pdf/convert-batch-async` | 异步批量 |
+| `GET` | `/api/jobs/{id}` | 任务状态 |
+| `GET` | `/api/jobs/{id}/download` | 任务结果下载 |
+| `POST` | `/tools/pdf-merge/merge` | 发票合并 |
+| `POST` | `/tools/image-compress/compress` | 图片压缩（返回文件） |
+| `POST` | `/tools/image-compress/compress-info` | 图片压缩统计 JSON |
+| `POST` | `/tools/base64/encode` | Base64 编码 |
+| `POST` | `/tools/base64/decode` | Base64 解码 |
+| `POST` | `/tools/json/format` | JSON 美化 / 压缩 |
+| `POST` | `/tools/json/validate` | JSON 校验 |
+| `POST` | `/tools/markdown/render` | Markdown → HTML JSON |
+| `POST` | `/tools/markdown/export-html` | 导出独立 HTML |
+| `POST` | `/tools/rmb/convert` | 金额大写 |
+| `GET` | `/admin` | 管理后台（需登录） |
+| `GET` | `/api/uploads` | 上传记录（需管理员） |
 
 ### PDF → Word 表单字段
 
-| 字段                 | 说明                                                  |
-| -------------------- | ----------------------------------------------------- |
-| `file` / `files` | PDF 文件（单文件 / 批量）                             |
-| `page_range`       | 可选，如`1-3,5`（1 起始）                           |
-| `page_breaks`      | 可选，默认`true`，是否插入 Word 分页符              |
-| `ocr`              | 可选，`true`/`1` 对扫描页启用 OCR（需 Tesseract） |
+| 字段 | 说明 |
+|------|------|
+| `file` / `files` | PDF（单文件 / 批量） |
+| `page_range` | 可选，如 `1-3,5`（1 起始） |
+| `page_breaks` | 可选，默认 `true` |
+| `ocr` | 可选，`true` / `1` 启用 OCR |
 
-响应头：`X-Pages`、`X-Tables`、`X-Text-Blocks`、`X-Images`、`X-Lines`；
-可选警告：`X-Warnings`（如 `image_only`、`ocr_applied`）、`X-Warning-Message`；批量另有 `X-Files`。
+响应头：`X-Pages`、`X-Tables`、`X-Text-Blocks`、`X-Images`、`X-Lines`；可选 `X-Warnings`、`X-Warning-Message`。
 
 ### Word → PDF 表单字段
 
-| 字段                 | 说明                                  |
-| -------------------- | ------------------------------------- |
-| `file` / `files` | `.docx` / `.doc`（单文件 / 批量） |
+| 字段 | 说明 |
+|------|------|
+| `file` / `files` | `.docx` / `.doc` |
 
-响应头：`X-Engine`、`X-Bytes`；批量另有 `X-Files`。无引擎时 `503`。
+响应头：`X-Engine`、`X-Bytes`；无引擎时 `503`。
+
+### 图片压缩表单字段
+
+| 字段 | 说明 |
+|------|------|
+| `file` | 图片文件 |
+| `quality` | `high` / `balanced` / `strong` |
+| `strip_meta` | 默认 `true` |
+| `max_side` | 可选最长边（像素），`0` = 不缩放 |
+
+响应头：`X-Original-Bytes`、`X-Compressed-Bytes`、`X-Percent-Saved` 等。
+
+---
 
 ## 测试
 
 ```bash
+pip install -r requirements-dev.txt
 pytest tests -q
 ```
 
-### Base64 表单字段
-
-| 字段        | 说明                                                                   |
-| ----------- | ---------------------------------------------------------------------- |
-| `text`    | 明文（encode）或 Base64 串（decode）                                   |
-| `file`    | 可选，encode 时上传文件（≤ 5 MB）                                     |
-| `charset` | `utf-8` / `utf-16` / `latin-1` / `ascii`（decode 可 `none`） |
-| `variant` | `standard` 或 `urlsafe`                                            |
-| `wrap`    | encode 换行宽度，`0` / `64` / `76`                               |
-| `strict`  | decode 严格校验                                                        |
+---
 
 ## 扩展新工具
 
-1. 在 `tools/` 下新增路由模块（如 `tools/my_tool.py`）。
-2. 在 `tools/__init__.py` 的 `TOOL_REGISTRY` 增加条目，并设置 `category`（`document` / `coding` 或新分类）。
-3. 将 router 加入 `TOOL_ROUTERS`；如需新集合，先在 `TOOL_CATEGORIES` 注册。
-4. 页面模板放 `templates/tools/`；共享样式见 `static/css/tokens.css`。
+1. 在 `tools/` 下新增路由模块（如 `tools/my_tool.py`）
+2. 核心逻辑放在对应包（如 `coding/`、`office/`、`media/`、`converter/`）
+3. 在 `tools/__init__.py` 的 `TOOL_REGISTRY` 增加条目，设置 `category`
+4. 将 router 加入 `TOOL_ROUTERS`；新分类先写 `TOOL_CATEGORIES`
+5. 页面模板放在 `templates/tools/`；共享样式见 `static/css/tokens.css`、`layout.css`
 
-## 目录结构
+---
+
+## 目录结构（简要）
 
 ```
-app.py                      FastAPI 入口（工具集首页）
-admin/
-  auth.py                   后台会话鉴权
-  routes.py                 /admin 页面与 API
-tools/
-  __init__.py               分类 + TOOL_REGISTRY + TOOL_ROUTERS
-  pdf2word.py               文档：PDF→Word
-  word2pdf.py               文档：Word→PDF
-  base64_tool.py            编码：Base64
-coding/
-  base64_codec.py           Base64 核心逻辑
-converter/                  PDF→Word 核心
-word2pdf/                   Word→PDF 引擎
-storage/                    上传归档
-static/css/tokens.css       共享设计 token
-templates/
-  index.html                分类首页
-  tools/*.html              各工具页
-tests/
-Dockerfile / docker-compose.yml
+app.py                 # FastAPI 入口
+core/                  # 配置、任务、并发、限流、日志
+admin/                 # 管理后台
+tools/                 # 各工具 HTTP 路由与注册表
+converter/             # PDF → Word 算法
+word2pdf/              # Word → PDF 引擎
+coding/                # Base64 / JSON / Markdown 逻辑
+office/                # 人民币大写等
+media/                 # 图片压缩
+storage/               # 上传归档（SQLite + file/）
+templates/             # Jinja2 页面
+static/                # CSS / JS
+deploy/                # Nginx 示例
+tests/                 # pytest
 ```
 
-## 实现说明
+---
 
-### PDF → Word
+## 安全提示
 
-- `pdf_reader` 通过 `table.cells` 的矩形几何推断单元格跨度：合并区域在
-  pdfplumber 中表现为**跨越多行/多列带**的单一矩形，据此得到
-  `rowspan` / `colspan`；无框线表再用词框跨列启发式 `_refine_merges_from_words` 补全。
-- 表格检测为 **hybrid**：lines → lines/text 混合 → text，去重重叠区域。
-- 单元格内按字体/字号拆分为 `TextRun` 段落列表，由 `docx_writer._set_cell_rich` 写出。
-- 页面图片通过 pdfplumber 区域栅格化为 PNG 后写入 Word；无文本/表格的页面
-  默认回退为整页图片；`ocr=True` 时走 Tesseract 生成可编辑 `TextBlock`。
-- 细长填充矩形 / 水平线段提取为 `LineBlock`（页眉下划线等）。
-- `docx_writer`：
-  - 由内容 bbox 推断页边距，页尺寸取自 PDF，使水平位置与源文件一致；
-  - 同行块用 tab stops 合并为一段（非布局表格）；
-  - 横线写成段落 `pBdr`；标题与表格之间用 1pt 紧凑 spacer；
-  - 表格网格按 `nrows × ncols` 建立，锚点单元格 `merge` 还原合并。
-
-### Word → PDF
-
-- `word2pdf.converter` 依次尝试 LibreOffice（`soffice --headless --convert-to pdf`）
-  与 Microsoft Word COM；独立用户配置目录避免并发冲突。
-- 非 ASCII / 过长路径会复制到 ASCII 工作目录；超时随文件体积增长。
-- 检测 VBA/ActiveX/OLE 时优先 MS Word，并禁用宏执行；失败信息聚合多引擎错误。
-- Docker 镜像预装 `libreoffice-writer`、CJK 字体与 Tesseract（`chi_sim`+`eng`）。
-
-### 通用
-
-- 转换失败时立即清理临时目录；成功时在响应发送完毕后异步删除。
-- 环境变量：`PDF2WORD_OCR`、`PDF2WORD_OCR_LANG`、`TESSERACT_CMD`、`LIBREOFFICE_PATH`。
-
-## 已知限制
-
-- 无框线表格与跨行合并仍依赖启发式，复杂表头可能需要人工校对。
-- OCR 为可选能力：识别率依赖扫描质量与语言包；默认不开启。
-- Word→PDF 版式仍依赖引擎渲染；复杂宏 / ActiveX / 嵌入控件无法完整还原。
-- 单元格内图片、嵌套表格尚未支持。
+- 生产务必设置强 `ADMIN_PASSWORD` 与 `ADMIN_SECRET`，关闭 `ALLOW_INSECURE_ADMIN`
+- 公开转换接口有进程内 IP 限流；生产建议在 Nginx 再加一层限流
+- Markdown 预览默认 XSS 过滤；勿关闭 sanitize 用于不可信输入
+- 上传归档目录 `file/` 含用户原始文件，注意备份与访问权限

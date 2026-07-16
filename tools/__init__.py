@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from .base64_tool import router as base64_router
 from .image_compress_tool import router as image_compress_router
 from .json_tool import router as json_router
+from .markdown_tool import router as markdown_router
 from .pdf2word import router as pdf2word_router
 from .pdf_merge import router as pdf_merge_router
 from .rmb_tool import router as rmb_router
@@ -40,11 +41,11 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "id": "coding",
         "name": "编码工具",
         "name_en": "Encoding",
-        "description": "Base64 等编解码与文本处理",
+        "description": "Base64、JSON、Markdown 等编解码与文本处理",
         "icon": "🔐",
         "accent": "amber",
         "route": "/c/coding",
-        "lead": "开发调试常用的编解码能力，浏览器内即时处理。",
+        "lead": "开发调试常用的编解码与文本预览能力，浏览器内即时处理。",
     },
 ]
 
@@ -113,6 +114,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "accent": "amber",
     },
     {
+        "name": "Markdown 编辑",
+        "slug": "markdown",
+        "category": "coding",
+        "description": "Markdown 左右分栏编辑与实时 HTML 预览，支持表格、代码块，可导出 HTML。",
+        "icon": "MD",
+        "route": "/tools/markdown",
+        "badge": "Edit · Preview",
+        "features": ["实时预览", "表格 / 代码块", "XSS 过滤", "导出 HTML"],
+        "cta": "打开编辑器",
+        "accent": "amber",
+    },
+    {
         "name": "人民币大写",
         "slug": "rmb",
         "category": "office",
@@ -145,6 +158,7 @@ TOOL_ROUTERS = (
     pdf_merge_router,
     base64_router,
     json_router,
+    markdown_router,
     rmb_router,
     image_compress_router,
 )
@@ -217,6 +231,7 @@ __all__ = [
     "pdf_merge_router",
     "base64_router",
     "json_router",
+    "markdown_router",
     "rmb_router",
     "image_compress_router",
 ]
