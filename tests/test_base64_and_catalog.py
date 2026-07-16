@@ -88,10 +88,15 @@ def test_api_tools_catalog():
     assert any(t.get("slug") == "express" for t in featured)
     for cat in body["categories"]:
         assert "express" not in {t["slug"] for t in cat.get("tools") or []}
+    counts = body.get("counts") or {}
+    assert counts.get("module") == len(body["tools"])
+    assert counts.get("featured") == len(featured)
+    assert counts.get("total") == counts["module"] + counts["featured"]
 
 
 def test_home_lists_categories_and_base64():
     from app import app
+    from tools import enabled_tools, featured_tools
 
     client = TestClient(app)
     r = client.get("/")
@@ -105,6 +110,13 @@ def test_home_lists_categories_and_base64():
     assert "特色功能" in r.text or "文件快递" in r.text
     assert "/tools/express" in r.text
     assert 'id="featured"' in r.text
+    # Homepage stats: modules + featured
+    module_n = len(enabled_tools())
+    featured_n = len(featured_tools())
+    total = module_n + featured_n
+    assert str(total) in r.text
+    assert f"{module_n}+{featured_n}" in r.text or "模块 + 特色" in r.text
+    assert f"{module_n} 模块" in r.text
 
 
 def test_express_not_in_office_module_page():

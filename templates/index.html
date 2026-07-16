@@ -331,12 +331,12 @@
             <div class="hud-lab">可用工具</div>
           </div>
           <div class="hud-stat">
-            <div class="hud-val">{{ nav_items|length }}</div>
-            <div class="hud-lab">业务栏目</div>
+            <div class="hud-val">{{ module_count }}{% if featured_count %}+{{ featured_count }}{% endif %}</div>
+            <div class="hud-lab">模块{% if featured_count %} + 特色{% endif %}</div>
           </div>
           <div class="hud-stat">
-            <div class="hud-val">API</div>
-            <div class="hud-lab">开放接口</div>
+            <div class="hud-val">{{ nav_items|length }}</div>
+            <div class="hud-lab">业务栏目</div>
           </div>
           <div class="hud-stat">
             <div class="hud-val">本地</div>
@@ -417,7 +417,11 @@
           <p>点击任意工具立刻进入，无需先选栏目</p>
         </div>
         <div class="section-meta">
-          <span class="meta-pill">{{ tool_count }} TOOLS READY</span>
+          {% if featured_count %}
+          <span class="meta-pill">{{ module_count }} 模块 · {{ featured_count }} 特色</span>
+          {% else %}
+          <span class="meta-pill">{{ module_count }} TOOLS READY</span>
+          {% endif %}
         </div>
       </div>
 

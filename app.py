@@ -69,12 +69,16 @@ def _page_ctx(
     """
     public = enabled_tools()
     featured = featured_tools()
+    module_count = len(public)
+    featured_count = len(featured)
     ctx: Dict[str, Any] = {
         "nav_items": nav_categories(),
         "active_nav": active_nav,
-        "tool_count": len(public),
+        # Homepage stats: modules + featured (featured is outside module grids).
+        "module_count": module_count,
+        "featured_count": featured_count,
+        "tool_count": module_count + featured_count,
         "featured_tools": featured,
-        "featured_count": len(featured),
     }
     if extra:
         ctx.update(extra)
@@ -350,6 +354,11 @@ async def api_tools():
             "nav": nav_categories(),
             "tools": public,
             "featured": featured,
+            "counts": {
+                "module": len(public),
+                "featured": len(featured),
+                "total": len(public) + len(featured),
+            },
         }
     )
 
@@ -412,10 +421,14 @@ def _health_details(*, force: bool = False) -> dict:
 async def health(detail: int = Query(0, ge=0, le=1)):
     """Liveness probe. Pass ``?detail=1`` for engines, OCR, and storage stats."""
     public = enabled_tools()
+    featured = featured_tools()
     body: dict = {
         "status": "ok",
         "version": app.version,
-        "tools": len(public),
+        # Public inventory = module catalog + homepage featured tools.
+        "tools": len(public) + len(featured),
+        "tools_module": len(public),
+        "tools_featured": len(featured),
         "tools_registered": len(TOOL_REGISTRY),
     }
     if detail:

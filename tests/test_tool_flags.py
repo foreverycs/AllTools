@@ -197,17 +197,22 @@ def test_unknown_slug_toggle_404(flags_client):
 
 def test_health_reflects_enabled_count(flags_client):
     client, flags_mod, _ = flags_client
-    from tools import TOOL_REGISTRY
+    from tools import TOOL_REGISTRY, enabled_tools, featured_tools
 
     total = len(TOOL_REGISTRY)
     h0 = client.get("/health").json()
+    # tools = module catalog + featured (both enabled)
     assert h0["tools"] == total
+    assert h0.get("tools_module") == len(enabled_tools())
+    assert h0.get("tools_featured") == len(featured_tools())
+    assert h0["tools_module"] + h0["tools_featured"] == h0["tools"]
     assert h0.get("tools_registered") == total
 
     flags_mod.set_tool_enabled("base64", False)
     flags_mod.set_tool_enabled("rmb", False)
     h1 = client.get("/health").json()
     assert h1["tools"] == total - 2
+    assert h1["tools_module"] + h1["tools_featured"] == h1["tools"]
     assert h1["tools_registered"] == total
 
 
