@@ -169,7 +169,7 @@ export ADMIN_SECRET='please-use-a-long-random-string-here'
 
 地址：http://127.0.0.1:8000/admin/express（需登录）
 
-与「上传记录」相互独立：列出取件码包裹，支持按状态/关键词筛选、下载原文件、单条/批量删除、清理过期项。数据存放在 `file/express/`。
+与「上传记录」相互独立：列出取件码包裹，支持按状态/关键词筛选、下载原文件、单条/批量删除。有效期仅限制用户取件；管理端长期保留记录与文件，仅管理员手动删除或「清理过期项」才会物理删除。数据存放在 `file/express/`。
 
 ### 功能开关
 
@@ -366,7 +366,7 @@ docker compose down
 | `POST` | `/admin/express/batch-delete` | 批量删除快递包裹（需管理员 + CSRF） |
 | `POST` | `/admin/express/{id}/delete` | 删除快递包裹（需管理员 + CSRF） |
 | `GET` | `/admin/express/{id}/download` | 下载快递文件（需管理员） |
-| `POST` | `/admin/express/cleanup` | 清理过期快递（需管理员 + CSRF） |
+| `POST` | `/admin/express/cleanup` | 手动清理已过期快递（需管理员 + CSRF；非自动） |
 | `GET` | `/admin/tools` | 功能开关页面（需管理员） |
 | `POST` | `/admin/tools` | 批量保存功能开关（需管理员 + CSRF） |
 | `POST` | `/admin/tools/{slug}/toggle` | 切换单个工具（需管理员 + CSRF） |

@@ -572,7 +572,7 @@ async def express_cleanup(
     request: Request,
     csrf_token: Optional[str] = Form(None),
 ):
-    """Purge expired express packages (admin-triggered, force=True)."""
+    """Explicit admin purge of expired packages (not automatic)."""
     redir = require_admin(request)
     if redir:
         return redir
@@ -581,6 +581,7 @@ async def express_cleanup(
 
     from storage.express import cleanup_express
 
+    # force=True required: expiry never auto-deletes; only this admin action does.
     removed = cleanup_express(force=True)
     return _redirect(
         _admin_url("/admin/express", request)

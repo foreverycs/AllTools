@@ -120,11 +120,13 @@ def test_invalid_code_format(express_env):
     assert err == "invalid" and info is None
 
 
-def test_cleanup_expired(express_env, tmp_path):
+def test_expiry_blocks_user_but_admin_retains(express_env, tmp_path):
+    """Expiry is user-side only; records stay until explicit admin purge."""
     ex, _ = express_env
     src = _touch(tmp_path / "old.txt", b"old")
     pkg = ex.create_package(src, "old.txt", ttl_hours=1)
     code = pkg["code"]
+    pkg_id = pkg["id"]
 
     import sqlite3
 
@@ -139,10 +141,31 @@ def test_cleanup_expired(express_env, tmp_path):
     conn.commit()
     conn.close()
 
-    ex._last_cleanup_ts = 0.0
+    # Non-force cleanup is a no-op (no automatic purge)
+    assert ex.cleanup_express() == 0
+    assert ex.cleanup_express(force=False) == 0
+
+    info = ex.get_package_by_code(code)
+    assert info is not None
+    assert info["expired"] is True
+    assert info["available"] is False
+
+    _, err = ex.claim_download(code)
+    assert err == "expired"
+
+    # Admin still sees the package and file
+    admin = ex.get_package_by_id(pkg_id)
+    assert admin is not None
+    assert admin["expired"] is True
+    assert admin["file_exists"] is True
+    listed = ex.list_packages(status="expired")
+    assert any(p["id"] == pkg_id for p in listed)
+
+    # Explicit admin purge removes it
     removed = ex.cleanup_express(force=True)
     assert removed >= 1
     assert ex.get_package_by_code(code) is None
+    assert ex.get_package_by_id(pkg_id) is None
 
 
 def test_resolve_blocks_traversal(express_env):

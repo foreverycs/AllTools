@@ -4,15 +4,15 @@
 <div class="admin-header">
   <div>
     <h1>文件快递</h1>
-    <p>取件码分享记录（独立于通用上传归档）· 默认有效期 {{ stats.default_ttl_hours }} 小时</p>
+    <p>取件码分享记录（独立于通用上传归档）· 默认用户有效期 {{ stats.default_ttl_hours }} 小时 · 管理端长期保留</p>
   </div>
   <div class="admin-actions">
     <form method="post" action="{{ url_path('/admin/express/cleanup') }}">
       <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
       <button class="admin-btn delete-confirm-btn" type="submit"
-              data-label-idle="清理过期" data-label-armed="确认清理">
+              data-label-idle="清理过期项" data-label-armed="确认清理">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-        <span class="delete-confirm-label">清理过期</span>
+        <span class="delete-confirm-label">清理过期项</span>
       </button>
     </form>
   </div>

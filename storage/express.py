@@ -8,7 +8,9 @@ Layout under the upload archive root::
         2026-07-16/
           ab12cd34_payload.bin
 
-Packages expire by ``expires_at``; cleanup runs on write and at app startup.
+``expires_at`` only blocks **user** pickup (lookup / download return expired).
+Packages are retained for the admin console indefinitely; physical deletion
+happens only via explicit admin delete/cleanup, never automatically.
 """
 
 from __future__ import annotations
@@ -207,21 +209,21 @@ def _unlink_package_file(stored_rel: str) -> None:
 
 
 def cleanup_express(*, force: bool = False) -> int:
-    """Remove expired / exhausted packages. Returns deleted count."""
-    global _last_cleanup_ts
-    now_mono = time.monotonic()
-    if not force and now_mono - _last_cleanup_ts < _CLEANUP_INTERVAL:
+    """Optionally purge packages past ``expires_at`` (admin only).
+
+    Automatic cleanup is disabled: expiry only affects user pickup.
+    Pass ``force=True`` for an explicit admin purge of expired rows + files.
+    Non-force calls are a no-op (kept for call-site compatibility).
+    """
+    if not force:
         return 0
-    _last_cleanup_ts = now_mono
+    global _last_cleanup_ts
+    _last_cleanup_ts = time.monotonic()
     return _do_cleanup()
 
 
 def _do_cleanup() -> int:
-    """Drop packages past expires_at.
-
-    Exhausted (download limit) packages are kept until TTL so callers can still
-    receive a clear ``exhausted`` error instead of a generic invalid code.
-    """
+    """Drop packages past expires_at (explicit admin purge only)."""
     now_iso = _iso(_now())
     removed = 0
     with _lock:
@@ -240,7 +242,7 @@ def _do_cleanup() -> int:
                     (now_iso,),
                 )
                 conn.commit()
-                logger.info("express cleanup removed=%s", removed)
+                logger.info("express admin cleanup removed=%s", removed)
         finally:
             conn.close()
     return removed
@@ -256,7 +258,6 @@ def create_package(
     note: str = "",
 ) -> Dict[str, Any]:
     """Store a file and return public package info including pickup code."""
-    cleanup_express()
     src = Path(source_path)
     if not src.is_file() or src.stat().st_size <= 0:
         raise ValueError("empty or missing file")
@@ -329,7 +330,6 @@ def get_package_by_code(code: str) -> Optional[Dict[str, Any]]:
     c = _normalize_code(code)
     if not is_valid_code_format(c):
         return None
-    cleanup_express()
     with _lock:
         conn = _get_conn()
         try:
@@ -369,7 +369,6 @@ def claim_download(code: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     if not is_valid_code_format(c):
         return None, "invalid"
 
-    cleanup_express()
     with _lock:
         conn = _get_conn()
         try:
@@ -402,7 +401,6 @@ def claim_download(code: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
 
 
 def express_stats() -> Dict[str, Any]:
-    cleanup_express()
     with _lock:
         conn = _get_conn()
         try:
@@ -435,7 +433,6 @@ def get_package_by_id(package_id: str) -> Optional[Dict[str, Any]]:
     pid = (package_id or "").strip()
     if not pid:
         return None
-    cleanup_express()
     with _lock:
         conn = _get_conn()
         try:
@@ -461,7 +458,6 @@ def list_packages(
     - ``q``: substring match on code / original_name / note / id
     - ``status``: ``available`` | ``expired`` | ``exhausted`` | ``missing``
     """
-    cleanup_express()
     limit = max(1, min(500, int(limit)))
     q_f = (q or "").strip().lower()
     status_f = (status or "").strip().lower()

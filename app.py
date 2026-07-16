@@ -81,7 +81,6 @@ def _page_ctx(
 async def lifespan(app: FastAPI):
     from core.concurrency import shutdown_pools
     from core.jobs import reclaim_expired
-    from storage.express import cleanup_express
     from storage.history import _do_cleanup
 
     # Project-root .env for local runs (does not override real process env).
@@ -94,10 +93,8 @@ async def lifespan(app: FastAPI):
         _do_cleanup()
     except Exception:
         pass
-    try:
-        cleanup_express(force=True)
-    except Exception:
-        pass
+    # File express: expiry only blocks user pickup; packages are retained for
+    # admin indefinitely (no automatic purge on startup).
     try:
         await reclaim_expired()
     except Exception:
