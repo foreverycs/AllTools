@@ -4,24 +4,24 @@
 
 ### 文档处理
 
-| 工具 | 说明 |
-|------|------|
-| **PDF 转 Word** | 纯文本 / 表格 PDF → 高保真 `.docx`（合并单元格、嵌套样式、图片、可选 OCR） |
+| 工具                  | 说明                                                                           |
+| --------------------- | ------------------------------------------------------------------------------ |
+| **PDF 转 Word** | 纯文本 / 表格 PDF → 高保真`.docx`（合并单元格、嵌套样式、图片、可选 OCR）   |
 | **Word 转 PDF** | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word） |
 
 ### 办公工具
 
-| 工具 | 说明 |
-|------|------|
-| **发票合并** | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
-| **人民币大写** | 阿拉伯数字金额转财务规范中文大写（角分、千分位） |
+| 工具                 | 说明                                                      |
+| -------------------- | --------------------------------------------------------- |
+| **发票合并**   | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
+| **人民币大写** | 阿拉伯数字金额转财务规范中文大写（角分、千分位）          |
 
 ### 编码工具
 
-| 工具 | 说明 |
-|------|------|
+| 工具                    | 说明                                                                 |
+| ----------------------- | -------------------------------------------------------------------- |
 | **Base64 编解码** | 文本 / 文件 Base64 编码与解码（标准 / URL-safe、多字符集、换行折叠） |
-| **JSON 格式化** | 美化 / 压缩、键排序、语法校验，默认保留中文 |
+| **JSON 格式化**   | 美化 / 压缩、键排序、语法校验，默认保留中文                          |
 
 ## 特性
 
@@ -75,22 +75,9 @@ python app.py
 uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-> **单 worker 约束**：`GET /api/jobs/{id}` 与任务结果默认存在**当前进程内存**中。  
-> 使用 `--workers N`（N>1）或多个副本时，提交与轮询可能打到不同进程 → 任务 404。  
+> **单 worker 约束**：`GET /api/jobs/{id}` 与任务结果默认存在**当前进程内存**中。
+> 使用 `--workers N`（N>1）或多个副本时，提交与轮询可能打到不同进程 → 任务 404。
 > Docker / 生产请保持 **1 个 uvicorn worker**。多实例需 `JOBS_BACKEND=redis`（完整共享存储仍在演进；当前会回退到内存并打日志）。
-
-### 宝塔 / Nginx 反代（域名访问布局错乱）
-
-用 **IP:端口** 正常、**域名反代后页面乱版**，几乎都是 **CSS 没加载到**（`/static/css/*.css` 404 或返回了 HTML）。
-
-1. **先自检**：域名打开站点 → F12 → Network，看  
-   `/static/css/tokens.css`、`layout.css`、`home.css` 是否 **200**。  
-   若是 404，说明反代没把 `/static` 转到本应用。
-2. **推荐配置**：域名站点「反向代理」目标为 `http://127.0.0.1:你的端口`，**整站** `/` 反代，不要单独把 `/static` 指到别的网站根目录。  
-   参考仓库内 `deploy/nginx-baota.conf.example`。
-3. 必须带上：`Host`、`X-Forwarded-Proto`、`X-Forwarded-For`；上传/转换调大 `client_max_body_size` 与 `proxy_read_timeout`。
-4. 仅当域名挂在**子路径**（如 `https://x.com/toolkit/`）时，在 `.env` 设置 `ROOT_PATH=/toolkit` 并按示例 Nginx 去掉前缀；**域名根目录反代不要设置 `ROOT_PATH`**。
-5. HTTPS 站点若 Cookie 需 Secure，可设 `ADMIN_COOKIE_SECURE=1`。
 
 ### 管理后台
 
@@ -114,39 +101,39 @@ set ADMIN_SECRET=please-use-a-long-random-string-here
 # Linux/macOS: export ADMIN_PASSWORD=... ADMIN_SECRET=...
 ```
 
-| 环境变量 | 说明 | 默认 |
-|----------|------|------|
-| `ADMIN_PASSWORD` | 后台登录密码（≥12 位，非常见弱口令） | **必填** |
-| `ADMIN_SECRET` | 会话签名密钥（≥24 位，与密码独立） | **必填** |
-| `ALLOW_INSECURE_ADMIN` | `1` 时允许弱口令/缺省（仅本地开发/测试） | `0` |
-| `ADMIN_SESSION_TTL` | 会话有效期（秒） | `43200`（12 小时） |
-| `ADMIN_COOKIE_SECURE` | Cookie 仅 HTTPS（`1`/`true`） | `0` |
-| `CONVERT_CONCURRENCY` | 全局转换并发上限（PDF/Word/发票） | `2` |
-| `MAX_UPLOAD_BYTES` | 单文件上传上限（字节） | `52428800`（50 MB） |
-| `MAX_BATCH_FILES` | 批量最多文件数 | `20` |
-| `UPLOAD_RETENTION_DAYS` | 上传归档保留天数 | `5` |
-| `UPLOAD_FILE_DIR` | 归档目录（默认项目下 `file/`） | 空 |
-| `LOG_LEVEL` | 日志级别（`DEBUG` / `INFO` / …） | `INFO` |
-| `PDF_PROCESS_POOL_THRESHOLD` | 大于该字节数的 PDF 走进程池转换 | `2097152`（2 MB） |
-| `API_RATE_LIMIT` | 公开转换/下载接口每窗口最大请求数（`0` 关闭） | `30` |
-| `API_RATE_WINDOW_SEC` | 限流窗口（秒） | `60` |
-| `JOBS_BACKEND` | 任务存储：`memory`（默认）；`redis` 为多实例预留 | `memory` |
-| `REDIS_URL` | 可选 Redis（`JOBS_BACKEND=redis` 时） | 空 |
-| `JOB_TTL_SEC` | 完成/失败任务元数据保留秒数 | `3600` |
+| 环境变量                       | 说明                                                 | 默认                  |
+| ------------------------------ | ---------------------------------------------------- | --------------------- |
+| `ADMIN_PASSWORD`             | 后台登录密码（≥12 位，非常见弱口令）                | **必填**        |
+| `ADMIN_SECRET`               | 会话签名密钥（≥24 位，与密码独立）                  | **必填**        |
+| `ALLOW_INSECURE_ADMIN`       | `1` 时允许弱口令/缺省（仅本地开发/测试）           | `0`                 |
+| `ADMIN_SESSION_TTL`          | 会话有效期（秒）                                     | `43200`（12 小时）  |
+| `ADMIN_COOKIE_SECURE`        | Cookie 仅 HTTPS（`1`/`true`）                    | `0`                 |
+| `CONVERT_CONCURRENCY`        | 全局转换并发上限（PDF/Word/发票）                    | `2`                 |
+| `MAX_UPLOAD_BYTES`           | 单文件上传上限（字节）                               | `52428800`（50 MB） |
+| `MAX_BATCH_FILES`            | 批量最多文件数                                       | `20`                |
+| `UPLOAD_RETENTION_DAYS`      | 上传归档保留天数                                     | `5`                 |
+| `UPLOAD_FILE_DIR`            | 归档目录（默认项目下`file/`）                      | 空                    |
+| `LOG_LEVEL`                  | 日志级别（`DEBUG` / `INFO` / …）                | `INFO`              |
+| `PDF_PROCESS_POOL_THRESHOLD` | 大于该字节数的 PDF 走进程池转换                      | `2097152`（2 MB）   |
+| `API_RATE_LIMIT`             | 公开转换/下载接口每窗口最大请求数（`0` 关闭）      | `30`                |
+| `API_RATE_WINDOW_SEC`        | 限流窗口（秒）                                       | `60`                |
+| `JOBS_BACKEND`               | 任务存储：`memory`（默认）；`redis` 为多实例预留 | `memory`            |
+| `REDIS_URL`                  | 可选 Redis（`JOBS_BACKEND=redis` 时）              | 空                    |
+| `JOB_TTL_SEC`                | 完成/失败任务元数据保留秒数                          | `3600`              |
 
-`GET /health` 为轻量探活；需要引擎/OCR/归档/任务后端时使用 `GET /health?detail=1`。  
+`GET /health` 为轻量探活；需要引擎/OCR/归档/任务后端时使用 `GET /health?detail=1`。
 响应带 `X-Request-ID`（可客户端传入以便串联日志）。
 
 ### 异步转换 API（已就绪）
 
-| 工具 | 提交 | 轮询 | 下载 |
-|------|------|------|------|
+| 工具             | 提交                                                    | 轮询                   | 下载                            |
+| ---------------- | ------------------------------------------------------- | ---------------------- | ------------------------------- |
 | PDF→Word 单文件 | `POST /tools/pdf2word/convert-async` → **202** | `GET /api/jobs/{id}` | `GET /api/jobs/{id}/download` |
-| PDF→Word 批量 | `POST /tools/pdf2word/convert-batch-async` | 同上 | 同上（ZIP） |
-| Word→PDF 单文件 | `POST /tools/word2pdf/convert-async` → **202** | 同上 | 同上 |
-| Word→PDF 批量 | `POST /tools/word2pdf/convert-batch-async` | 同上 | 同上（ZIP） |
+| PDF→Word 批量   | `POST /tools/pdf2word/convert-batch-async`            | 同上                   | 同上（ZIP）                     |
+| Word→PDF 单文件 | `POST /tools/word2pdf/convert-async` → **202** | 同上                   | 同上                            |
+| Word→PDF 批量   | `POST /tools/word2pdf/convert-batch-async`            | 同上                   | 同上（ZIP）                     |
 
-流程：`multipart` 上传 → 响应 JSON（`id` / `poll_url` / `download_url`）→ 轮询至 `status=done` → 下载结果。  
+流程：`multipart` 上传 → 响应 JSON（`id` / `poll_url` / `download_url`）→ 轮询至 `status=done` → 下载结果。
 下载成功后服务端会清理临时文件；同步 `/convert` 仍可用作兼容回退。
 
 前端仅在 **网络错误 / 404·405（异步路由不存在）** 时回退同步；业务错误（坏文件、引擎未就绪、任务 `error`）不会重复打同步接口。
@@ -157,7 +144,7 @@ set ADMIN_SECRET=please-use-a-long-random-string-here
 - Nginx / 宝塔反代请设置 **`proxy_read_timeout` ≥ 600s**（见 `deploy/nginx-baota.conf.example`）。异步模式下上传接口可较快返回 202，但仍建议保留长超时以兼容同步回退。
 - 仍超时可：缩小页码范围、关闭 OCR、或调大反代与客户端超时。
 
-管理后台登录有进程内失败锁定（默认约 8 次 / 10 分钟 → 锁定 15 分钟）。  
+管理后台登录有进程内失败锁定（默认约 8 次 / 10 分钟 → 锁定 15 分钟）。
 公开 `/tools/*/convert*` 与任务下载有进程内 IP 限流（`API_RATE_LIMIT`）；生产仍建议在 Nginx 层做限流。
 
 项目根目录 `.env` 会在启动时自动加载。
@@ -165,7 +152,7 @@ set ADMIN_SECRET=please-use-a-long-random-string-here
 **密码改了不生效？** 常见原因：
 
 1. **改完没重启**进程（uvicorn / Docker / 宝塔 Python 项目必须重启）。
-2. **进程环境变量优先级更高**：Docker `environment:`、宝塔「环境变量」、systemd 里若已有 `ADMIN_PASSWORD=admin123`，默认会**忽略** `.env` 里的同名项。  
+2. **进程环境变量优先级更高**：Docker `environment:`、宝塔「环境变量」、systemd 里若已有 `ADMIN_PASSWORD=admin123`，默认会**忽略** `.env` 里的同名项。
    - 解决：在 `.env` 加 `DOTENV_OVERRIDE=1` 后重启，或改掉 Docker/宝塔里的旧密码。
 3. **Docker 未挂载 `.env`**：容器内读不到宿主机 `.env`。compose 已支持 `env_file: .env` 与可选挂载；纯 Docker 请把 `.env` 放进镜像工作目录或用 `-e` / `--env-file`。
 4. **文件位置不对**：应用读的是**项目根目录**的 `.env`（与 `app.py` 同级），不是宝塔站点根目录随便一个文件。
@@ -175,12 +162,12 @@ set ADMIN_SECRET=please-use-a-long-random-string-here
 
 功能：仪表盘统计、上传记录筛选/下载/删除、过期清理、引擎与 OCR 状态。
 
-| 栏目 | 路径 |
-|------|------|
-| 首页 | `/` |
+| 栏目     | 路径                                   |
+| -------- | -------------------------------------- |
+| 首页     | `/`                                  |
 | 文档处理 | `/c/document`（别名 `/documents`） |
-| 办公工具 | `/c/office`（别名 `/office`） |
-| 编码工具 | `/c/coding`（别名 `/coding`） |
+| 办公工具 | `/c/office`（别名 `/office`）      |
+| 编码工具 | `/c/coding`（别名 `/coding`）      |
 
 ### 命令行
 
@@ -200,11 +187,11 @@ python -m word2pdf --info          # 查看可用引擎
 
 ### Word → PDF 引擎依赖
 
-| 环境 | 推荐 |
-|------|------|
-| Docker | 镜像已安装 LibreOffice Writer |
-| Linux 本机 | `sudo apt install libreoffice-writer`（或发行版等价包） |
-| Windows 本机 | 安装 [LibreOffice](https://www.libreoffice.org/)；或安装 Microsoft Word 并 `pip install pywin32` / `docx2pdf` |
+| 环境         | 推荐                                                                                                            |
+| ------------ | --------------------------------------------------------------------------------------------------------------- |
+| Docker       | 镜像已安装 LibreOffice Writer                                                                                   |
+| Linux 本机   | `sudo apt install libreoffice-writer`（或发行版等价包）                                                       |
+| Windows 本机 | 安装[LibreOffice](https://www.libreoffice.org/)；或安装 Microsoft Word 并 `pip install pywin32` / `docx2pdf` |
 
 可选环境变量：`LIBREOFFICE_PATH` / `SOFFICE_PATH` 指向 `soffice` 可执行文件。
 
@@ -226,7 +213,7 @@ curl http://127.0.0.1:8002/health
 
 **国内服务器拉不到 `python:3.12-slim`（docker.io 超时）时：**
 
-本仓库 Dockerfile 默认基础镜像为  
+本仓库 Dockerfile 默认基础镜像为
 `docker.m.daocloud.io/library/python:3.12-slim`，一般可直接构建。
 
 若该镜像站也失败，可换源再构建：
@@ -260,45 +247,45 @@ docker compose down
 
 ## API
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/health` | 健康检查（含工具分类） |
-| `GET` | `/api/tools` | 工具目录 JSON（分类 + 列表） |
-| `GET` | `/api/uploads` | 最近上传记录 JSON（需管理员登录） |
-| `GET` | `/api/uploads/{id}/download` | 下载归档的输入文件（需管理员登录） |
-| `GET` | `/tools/pdf2word` | PDF→Word 页面 |
-| `GET` | `/tools/pdf2word/ocr-status` | OCR（Tesseract）状态 |
-| `POST` | `/tools/pdf2word/convert` | 单 PDF → `.docx` |
-| `POST` | `/tools/pdf2word/convert-batch` | 多 PDF → `.zip` |
-| `GET` | `/tools/word2pdf` | Word→PDF 页面 |
-| `GET` | `/tools/word2pdf/status` | 引擎状态 JSON |
-| `POST` | `/tools/word2pdf/convert` | 单 Word → `.pdf` |
-| `POST` | `/tools/word2pdf/convert-batch` | 多 Word → `.zip` |
-| `GET` | `/admin` | 管理后台（需登录） |
-| `GET` | `/admin/login` | 管理员登录 |
-| `GET` | `/admin/uploads` | 上传归档管理 |
-| `GET` | `/admin/system` | 系统状态 |
-| `POST` | `/tools/base64/encode` | 文本/文件 → Base64 |
-| `POST` | `/tools/base64/decode` | Base64 → 文本/hex |
-| `POST` | `/tools/base64/probe` | 粗检是否像 Base64 |
-| `GET` | `/tools/base64/presets` | 选项与示例 |
+| 方法     | 路径                              | 说明                               |
+| -------- | --------------------------------- | ---------------------------------- |
+| `GET`  | `/health`                       | 健康检查（含工具分类）             |
+| `GET`  | `/api/tools`                    | 工具目录 JSON（分类 + 列表）       |
+| `GET`  | `/api/uploads`                  | 最近上传记录 JSON（需管理员登录）  |
+| `GET`  | `/api/uploads/{id}/download`    | 下载归档的输入文件（需管理员登录） |
+| `GET`  | `/tools/pdf2word`               | PDF→Word 页面                     |
+| `GET`  | `/tools/pdf2word/ocr-status`    | OCR（Tesseract）状态               |
+| `POST` | `/tools/pdf2word/convert`       | 单 PDF →`.docx`                 |
+| `POST` | `/tools/pdf2word/convert-batch` | 多 PDF →`.zip`                  |
+| `GET`  | `/tools/word2pdf`               | Word→PDF 页面                     |
+| `GET`  | `/tools/word2pdf/status`        | 引擎状态 JSON                      |
+| `POST` | `/tools/word2pdf/convert`       | 单 Word →`.pdf`                 |
+| `POST` | `/tools/word2pdf/convert-batch` | 多 Word →`.zip`                 |
+| `GET`  | `/admin`                        | 管理后台（需登录）                 |
+| `GET`  | `/admin/login`                  | 管理员登录                         |
+| `GET`  | `/admin/uploads`                | 上传归档管理                       |
+| `GET`  | `/admin/system`                 | 系统状态                           |
+| `POST` | `/tools/base64/encode`          | 文本/文件 → Base64                |
+| `POST` | `/tools/base64/decode`          | Base64 → 文本/hex                 |
+| `POST` | `/tools/base64/probe`           | 粗检是否像 Base64                  |
+| `GET`  | `/tools/base64/presets`         | 选项与示例                         |
 
 ### PDF → Word 表单字段
 
-| 字段 | 说明 |
-|------|------|
-| `file` / `files` | PDF 文件（单文件 / 批量） |
-| `page_range` | 可选，如 `1-3,5`（1 起始） |
-| `page_breaks` | 可选，默认 `true`，是否插入 Word 分页符 |
-| `ocr` | 可选，`true`/`1` 对扫描页启用 OCR（需 Tesseract） |
+| 字段                 | 说明                                                  |
+| -------------------- | ----------------------------------------------------- |
+| `file` / `files` | PDF 文件（单文件 / 批量）                             |
+| `page_range`       | 可选，如`1-3,5`（1 起始）                           |
+| `page_breaks`      | 可选，默认`true`，是否插入 Word 分页符              |
+| `ocr`              | 可选，`true`/`1` 对扫描页启用 OCR（需 Tesseract） |
 
-响应头：`X-Pages`、`X-Tables`、`X-Text-Blocks`、`X-Images`、`X-Lines`；  
+响应头：`X-Pages`、`X-Tables`、`X-Text-Blocks`、`X-Images`、`X-Lines`；
 可选警告：`X-Warnings`（如 `image_only`、`ocr_applied`）、`X-Warning-Message`；批量另有 `X-Files`。
 
 ### Word → PDF 表单字段
 
-| 字段 | 说明 |
-|------|------|
+| 字段                 | 说明                                  |
+| -------------------- | ------------------------------------- |
 | `file` / `files` | `.docx` / `.doc`（单文件 / 批量） |
 
 响应头：`X-Engine`、`X-Bytes`；批量另有 `X-Files`。无引擎时 `503`。
@@ -311,14 +298,14 @@ pytest tests -q
 
 ### Base64 表单字段
 
-| 字段 | 说明 |
-|------|------|
-| `text` | 明文（encode）或 Base64 串（decode） |
-| `file` | 可选，encode 时上传文件（≤ 5 MB） |
+| 字段        | 说明                                                                   |
+| ----------- | ---------------------------------------------------------------------- |
+| `text`    | 明文（encode）或 Base64 串（decode）                                   |
+| `file`    | 可选，encode 时上传文件（≤ 5 MB）                                     |
 | `charset` | `utf-8` / `utf-16` / `latin-1` / `ascii`（decode 可 `none`） |
-| `variant` | `standard` 或 `urlsafe` |
-| `wrap` | encode 换行宽度，`0` / `64` / `76` |
-| `strict` | decode 严格校验 |
+| `variant` | `standard` 或 `urlsafe`                                            |
+| `wrap`    | encode 换行宽度，`0` / `64` / `76`                               |
+| `strict`  | decode 严格校验                                                        |
 
 ## 扩展新工具
 
