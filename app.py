@@ -35,6 +35,7 @@ from tools import (
     TOOL_REGISTRY,
     TOOL_ROUTERS,
     enabled_tools,
+    featured_tools,
     get_category,
     nav_categories,
     tools_by_category,
@@ -67,10 +68,13 @@ def _page_ctx(
     flags take effect without restart.
     """
     public = enabled_tools()
+    featured = featured_tools()
     ctx: Dict[str, Any] = {
         "nav_items": nav_categories(),
         "active_nav": active_nav,
         "tool_count": len(public),
+        "featured_tools": featured,
+        "featured_count": len(featured),
     }
     if extra:
         ctx.update(extra)
@@ -338,12 +342,14 @@ async def office_alias(request: Request):
 async def api_tools():
     """Machine-readable tool catalog (enabled tools only)."""
     public = enabled_tools()
+    featured = featured_tools()
     return JSONResponse(
         {
             "version": app.version,
             "categories": tools_by_category(),
             "nav": nav_categories(),
             "tools": public,
+            "featured": featured,
         }
     )
 

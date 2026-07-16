@@ -176,14 +176,33 @@ def test_resolve_blocks_traversal(express_env):
 
 
 def test_registry_has_express():
-    from tools import TOOL_REGISTRY, TOOL_ROUTERS, express_router
+    from tools import (
+        TOOL_REGISTRY,
+        TOOL_ROUTERS,
+        enabled_tools,
+        express_router,
+        featured_tools,
+        tools_by_category,
+    )
 
     slugs = {t["slug"] for t in TOOL_REGISTRY}
     assert "express" in slugs
     tool = next(t for t in TOOL_REGISTRY if t["slug"] == "express")
     assert tool["category"] == "office"
+    assert tool.get("featured") is True
     assert tool["route"] == "/tools/express"
     assert express_router in TOOL_ROUTERS
+
+    # Featured: not in module catalog / office category; only in featured list.
+    assert "express" not in {t["slug"] for t in enabled_tools()}
+    assert "express" in {t["slug"] for t in featured_tools()}
+    office = next(c for c in tools_by_category() if c["id"] == "office")
+    assert "express" not in {t["slug"] for t in office["tools"]}
+    # Admin still sees it under office when include_disabled=True
+    office_admin = next(
+        c for c in tools_by_category(include_disabled=True) if c["id"] == "office"
+    )
+    assert "express" in {t["slug"] for t in office_admin["tools"]}
 
 
 def test_api_send_lookup_pickup(express_client):
@@ -244,33 +263,6 @@ def test_api_bad_code_and_ttl(express_client):
         data={"ttl_hours": "99999"},
     )
     assert ttl.status_code == 400
-
-
-def test_list_delete_packages_admin_api(express_env, tmp_path):
-    ex, _ = express_env
-    src1 = _touch(tmp_path / "a.txt", b"aaa")
-    src2 = _touch(tmp_path / "b.txt", b"bbb")
-    p1 = ex.create_package(src1, "a.txt", note="alpha", max_downloads=1)
-    p2 = ex.create_package(src2, "b.txt", note="beta")
-
-    listed = ex.list_packages(limit=50)
-    ids = {p["id"] for p in listed}
-    assert p1["id"] in ids and p2["id"] in ids
-    assert all("file_exists" in p for p in listed)
-    assert all(p.get("file_exists") for p in listed if p["id"] in ids)
-
-    by_q = ex.list_packages(q="alpha")
-    assert len(by_q) == 1 and by_q[0]["id"] == p1["id"]
-
-    got = ex.get_package_by_id(p1["id"])
-    assert got is not None and got["code"] == p1["code"]
-    assert got["file_exists"] is True
-
-    assert ex.delete_package(p1["id"]) is True
-    assert ex.get_package_by_id(p1["id"]) is None
-    assert ex.delete_packages([p2["id"], "missing"]) == 1
-    assert ex.get_package_by_id(p2["id"]) is None
-    assert ex.delete_packages([]) == 0
 
 
 def test_list_delete_packages_admin_api(express_env, tmp_path):

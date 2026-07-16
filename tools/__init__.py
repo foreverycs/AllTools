@@ -32,11 +32,11 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "id": "office",
         "name": "办公工具",
         "name_en": "Office",
-        "description": "发票合并、金额大写、图片压缩、文件快递等日常办公小工具",
+        "description": "发票合并、金额大写、图片压缩等日常办公小工具",
         "icon": "💼",
         "accent": "emerald",
         "route": "/c/office",
-        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩、文件快递等。",
+        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩等。",
     },
     {
         "id": "coding",
@@ -154,13 +154,16 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "name": "文件快递",
         "slug": "express",
         "category": "office",
+        # Featured: shown as a homepage highlight, not listed under module grids.
+        "featured": True,
         "description": "上传文件生成 6 位取件码，对方输入取件码即可下载；可设有效期与下载次数。",
         "icon": "📦",
         "route": "/tools/express",
-        "badge": "取件码分享",
+        "badge": "特色 · 取件码分享",
         "features": ["6 位取件码", "有效期", "下载次数", "一键复制"],
         "cta": "开始寄送",
         "accent": "indigo",
+        "lead": "临时传文件无需账号：生成取件码，对方输入即可下载。",
     },
 ]
 
@@ -178,23 +181,64 @@ TOOL_ROUTERS = (
 )
 
 
-def enabled_tools() -> List[Dict[str, Any]]:
-    """Public catalog: only tools not disabled in admin flags."""
+def is_featured_tool(tool: Dict[str, Any] | None) -> bool:
+    """True when a registry entry is a homepage feature (not a module card)."""
+    if not tool:
+        return False
+    return bool(tool.get("featured"))
+
+
+def enabled_tools(*, include_featured: bool = False) -> List[Dict[str, Any]]:
+    """Public catalog: tools not disabled in admin flags.
+
+    Featured tools (e.g. 文件快递) are omitted by default so module grids and
+    category pages only show regular tools. Pass ``include_featured=True`` for
+    counts / APIs that need the full public set.
+    """
     from core.tool_flags import get_disabled_slugs
 
     disabled = get_disabled_slugs()
-    return [t for t in TOOL_REGISTRY if str(t.get("slug") or "") not in disabled]
+    out = []
+    for t in TOOL_REGISTRY:
+        if str(t.get("slug") or "") in disabled:
+            continue
+        if is_featured_tool(t) and not include_featured:
+            continue
+        out.append(t)
+    return out
 
 
-def tools_by_category(*, include_disabled: bool = False) -> List[Dict[str, Any]]:
+def featured_tools() -> List[Dict[str, Any]]:
+    """Enabled tools marked ``featured=True`` (homepage highlight strip)."""
+    from core.tool_flags import get_disabled_slugs
+
+    disabled = get_disabled_slugs()
+    return [
+        t
+        for t in TOOL_REGISTRY
+        if is_featured_tool(t) and str(t.get("slug") or "") not in disabled
+    ]
+
+
+def tools_by_category(
+    *, include_disabled: bool = False, include_featured: bool = False
+) -> List[Dict[str, Any]]:
     """Return categories each with a ``tools`` list (only non-empty categories).
 
-    By default disabled tools are omitted (homepage / public API).
-    Pass ``include_disabled=True`` for the admin console.
+    By default disabled and featured tools are omitted (homepage / public API).
+    Pass ``include_disabled=True`` for the admin console (includes featured).
+    Pass ``include_featured=True`` to place featured tools back under categories.
     """
-    source = TOOL_REGISTRY if include_disabled else enabled_tools()
+    if include_disabled:
+        # Full registry for admin (featured tools stay under their category).
+        source = list(TOOL_REGISTRY)
+    else:
+        source = enabled_tools(include_featured=include_featured)
     by_id = {c["id"]: {**c, "tools": []} for c in TOOL_CATEGORIES}
     for tool in source:
+        # Public category grids never list featured tools unless asked.
+        if is_featured_tool(tool) and not include_disabled and not include_featured:
+            continue
         cat = by_id.get(tool.get("category") or "")
         if cat is not None:
             cat["tools"].append(tool)
@@ -263,7 +307,9 @@ __all__ = [
     "TOOL_CATEGORIES",
     "TOOL_REGISTRY",
     "TOOL_ROUTERS",
+    "is_featured_tool",
     "enabled_tools",
+    "featured_tools",
     "tools_by_category",
     "get_category",
     "nav_categories",

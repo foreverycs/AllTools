@@ -81,6 +81,13 @@ def test_api_tools_catalog():
     body = r.json()
     assert body["tools"]
     assert any(c["id"] == "coding" for c in body["categories"])
+    # Featured tools are separate from the module catalog
+    tool_slugs = {t["slug"] for t in body["tools"]}
+    assert "express" not in tool_slugs
+    featured = body.get("featured") or []
+    assert any(t.get("slug") == "express" for t in featured)
+    for cat in body["categories"]:
+        assert "express" not in {t["slug"] for t in cat.get("tools") or []}
 
 
 def test_home_lists_categories_and_base64():
@@ -94,6 +101,22 @@ def test_home_lists_categories_and_base64():
     assert "/c/document" in r.text
     assert "/c/coding" in r.text
     assert "工具集" in r.text
+    # Express is featured on home, not buried only in module grids
+    assert "特色功能" in r.text or "文件快递" in r.text
+    assert "/tools/express" in r.text
+    assert 'id="featured"' in r.text
+
+
+def test_express_not_in_office_module_page():
+    from app import app
+
+    client = TestClient(app)
+    office = client.get("/c/office")
+    assert office.status_code == 200
+    assert "发票合并" in office.text
+    # Featured tool must not appear as a regular module card on office page
+    assert "/tools/express" not in office.text
+    assert "文件快递" not in office.text
 
 
 def test_category_pages():
