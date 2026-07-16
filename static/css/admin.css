@@ -112,9 +112,10 @@
   pointer-events: none;
 }
 
-/* Desktop: sidebar + main side by side on body */
+/* Desktop: sidebar + main side by side on body.
+   Login page uses .admin-login-page and must stay full-viewport (no 2-col grid). */
 @media (min-width: 861px) {
-  .admin-body {
+  .admin-body:not(.admin-login-page) {
     display: grid;
     grid-template-columns: 240px 1fr;
     grid-template-rows: 100%;
@@ -131,6 +132,16 @@
     grid-column: 2;
     grid-row: 1;
   }
+}
+
+/* Login: full-viewport center (not the authenticated shell grid) */
+.admin-body.admin-login-page {
+  display: block;
+  height: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Mobile: off-canvas drawer — fully hidden when closed */
@@ -819,8 +830,11 @@
    ======================================== */
 .admin-login-wrap {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 24px 16px;
   background:
     radial-gradient(ellipse 70% 50% at 25% 5%, rgba(99, 102, 241, 0.15), transparent 55%),
