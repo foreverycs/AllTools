@@ -97,9 +97,24 @@
 
 <div class="admin-panel" style="margin-top:16px">
   <div class="admin-panel-h">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0284c7"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
-    已注册工具
+    <span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0284c7;vertical-align:-3px"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+      已注册工具
+    </span>
+    <a href="{{ url_path('/admin/tools') }}" class="admin-muted" style="text-decoration:none;font-weight:650;font-size:12px">功能开关 →</a>
   </div>
+  {% if tool_flags %}
+  <div class="admin-panel-b" style="padding-bottom:0">
+    <dl class="admin-kv">
+      <dt>前台启用</dt>
+      <dd>{{ tool_flags.enabled_count }} / {{ tool_flags.total_count }}</dd>
+      <dt>已关闭</dt>
+      <dd class="admin-mono">{{ (tool_flags.disabled or [])|join(', ') or '无' }}</dd>
+      <dt>配置文件</dt>
+      <dd class="admin-mono">{{ tool_flags.path }}</dd>
+    </dl>
+  </div>
+  {% endif %}
   <div class="admin-table-wrap">
     <table class="admin-table">
       <thead>

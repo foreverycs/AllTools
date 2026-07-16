@@ -40,7 +40,8 @@
 - **异步转换**：PDF ↔ Word 支持「提交 → 轮询 → 下载」，降低反代读超时风险
 - **批量转换**：多文件上传，结果打 ZIP；并发受 `CONVERT_CONCURRENCY` 限制
 - **上传归档**：成功后仅保存**输入文件**到 `file/`（默认保留 5 天），管理后台可查看
-- **管理后台**：仪表盘、上传记录、系统状态；登录限流 + CSRF
+- **功能开关**：后台按工具启用 / 关闭；关闭后首页隐藏，页面与 API 返回 403
+- **管理后台**：仪表盘、上传记录、功能开关、系统状态；登录限流 + CSRF
 - **可观测性**：`X-Request-ID`、`/health`、公开接口 IP 限流
 
 ---
@@ -163,6 +164,41 @@ export ADMIN_SECRET='please-use-a-long-random-string-here'
 
 本地开发可直接使用 `.env.example` 中的 `ALLOW_INSECURE_ADMIN=1`。
 
+### 功能开关
+
+地址：http://127.0.0.1:8000/admin/tools（需登录）
+
+在后台按工具勾选「启用 / 关闭」，保存后**立即生效**（无需重启进程）。
+
+| 行为 | 说明 |
+|------|------|
+| 默认 | 全部启用（无配置文件时） |
+| 关闭某工具 | 首页、分类页、`GET /api/tools` 不再展示该工具 |
+| 直接访问 | 页面或转换 API 返回 **403**（HTML 提示「功能已关闭」） |
+| 持久化 | 写入归档目录下的 `tool_flags.json`（默认 `file/tool_flags.json`） |
+| Docker | 与上传归档共用 `./file` 挂载，重启后状态保留 |
+
+示例配置文件：
+
+```json
+{
+  "version": 1,
+  "disabled": ["markdown", "image-compress"]
+}
+```
+
+- 仅接受已注册的工具 `slug`；未知项忽略
+- 也可手写 `{"tools": {"markdown": false}}` 形式，程序会合并解析
+- 仪表盘与系统状态页会显示「前台启用数 / 已关闭列表」
+
+相关接口（均需管理员会话 + CSRF）：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/admin/tools` | 功能开关页面 |
+| `POST` | `/admin/tools` | 批量保存（表单字段 `enabled` 多选） |
+| `POST` | `/admin/tools/{slug}/toggle` | 单个工具开 / 关 |
+
 ### 环境变量
 
 | 变量 | 说明 | 默认 |
@@ -272,9 +308,9 @@ docker compose down
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/health` | 轻量探活 |
-| `GET` | `/health?detail=1` | 含引擎 / OCR / 归档 / 任务后端 |
-| `GET` | `/api/tools` | 工具目录 JSON（分类 + 列表） |
+| `GET` | `/health` | 轻量探活；`tools` 为**前台启用**数量，`tools_registered` 为注册总数 |
+| `GET` | `/health?detail=1` | 含引擎 / OCR / 归档 / 任务后端；分类统计仅含已启用工具 |
+| `GET` | `/api/tools` | 工具目录 JSON（**仅已启用**的分类与列表） |
 
 响应带 `X-Request-ID`（客户端也可传入以便串联日志）。
 
@@ -309,7 +345,12 @@ docker compose down
 | `POST` | `/tools/markdown/export-html` | 导出独立 HTML |
 | `POST` | `/tools/rmb/convert` | 金额大写 |
 | `GET` | `/admin` | 管理后台（需登录） |
+| `GET` | `/admin/tools` | 功能开关页面（需管理员） |
+| `POST` | `/admin/tools` | 批量保存功能开关（需管理员 + CSRF） |
+| `POST` | `/admin/tools/{slug}/toggle` | 切换单个工具（需管理员 + CSRF） |
 | `GET` | `/api/uploads` | 上传记录（需管理员） |
+
+> 被管理员关闭的工具：其 `/tools/{slug}/...` 页面与 API 均返回 **403**，不会进入业务逻辑。
 
 ### PDF → Word 表单字段
 
@@ -366,7 +407,7 @@ pytest tests -q
 
 ```
 app.py                 # FastAPI 入口
-core/                  # 配置、任务、并发、限流、日志
+core/                  # 配置、任务、并发、限流、日志、功能开关
 admin/                 # 管理后台
 tools/                 # 各工具 HTTP 路由与注册表
 converter/             # PDF → Word 算法
@@ -381,6 +422,8 @@ deploy/                # Nginx 示例
 tests/                 # pytest
 ```
 
+功能开关状态文件：`file/tool_flags.json`（或 `UPLOAD_FILE_DIR/tool_flags.json`）。
+
 ---
 
 ## 安全提示
@@ -388,4 +431,5 @@ tests/                 # pytest
 - 生产务必设置强 `ADMIN_PASSWORD` 与 `ADMIN_SECRET`，关闭 `ALLOW_INSECURE_ADMIN`
 - 公开转换接口有进程内 IP 限流；生产建议在 Nginx 再加一层限流
 - Markdown 预览默认 XSS 过滤；勿关闭 sanitize 用于不可信输入
-- 上传归档目录 `file/` 含用户原始文件，注意备份与访问权限
+- 上传归档目录 `file/` 含用户原始文件与 `tool_flags.json`，注意备份与访问权限
+- 功能开关仅控制前台开放范围，**不能替代**管理员密码与反代鉴权

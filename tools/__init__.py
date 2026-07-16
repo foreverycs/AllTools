@@ -164,10 +164,23 @@ TOOL_ROUTERS = (
 )
 
 
-def tools_by_category() -> List[Dict[str, Any]]:
-    """Return categories each with a ``tools`` list (only non-empty categories)."""
+def enabled_tools() -> List[Dict[str, Any]]:
+    """Public catalog: only tools not disabled in admin flags."""
+    from core.tool_flags import get_disabled_slugs
+
+    disabled = get_disabled_slugs()
+    return [t for t in TOOL_REGISTRY if str(t.get("slug") or "") not in disabled]
+
+
+def tools_by_category(*, include_disabled: bool = False) -> List[Dict[str, Any]]:
+    """Return categories each with a ``tools`` list (only non-empty categories).
+
+    By default disabled tools are omitted (homepage / public API).
+    Pass ``include_disabled=True`` for the admin console.
+    """
+    source = TOOL_REGISTRY if include_disabled else enabled_tools()
     by_id = {c["id"]: {**c, "tools": []} for c in TOOL_CATEGORIES}
-    for tool in TOOL_REGISTRY:
+    for tool in source:
         cat = by_id.get(tool.get("category") or "")
         if cat is not None:
             cat["tools"].append(tool)
@@ -189,21 +202,23 @@ def tools_by_category() -> List[Dict[str, Any]]:
     return [c for c in by_id.values() if c["tools"]]
 
 
-def get_category(category_id: str) -> Dict[str, Any] | None:
+def get_category(
+    category_id: str, *, include_disabled: bool = False
+) -> Dict[str, Any] | None:
     """Return one category dict with its ``tools`` list, or None."""
-    for cat in tools_by_category():
+    for cat in tools_by_category(include_disabled=include_disabled):
         if cat["id"] == category_id:
             return cat
-    # Empty-but-defined category (no tools yet)
+    # Empty-but-defined category (no tools yet / all disabled)
     for c in TOOL_CATEGORIES:
         if c["id"] == category_id:
             return {**c, "tools": []}
     return None
 
 
-def nav_categories() -> List[Dict[str, Any]]:
+def nav_categories(*, include_disabled: bool = False) -> List[Dict[str, Any]]:
     """Top-nav menu items (all registered categories, including empty)."""
-    by_id = {c["id"]: c for c in tools_by_category()}
+    by_id = {c["id"]: c for c in tools_by_category(include_disabled=include_disabled)}
     items = []
     for c in TOOL_CATEGORIES:
         filled = by_id.get(c["id"])
@@ -219,13 +234,26 @@ def nav_categories() -> List[Dict[str, Any]]:
     return items
 
 
+def get_tool_by_slug(slug: str) -> Dict[str, Any] | None:
+    """Lookup a registry entry by slug (ignores enable flags)."""
+    s = (slug or "").strip()
+    if not s:
+        return None
+    for tool in TOOL_REGISTRY:
+        if tool.get("slug") == s:
+            return tool
+    return None
+
+
 __all__ = [
     "TOOL_CATEGORIES",
     "TOOL_REGISTRY",
     "TOOL_ROUTERS",
+    "enabled_tools",
     "tools_by_category",
     "get_category",
     "nav_categories",
+    "get_tool_by_slug",
     "pdf2word_router",
     "word2pdf_router",
     "pdf_merge_router",

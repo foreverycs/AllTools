@@ -8,6 +8,7 @@
   </div>
   <div class="admin-actions">
     <a class="admin-btn" href="{{ url_path('/admin/uploads') }}">管理上传</a>
+    <a class="admin-btn" href="{{ url_path('/admin/tools') }}">功能开关</a>
     <a class="admin-btn admin-btn-primary" href="{{ url_path('/admin/system') }}">系统状态</a>
   </div>
 </div>
@@ -109,8 +110,12 @@
           {% endif %}
         </li>
         <li>
-          <span>前台工具数</span>
-          <strong>{{ health.tools }}</strong>
+          <span>前台启用工具</span>
+          <strong>{{ health.tools }}{% if health.tools_registered %} / {{ health.tools_registered }}{% endif %}</strong>
+        </li>
+        <li>
+          <span>已关闭</span>
+          <strong>{{ health.tools_disabled or 0 }}</strong>
         </li>
         <li>
           <span>栏目数</span>

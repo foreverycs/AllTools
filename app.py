@@ -34,6 +34,7 @@ from admin.auth import is_admin
 from tools import (
     TOOL_REGISTRY,
     TOOL_ROUTERS,
+    enabled_tools,
     get_category,
     nav_categories,
     tools_by_category,
@@ -46,11 +47,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv()
 configure_logging()
 logger = get_logger("toolkit.app")
-
-# Pre-compute static data that never changes at runtime
-_nav_items = nav_categories()
-_tool_count = len(TOOL_REGISTRY)
-_categories_cache = tools_by_category()
 
 
 def _import_root_path() -> str:
@@ -65,11 +61,16 @@ def _page_ctx(
     active_nav: str = "home",
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Common template context for pages that share the top menu."""
+    """Common template context for pages that share the top menu.
+
+    Nav and tool counts are resolved per-request so admin enable/disable
+    flags take effect without restart.
+    """
+    public = enabled_tools()
     ctx: Dict[str, Any] = {
-        "nav_items": _nav_items,
+        "nav_items": nav_categories(),
         "active_nav": active_nav,
-        "tool_count": _tool_count,
+        "tool_count": len(public),
     }
     if extra:
         ctx.update(extra)
@@ -96,7 +97,11 @@ async def lifespan(app: FastAPI):
         await reclaim_expired()
     except Exception:
         pass
-    logger.info("toolkit started version=%s tools=%s", __version__, _tool_count)
+    logger.info(
+        "toolkit started version=%s tools=%s",
+        __version__,
+        len(TOOL_REGISTRY),
+    )
     try:
         yield
     finally:
@@ -167,6 +172,43 @@ async def request_context_and_security_headers(request: Request, call_next):
     request.state.request_id = rid
     try:
         path = request.url.path
+
+        # Admin-controlled tool enable flags (hide + block disabled tools).
+        if path.startswith("/tools/") or "/tools/" in path:
+            from core.tool_flags import is_tool_path_enabled, tool_slug_from_path
+
+            # path may include ROOT_PATH when not stripped; slug helper is resilient.
+            check_path = path
+            root = (get_settings().root_path or "").rstrip("/")
+            if root and check_path.startswith(root + "/"):
+                check_path = check_path[len(root) :]
+            if not is_tool_path_enabled(check_path):
+                slug = tool_slug_from_path(check_path) or "tool"
+                accept = (request.headers.get("accept") or "").lower()
+                wants_html = "text/html" in accept and "application/json" not in accept
+                if request.method == "GET" and wants_html:
+                    return HTMLResponse(
+                        content=(
+                            "<!DOCTYPE html><html lang='zh-CN'><head>"
+                            "<meta charset='utf-8'/><title>功能已关闭</title></head>"
+                            "<body style='font-family:system-ui;padding:48px;text-align:center'>"
+                            f"<h1>功能已关闭</h1><p>「{slug}」已被管理员停用。</p>"
+                            f"<p><a href='{root or ''}/'>返回首页</a></p>"
+                            "</body></html>"
+                        ),
+                        status_code=403,
+                        headers={REQUEST_ID_HEADER: rid},
+                    )
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": f"Tool '{slug}' is disabled by administrator",
+                        "slug": slug,
+                        "request_id": rid,
+                    },
+                    headers={REQUEST_ID_HEADER: rid},
+                )
+
         # Public convert / job download rate limit (process-local).
         if request.method in ("POST", "GET") and _is_public_convert_path(path):
             # Only rate-limit write-ish convert POSTs and job downloads.
@@ -290,13 +332,14 @@ async def office_alias(request: Request):
 
 @app.get("/api/tools")
 async def api_tools():
-    """Machine-readable tool catalog (for future clients)."""
+    """Machine-readable tool catalog (enabled tools only)."""
+    public = enabled_tools()
     return JSONResponse(
         {
             "version": app.version,
-            "categories": _categories_cache,
-            "nav": _nav_items,
-            "tools": TOOL_REGISTRY,
+            "categories": tools_by_category(),
+            "nav": nav_categories(),
+            "tools": public,
         }
     )
 
@@ -358,10 +401,12 @@ def _health_details(*, force: bool = False) -> dict:
 @app.get("/health")
 async def health(detail: int = Query(0, ge=0, le=1)):
     """Liveness probe. Pass ``?detail=1`` for engines, OCR, and storage stats."""
+    public = enabled_tools()
     body: dict = {
         "status": "ok",
         "version": app.version,
-        "tools": _tool_count,
+        "tools": len(public),
+        "tools_registered": len(TOOL_REGISTRY),
     }
     if detail:
         body["categories"] = [
@@ -371,7 +416,7 @@ async def health(detail: int = Query(0, ge=0, le=1)):
                 "count": len(c["tools"]),
                 "route": c.get("route"),
             }
-            for c in _categories_cache
+            for c in tools_by_category()
         ]
         body.update(_health_details())
     return JSONResponse(body)

@@ -46,9 +46,6 @@ from tools.common import templates
 # NOTE: tags list closes with ], then APIRouter call closes with )
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-# Pre-compute static data
-_categories_cache = tools_by_category()
-
 # Cached health info — engines don't change at runtime
 _health_cache: dict = {}
 _health_cache_ts: float = 0.0
@@ -104,13 +101,18 @@ def _build_health() -> dict:
     from word2pdf import engine_info
     from converter import ocr_info
 
+    from core.tool_flags import flags_status
+
     w2p = engine_info()
     ocr = ocr_info()
+    flags = flags_status()
     _health_cache = {
         "word2pdf": w2p,
         "ocr": ocr,
-        "tools": len(TOOL_REGISTRY),
-        "categories": len(_categories_cache),
+        "tools": flags["enabled_count"],
+        "tools_registered": len(TOOL_REGISTRY),
+        "tools_disabled": len(flags["disabled"]),
+        "categories": len(tools_by_category()),
     }
     _health_cache_ts = now
     return _health_cache
@@ -222,7 +224,7 @@ async def dashboard(request: Request):
         health=_build_health(),
         recent=list_records(limit=8),
         tools=TOOL_REGISTRY,
-        categories=_categories_cache,
+        categories=tools_by_category(include_disabled=True),
     )
 
 
@@ -496,6 +498,8 @@ async def system_page(request: Request):
     redir = require_admin(request)
     if redir:
         return redir
+    from core.tool_flags import flags_status
+
     return _tpl(
         request,
         "admin/system.html",
@@ -503,7 +507,8 @@ async def system_page(request: Request):
         health=_build_health(),
         stats=storage_stats(),
         tools=TOOL_REGISTRY,
-        categories=_categories_cache,
+        categories=tools_by_category(include_disabled=True),
+        tool_flags=flags_status(),
         env_hints={
             **get_settings().admin_security_summary(),
             "UPLOAD_RETENTION_DAYS": str(retention_days()),
@@ -516,13 +521,125 @@ async def system_page(request: Request):
     )
 
 
+@router.get("/tools", response_class=HTMLResponse)
+async def tools_flags_page(request: Request):
+    """Admin UI: enable / disable public tools."""
+    redir = require_admin(request)
+    if redir:
+        return redir
+    from core.tool_flags import flags_status, get_tool_flags
+
+    flags = get_tool_flags()
+    # Shallow-copy tools so we never mutate TOOL_REGISTRY entries in place.
+    cats = []
+    for cat in tools_by_category(include_disabled=True):
+        tools = []
+        for tool in cat.get("tools") or []:
+            slug = str(tool.get("slug") or "")
+            tools.append({**tool, "enabled": flags.get(slug, True)})
+        cats.append({**cat, "tools": tools})
+
+    return _tpl(
+        request,
+        "admin/tools.html",
+        active="tools",
+        categories=cats,
+        flags=flags,
+        flags_meta=flags_status(),
+        flash=request.query_params.get("msg"),
+        total=len(TOOL_REGISTRY),
+        enabled_count=sum(1 for v in flags.values() if v),
+    )
+
+
+@router.post("/tools")
+async def tools_flags_save(
+    request: Request,
+    csrf_token: Optional[str] = Form(None),
+):
+    """Save enable/disable checkboxes for all tools."""
+    redir = require_admin(request)
+    if redir:
+        return redir
+    if not verify_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
+
+    from core.tool_flags import save_tool_flags
+
+    form = await request.form()
+    # Checkboxes: only checked boxes are submitted. Build full map from registry.
+    enabled_slugs = {
+        str(v).strip()
+        for v in form.getlist("enabled")
+        if str(v).strip()
+    }
+    enabled_map = {
+        str(t.get("slug") or ""): str(t.get("slug") or "") in enabled_slugs
+        for t in TOOL_REGISTRY
+        if t.get("slug")
+    }
+    save_tool_flags(enabled_map)
+    # Bust admin health cache so dashboard counts refresh immediately.
+    global _health_cache, _health_cache_ts
+    _health_cache = {}
+    _health_cache_ts = 0.0
+
+    on_n = sum(1 for v in enabled_map.values() if v)
+    off_n = len(enabled_map) - on_n
+    msg = f"saved: {on_n} enabled, {off_n} disabled"
+    return _redirect(_admin_url("/admin/tools", request) + "?msg=" + quote(msg))
+
+
+@router.post("/tools/{slug}/toggle")
+async def tools_flag_toggle(
+    request: Request,
+    slug: str,
+    csrf_token: Optional[str] = Form(None),
+    enabled: Optional[str] = Form(None),
+):
+    """Toggle a single tool (form or JSON-friendly)."""
+    redir = require_admin(request)
+    if redir:
+        return redir
+    if not verify_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
+
+    from core.tool_flags import is_tool_enabled, set_tool_enabled
+
+    s = (slug or "").strip()
+    # Form may send enabled=1/0; if omitted, flip current state.
+    if enabled is None or str(enabled).strip() == "":
+        new_val = not is_tool_enabled(s)
+    else:
+        new_val = str(enabled).strip().lower() in ("1", "true", "on", "yes", "enabled")
+
+    ok = set_tool_enabled(s, new_val)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Unknown tool: {s}")
+
+    global _health_cache, _health_cache_ts
+    _health_cache = {}
+    _health_cache_ts = 0.0
+
+    accept = (request.headers.get("accept") or "").lower()
+    if "application/json" in accept:
+        return JSONResponse({"slug": s, "enabled": new_val})
+    state = "enabled" if new_val else "disabled"
+    return _redirect(
+        _admin_url("/admin/tools", request) + "?msg=" + quote(f"{s} {state}")
+    )
+
+
 @router.get("/api/stats")
 async def api_stats(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401, detail="Unauthorized")
+    from core.tool_flags import flags_status
+
     return JSONResponse(
         {
             "storage": storage_stats(),
             "health": _build_health(),
+            "tool_flags": flags_status(),
         }
     )
