@@ -292,7 +292,7 @@ python -m word2pdf --info
 
 ## Docker
 
-镜像内置 LibreOffice Writer、Tesseract（中/英）与中文字体，本机无需再装办公套件。
+镜像内置 LibreOffice Writer（`writer-nogui` 无头包，体积小于完整 GUI 版）、Tesseract（中/英）与中文字体，本机无需再装办公套件。
 
 ```bash
 # 准备 .env（生产务必改掉弱口令）

@@ -24,11 +24,12 @@ RUN set -eux; \
     fi
 
 # Headless LibreOffice for Word → PDF (+ CJK fonts for Chinese docs).
-# Optional OCR: tesseract + chi_sim/eng language packs for scanned PDFs.
+# writer-nogui is smaller than full libreoffice-writer (no GUI stack) but still
+# converts .docx/.doc → PDF. Optional OCR: tesseract + chi_sim/eng language packs.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        libreoffice-writer \
+        libreoffice-writer-nogui \
         libreoffice-java-common \
         default-jre-headless \
         tesseract-ocr \
