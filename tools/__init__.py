@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from .base64_tool import router as base64_router
 from .express_tool import router as express_router
 from .image_compress_tool import router as image_compress_router
+from .image_convert_tool import router as image_convert_router
 from .json_tool import router as json_router
 from .markdown_tool import router as markdown_router
 from .pdf2word import router as pdf2word_router
@@ -33,11 +34,11 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "id": "office",
         "name": "办公工具",
         "name_en": "Office",
-        "description": "发票合并、金额大写、图片压缩等日常办公小工具",
+        "description": "发票合并、金额大写、图片压缩与格式转换等日常办公小工具",
         "icon": "💼",
         "accent": "emerald",
         "route": "/c/office",
-        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩等。",
+        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩与格式转换等。",
     },
     {
         "id": "coding",
@@ -164,6 +165,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "accent": "violet",
     },
     {
+        "name": "图片格式转换",
+        "slug": "image-convert",
+        "category": "office",
+        "description": "JPEG / PNG / WebP / GIF / BMP / TIFF / ICO 互转：透明铺底、动图保留、质量可调。",
+        "icon": "🔄",
+        "route": "/tools/image-convert",
+        "badge": "JPEG · PNG · WebP · …",
+        "features": ["七种格式", "保留透明", "动图支持", "质量可调"],
+        "cta": "开始转换",
+        "accent": "sky",
+    },
+    {
         "name": "文件快递",
         "slug": "express",
         "category": "office",
@@ -191,6 +204,7 @@ TOOL_ROUTERS = (
     markdown_router,
     rmb_router,
     image_compress_router,
+    image_convert_router,
     express_router,
 )
 
@@ -340,5 +354,6 @@ __all__ = [
     "markdown_router",
     "rmb_router",
     "image_compress_router",
+    "image_convert_router",
     "express_router",
 ]
