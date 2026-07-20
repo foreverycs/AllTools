@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base64_tool import router as base64_router
+from .code_format_tool import router as code_format_router
 from .express_tool import router as express_router
 from .image_compress_tool import router as image_compress_router
-from .json_tool import router as json_router
+from .json_tool import router as json_legacy_router
 from .markdown_tool import router as markdown_router
 from .pdf2word import router as pdf2word_router
 from .pdf_merge import router as pdf_merge_router
@@ -104,11 +105,11 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
     },
     {
         "name": "代码格式化",
-        "slug": "json",
+        "slug": "code-format",
         "category": "coding",
         "description": "多语言代码美化 / 压缩（JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等），选项卡切换。",
         "icon": "{ }",
-        "route": "/tools/json",
+        "route": "/tools/code-format",
         "badge": "Multi-lang",
         "features": ["多语言选项卡", "美化 / 压缩", "JSON 键排序", "错误定位"],
         "cta": "打开工具",
@@ -168,12 +169,14 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
 ]
 
 # Routers to mount on the FastAPI app (order does not matter).
+# code_format first; json_legacy only provides 308 redirects for old URLs.
 TOOL_ROUTERS = (
     pdf2word_router,
     word2pdf_router,
     pdf_merge_router,
     base64_router,
-    json_router,
+    code_format_router,
+    json_legacy_router,
     markdown_router,
     rmb_router,
     image_compress_router,

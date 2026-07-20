@@ -39,7 +39,7 @@
 | 工具 | 路径 | 说明 |
 |------|------|------|
 | **Base64 编解码** | `/tools/base64` | 文本 / 文件 Base64（标准 / URL-safe、多字符集、换行折叠） |
-| **代码格式化** | `/tools/json` | 多语言美化 / 压缩（JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等） |
+| **代码格式化** | `/tools/code-format` | 多语言美化 / 压缩（JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等）；旧路径 `/tools/json` 308 跳转 |
 | **Markdown 编辑** | `/tools/markdown` | 左右分栏编辑与实时 HTML 预览，XSS 过滤，可导出 HTML |
 
 ### 平台能力
@@ -356,10 +356,10 @@ docker compose down
 | `POST` | `/tools/image-compress/compress-info` | 图片压缩统计 JSON |
 | `POST` | `/tools/base64/encode` | Base64 编码 |
 | `POST` | `/tools/base64/decode` | Base64 解码 |
-| `POST` | `/tools/json/format` | 多语言代码美化 / 压缩（`language` 参数） |
-| `POST` | `/tools/json/validate` | 代码 / JSON 校验（`language` 参数） |
-| `GET` | `/tools/json/languages` | 支持的语言列表 |
-| `GET` | `/tools/json/sample` | 各语言示例代码 |
+| `POST` | `/tools/code-format/format` | 多语言代码美化 / 压缩（`language` 参数） |
+| `POST` | `/tools/code-format/validate` | 代码 / JSON 校验（`language` 参数） |
+| `GET` | `/tools/code-format/languages` | 支持的语言列表 |
+| `GET` | `/tools/code-format/sample` | 各语言示例代码 |
 | `POST` | `/tools/markdown/render` | Markdown → HTML JSON |
 | `POST` | `/tools/markdown/export-html` | 导出独立 HTML |
 | `POST` | `/tools/rmb/convert` | 金额大写 |

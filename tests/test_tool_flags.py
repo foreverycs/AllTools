@@ -98,7 +98,7 @@ def test_disable_hides_from_catalog_and_blocks_route(flags_client):
     assert catalog.status_code == 200
     slugs = {t["slug"] for t in catalog.json()["tools"]}
     assert "markdown" not in slugs
-    assert "json" in slugs
+    assert "code-format" in slugs
 
     # API / page blocked
     page = client.get("/tools/markdown", headers={"Accept": "text/html"})
@@ -114,7 +114,7 @@ def test_disable_hides_from_catalog_and_blocks_route(flags_client):
     assert "disabled" in detail.lower() or "markdown" in detail.lower()
 
     # Other tools still work
-    ok_page = client.get("/tools/json")
+    ok_page = client.get("/tools/code-format")
     assert ok_page.status_code == 200
 
 
@@ -136,12 +136,12 @@ def test_admin_tools_page_and_save(flags_client):
     token = client.cookies.get("toolkit_csrf")
     assert token
 
-    # Save with only pdf2word + json enabled (omit the rest)
+    # Save with only pdf2word + code-format enabled (omit the rest)
     save = client.post(
         "/admin/tools",
         data={
             "csrf_token": token,
-            "enabled": ["pdf2word", "json"],
+            "enabled": ["pdf2word", "code-format"],
         },
         follow_redirects=False,
     )
@@ -150,13 +150,13 @@ def test_admin_tools_page_and_save(flags_client):
 
     flags = flags_mod.get_tool_flags()
     assert flags["pdf2word"] is True
-    assert flags["json"] is True
+    assert flags["code-format"] is True
     assert flags["markdown"] is False
     assert flags["word2pdf"] is False
 
     catalog = client.get("/api/tools").json()
     public = {t["slug"] for t in catalog["tools"]}
-    assert public == {"pdf2word", "json"}
+    assert public == {"pdf2word", "code-format"}
 
 
 def test_toggle_single_tool(flags_client):
@@ -225,4 +225,8 @@ def test_path_helpers():
     assert tool_slug_from_path("/api/tools") is None
     assert tool_slug_from_path("/admin/tools") is None
     # Without flags file, everything known is enabled
+    assert is_tool_path_enabled("/tools/code-format") is True
+    # Legacy path segment maps to code-format
+    assert tool_slug_from_path("/tools/json") == "code-format"
+    assert tool_slug_from_path("/tools/json/format") == "code-format"
     assert is_tool_path_enabled("/tools/json") is True

@@ -7,139 +7,23 @@
   <title>Markdown 编辑 — 工具集</title>
   <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/tool-page.css') }}" />
   <style>
-    :root {
-      --c: #d97706;
-      --c2: #f59e0b;
-      --c-soft: #fffbeb;
-      --c-border: #fde68a;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font);
-      color: var(--ink);
-      min-height: 100vh;
-      background: var(--bg);
-    }
-    .bg {
-      position: fixed; inset: 0; z-index: 0; pointer-events: none;
-      background:
-        radial-gradient(ellipse 70% 50% at 15% 8%, rgba(245, 158, 11, 0.2), transparent 55%),
-        radial-gradient(ellipse 55% 40% at 90% 10%, rgba(99, 102, 241, 0.12), transparent 50%),
-        linear-gradient(165deg, #fffbeb 0%, #eef2f7 45%, #f5f7fb 100%);
-    }
-    .shell { position: relative; z-index: 1; width: 100%; }
-    .nav {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 14px; gap: 12px;
-    }
-    .back {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 13px; font-weight: 600; color: var(--muted);
-      text-decoration: none; padding: 8px 12px;
-      background: var(--surface); border: 1px solid var(--line);
-      border-radius: 999px; backdrop-filter: blur(10px);
-      transition: color .15s, border-color .15s, background .15s;
-    }
-    .back:hover { color: #d97706; border-color: #fde68a; background: #fff; }
-    .back svg { width: 15px; height: 15px; }
-    .chip {
-      font-size: 11px; font-weight: 700; color: #b45309;
-      background: #fffbeb; border: 1px solid #fde68a;
-      padding: 6px 11px; border-radius: 999px;
-    }
-    .card {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 22px 22px 18px;
-      overflow: hidden;
-      position: relative;
-    }
-    .card::before {
-      content: "";
-      position: absolute; left: 0; right: 0; top: 0; height: 3px;
-      background: linear-gradient(90deg, #d97706, #f59e0b, #4f46e5);
-    }
-    .card-head {
-      display: flex; gap: 14px; align-items: flex-start;
-      margin-bottom: 14px;
-    }
-    .icon {
-      width: 48px; height: 48px; border-radius: 14px;
-      display: grid; place-items: center; font-size: 15px; flex-shrink: 0;
-      background: linear-gradient(145deg, #fbbf24, #d97706);
-      box-shadow: 0 10px 22px rgba(217, 119, 6, 0.3);
-      font-weight: 800; color: #fff; letter-spacing: -0.03em;
-    }
-    .card-head h1 {
-      font-size: 1.25rem; font-weight: 750; letter-spacing: -0.02em;
-      margin-bottom: 4px;
-    }
-    .card-head p { font-size: 13px; color: var(--muted); line-height: 1.55; }
-    .toolbar {
-      display: flex; flex-wrap: wrap; gap: 8px;
-      margin-bottom: 12px; align-items: center;
-    }
-    .tb {
-      font: inherit; font-size: 12px; font-weight: 650;
-      padding: 6px 10px; border-radius: 9px; cursor: pointer;
-      border: 1px solid #e2e8f0; background: #f8fafc; color: #475569;
-      transition: background .12s, border-color .12s, color .12s;
-    }
-    .tb:hover { background: #fff; border-color: #fcd34d; color: #b45309; }
-    .tb:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tb-sep {
-      width: 1px; height: 18px; background: #e2e8f0; margin: 0 2px;
-    }
-    .check {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 12.5px; font-weight: 600; color: #475569;
-      cursor: pointer; user-select: none; margin-left: auto;
-    }
-    .check input { width: 14px; height: 14px; accent-color: #d97706; }
-    .panes {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      min-height: 420px;
-    }
+    /* Markdown preview typography (tool-specific) */
+    .tool-page .panes { gap: 12px; min-height: 420px; }
     @media (max-width: 860px) {
-      .panes { grid-template-columns: 1fr; min-height: 0; }
-      .check { margin-left: 0; width: 100%; }
+      .tool-page .panes { grid-template-columns: 1fr; min-height: 0; }
+      .tool-page .check { margin-left: 0; width: 100%; }
     }
-    .pane {
-      display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0;
-    }
-    .pane-label {
-      display: flex; align-items: center; justify-content: space-between;
-      font-size: 12px; font-weight: 700; color: #475569;
-    }
-    .pane-actions { display: flex; gap: 6px; }
-    .mini {
-      font: inherit; font-size: 11px; font-weight: 650;
-      padding: 4px 9px; border-radius: 8px; cursor: pointer;
-      border: 1px solid #e2e8f0; background: #f8fafc; color: #475569;
-    }
-    .mini:hover { background: #fff; border-color: #fcd34d; color: #b45309; }
-    #editor {
-      width: 100%; flex: 1; min-height: 380px; resize: vertical;
-      font-family: var(--mono); font-size: 13px; line-height: 1.55;
-      padding: 12px 14px; border-radius: 14px;
-      border: 1px solid #e2e8f0; background: #fafbfc; color: var(--ink);
-      tab-size: 2;
-    }
-    #editor:focus {
-      outline: 2px solid rgba(217, 119, 6, 0.3);
-      outline-offset: 1px;
-    }
-    .preview-frame {
+    .tool-page .pane { min-height: 0; }
+    .tool-page #editor { flex: 1; min-height: 380px; font-size: 13px; }
+    .tool-page .preview-frame {
       flex: 1; min-height: 380px;
       border: 1px solid #e2e8f0; border-radius: 14px;
       background: #fff; overflow: auto;
       padding: 16px 18px;
     }
+    .tool-page .toolbar .check { margin-left: auto; padding-bottom: 0; }
     .md-body {
       font-size: 14.5px; line-height: 1.65; color: #0f172a;
       word-wrap: break-word;
@@ -187,26 +71,10 @@
       color: var(--muted-2); font-size: 13px; font-weight: 500;
       padding: 24px 8px; text-align: center;
     }
-    .meta {
-      margin-top: 12px; font-size: 12px; color: var(--muted);
-      display: flex; flex-wrap: wrap; gap: 8px 14px; min-height: 18px;
-    }
-    .meta strong { color: var(--ink-2); font-weight: 700; }
-    .status {
-      margin-top: 10px; font-size: 13px; line-height: 1.5;
-      padding: 10px 12px; border-radius: 12px; display: none;
-    }
-    .status.show { display: block; }
-    .status.ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-    .status.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-    .status.info { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
-    .tips {
-      margin-top: 12px; font-size: 12px; color: var(--muted-2); line-height: 1.55;
-    }
   </style>
   <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
 </head>
-<body>
+<body class="tool-page" data-accent="amber">
   <div class="bg" aria-hidden="true"></div>
   <div class="tool-shell">
   <div class="shell">

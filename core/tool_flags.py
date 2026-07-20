@@ -31,6 +31,17 @@ def _flags_path() -> Path:
     return ensure_file_dir() / FLAGS_FILENAME
 
 
+# Historical slug renames: old key in tool_flags.json → current registry slug.
+_SLUG_ALIASES: Dict[str, str] = {
+    "json": "code-format",
+}
+
+
+def _canonical_slug(slug: str) -> str:
+    s = (slug or "").strip()
+    return _SLUG_ALIASES.get(s, s)
+
+
 def _known_slugs() -> Set[str]:
     from tools import TOOL_REGISTRY
 
@@ -57,7 +68,7 @@ def _read_disabled_from_disk(path: Path) -> frozenset[str]:
     raw_disabled = data.get("disabled")
     if isinstance(raw_disabled, list):
         for item in raw_disabled:
-            s = str(item or "").strip()
+            s = _canonical_slug(str(item or "").strip())
             if s in known:
                 disabled.add(s)
 
@@ -65,7 +76,7 @@ def _read_disabled_from_disk(path: Path) -> frozenset[str]:
     tools_map = data.get("tools")
     if isinstance(tools_map, dict):
         for key, val in tools_map.items():
-            s = str(key or "").strip()
+            s = _canonical_slug(str(key or "").strip())
             if s not in known:
                 continue
             if val is False or val == 0 or str(val).strip().lower() in (
@@ -118,8 +129,10 @@ def clear_tool_flags_cache() -> None:
 
 def is_tool_enabled(slug: str) -> bool:
     """True if the tool is enabled (unknown slugs treated as enabled)."""
-    s = (slug or "").strip()
+    s = _canonical_slug(slug or "")
     if not s:
+        return True
+    if s not in _known_slugs():
         return True
     return s not in get_disabled_slugs()
 
@@ -132,7 +145,7 @@ def get_tool_flags() -> Dict[str, bool]:
 
 def set_tool_enabled(slug: str, enabled: bool) -> bool:
     """Enable or disable one tool. Returns False if slug is unknown."""
-    s = (slug or "").strip()
+    s = _canonical_slug(slug or "")
     known = _known_slugs()
     if s not in known:
         return False
@@ -148,7 +161,7 @@ def set_tools_enabled(updates: Dict[str, bool]) -> List[str]:
     flags = get_tool_flags()
     applied: List[str] = []
     for raw_slug, val in (updates or {}).items():
-        s = str(raw_slug or "").strip()
+        s = _canonical_slug(str(raw_slug or "").strip())
         if s not in known:
             continue
         flags[s] = bool(val)
@@ -188,14 +201,17 @@ def save_tool_flags(enabled_map: Dict[str, bool]) -> Path:
 
 
 def tool_slug_from_path(path: str) -> Optional[str]:
-    """Extract tool slug from ``/tools/{slug}/...`` (app-relative path)."""
+    """Extract tool slug from ``/tools/{slug}/...`` (app-relative path).
+
+    Returns the **canonical** registry slug (legacy path segments are mapped).
+    """
     if not path:
         return None
     # Normalize; ignore query. ROOT_PATH is usually stripped by ASGI.
     p = path.split("?", 1)[0]
     parts = [x for x in p.split("/") if x]
     if len(parts) >= 2 and parts[0] == "tools":
-        return parts[1]
+        return _canonical_slug(parts[1])
     return None
 
 

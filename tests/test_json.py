@@ -180,16 +180,24 @@ def test_validate_code_xml():
 # ---------------------------------------------------------------------------
 
 def test_page_renders_language_tabs():
-    res = _client().get("/tools/json")
+    res = _client().get("/tools/code-format")
     assert res.status_code == 200
     assert "代码格式化" in res.text
     assert "lang-tab" in res.text
     assert "JavaScript" in res.text
     assert "Python" in res.text
+    assert "tool-page.css" in res.text
+
+
+def test_legacy_json_path_redirects():
+    res = _client().get("/tools/json", follow_redirects=False)
+    assert res.status_code == 308
+    loc = res.headers.get("location") or ""
+    assert "/tools/code-format" in loc
 
 
 def test_api_languages():
-    res = _client().get("/tools/json/languages")
+    res = _client().get("/tools/code-format/languages")
     assert res.status_code == 200
     data = res.json()
     assert "languages" in data
@@ -200,7 +208,7 @@ def test_api_languages():
 
 def test_api_format_json():
     res = _client().post(
-        "/tools/json/format",
+        "/tools/code-format/format",
         data={
             "text": '{"z":1,"a":2}',
             "language": "json",
@@ -220,7 +228,7 @@ def test_api_format_json():
 
 def test_api_format_javascript():
     res = _client().post(
-        "/tools/json/format",
+        "/tools/code-format/format",
         data={
             "text": "function f(){return 1;}",
             "language": "javascript",
@@ -236,7 +244,7 @@ def test_api_format_javascript():
 
 def test_api_format_invalid_json():
     res = _client().post(
-        "/tools/json/format",
+        "/tools/code-format/format",
         data={"text": "{", "language": "json", "mode": "pretty"},
     )
     assert res.status_code == 400
@@ -246,7 +254,7 @@ def test_api_format_invalid_json():
 
 def test_api_validate():
     res = _client().post(
-        "/tools/json/validate",
+        "/tools/code-format/validate",
         data={"text": '{"ok": true}', "language": "json"},
     )
     assert res.status_code == 200
@@ -256,14 +264,14 @@ def test_api_validate():
 def test_api_sample_per_language():
     client = _client()
     for lang in ("json", "python", "sql", "html"):
-        res = client.get(f"/tools/json/sample?language={lang}")
+        res = client.get(f"/tools/code-format/sample?language={lang}")
         assert res.status_code == 200
         assert res.json()["sample"]
 
 
 def test_registry_lists_code_format_tool():
-    from tools import TOOLS
+    from tools import TOOL_REGISTRY
 
-    tool = next(t for t in TOOLS if t["slug"] == "json")
+    tool = next(t for t in TOOL_REGISTRY if t["slug"] == "code-format")
     assert "代码" in tool["name"] or "格式化" in tool["name"]
-    assert tool["route"] == "/tools/json"
+    assert tool["route"] == "/tools/code-format"
