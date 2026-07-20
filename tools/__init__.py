@@ -8,6 +8,7 @@ from .base64_tool import router as base64_router
 from .code_format_tool import router as code_format_router
 from .express_tool import router as express_router
 from .image_compress_tool import router as image_compress_router
+from .image_convert_tool import router as image_convert_router
 from .json_tool import router as json_legacy_router
 from .markdown_tool import router as markdown_router
 from .pdf2word import router as pdf2word_router

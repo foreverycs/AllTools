@@ -5,6 +5,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  overflow: hidden;
   background:
     radial-gradient(ellipse 80% 60% at 15% 10%, rgba(99, 102, 241, 0.24), transparent 55%),
     radial-gradient(ellipse 70% 50% at 90% 5%, rgba(245, 158, 11, 0.12), transparent 50%),
@@ -15,12 +16,32 @@
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.4) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.4) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 20%, transparent 75%);
-  opacity: 0.45;
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+/* Tool pages that still use class="bg" (not only tool-page.css) */
+.bg {
+  overflow: hidden;
+}
+
+/* Canvas particle field — above grid overlays, still under page content */
+.site-bg > .bg-particles,
+.bg > .bg-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  display: block;
+  pointer-events: none;
+  opacity: 1;
 }
 
 .site-page {

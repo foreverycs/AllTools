@@ -11,6 +11,18 @@
 }
 
 /* —— Atmospheric background —— */
+.home-bg > .bg-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Above grid/orbs so particles stay visible; content is .site-page z-index 1 */
+  z-index: 3;
+  display: block;
+  pointer-events: none;
+  opacity: 1;
+}
+
 .home-bg {
   position: fixed;
   inset: 0;
@@ -26,18 +38,20 @@
 .home-bg-grid {
   position: absolute;
   inset: 0;
+  z-index: 1;
   background-image:
     linear-gradient(rgba(79, 70, 229, 0.055) 1px, transparent 1px),
     linear-gradient(90deg, rgba(79, 70, 229, 0.055) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(ellipse 75% 60% at 50% 20%, black 10%, transparent 72%);
-  opacity: 0.9;
+  opacity: 0.55;
 }
 .home-bg-orb {
   position: absolute;
+  z-index: 1;
   border-radius: 50%;
   filter: blur(40px);
-  opacity: 0.55;
+  opacity: 0.4;
 }
 .home-bg-orb-a {
   width: 280px;
@@ -55,6 +69,7 @@
 }
 .home-bg-scan {
   position: absolute;
+  z-index: 1;
   left: 0;
   right: 0;
   top: 0;
@@ -64,7 +79,7 @@
     rgba(255, 255, 255, 0.35) 0%,
     transparent 100%
   );
-  opacity: 0.5;
+  opacity: 0.35;
 }
 
 /* —— Shared section chrome —— */
