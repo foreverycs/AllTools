@@ -211,6 +211,19 @@ def test_api_send_lookup_pickup(express_client):
     page = client.get("/tools/express")
     assert page.status_code == 200
     assert "文件快递" in page.text or "取件码" in page.text
+    # Frontend must parse FastAPI validation errors (not show [object Object])
+    assert "errDetail" in page.text or "Array.isArray(detail)" in page.text
+
+    empty = client.post(
+        "/tools/express/send",
+        files={"file": ("empty.txt", b"", "text/plain")},
+        data={"ttl_hours": "24"},
+    )
+    assert empty.status_code == 400
+    assert "空" in empty.json().get("detail", "")
+
+    missing = client.post("/tools/express/send", data={"ttl_hours": "24"})
+    assert missing.status_code == 422
 
     send = client.post(
         "/tools/express/send",

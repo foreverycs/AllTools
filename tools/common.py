@@ -271,14 +271,19 @@ async def save_upload(
     return total
 
 
-def check_upload_size_header(file: UploadFile, *, label: Optional[str] = None) -> None:
+def check_upload_size_header(
+    file: UploadFile,
+    *,
+    label: Optional[str] = None,
+    max_bytes: Optional[int] = None,
+) -> None:
     """Reject early when Content-Length / starlette size exceeds the limit."""
-    limit = max_upload_bytes()
+    limit = max_bytes if max_bytes is not None else max_upload_bytes()
     if file.size is not None and file.size > limit:
         name = label or file.filename or "file"
         raise HTTPException(
             status_code=413,
-            detail=f"{name}: file too large (max {limit // (1024 * 1024)} MB)",
+            detail=f"{name}: 文件过大（上限 {limit // (1024 * 1024)} MB）",
         )
 
 

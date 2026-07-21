@@ -99,9 +99,10 @@
   font: inherit; font-size: 13.5px; font-weight: 700;
   padding: 11px 16px; border-radius: 11px;
   cursor: pointer;
-  transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+  transition: background .15s, border-color .15s, color .15s, box-shadow .15s, filter .15s;
 }
-.tool-page .btn:hover{
+/* Ghost/secondary only — do not steal primary hover (white text on soft bg = invisible). */
+.tool-page .btn:hover:not(.btn-primary){
   border-color: var(--tool-accent-border, #c7d2fe);
   color: var(--tool-accent, #4f46e5);
   background: var(--tool-accent-soft, #f8f9ff);
@@ -114,9 +115,14 @@
   box-shadow: var(--tool-btn-shadow, 0 8px 18px rgba(79, 70, 229, 0.28));
 }
 .tool-page .btn-primary:hover{
-  filter: brightness(1.05);
+  filter: brightness(1.06);
   color: #fff;
   border-color: transparent;
+  background: linear-gradient(135deg, var(--tool-accent-2, #6366f1), var(--tool-accent, #4f46e5));
+  box-shadow: var(--tool-btn-shadow-hover, 0 10px 22px rgba(79, 70, 229, 0.34));
+}
+.tool-page .btn-primary:disabled{
+  filter: none;
 }
 .tool-page .msg{
   margin-top: 14px;
@@ -307,6 +313,45 @@
         if (UX && UX.friendlyError) return UX.friendlyError(text);
         return text;
       }
+      /** Normalize FastAPI / nginx error bodies into a readable string. */
+      function errDetail(data, status, fallback) {
+        var fail = fallback || '操作失败';
+        if (data == null || data === '') {
+          if (status === 413) return '文件过大，请压缩后重试或联系管理员提高上传上限';
+          if (status === 429) return '请求过于频繁，请稍后再试';
+          if (status === 403) return '功能不可用或已被管理员关闭';
+          if (status === 502 || status === 504) return '网关超时或服务未启动，请稍后重试';
+          return status ? (fail + ' (' + status + ')') : fail;
+        }
+        var detail = (typeof data === 'object' && data !== null) ? data.detail : data;
+        if (typeof detail === 'string' && detail) return detail;
+        if (Array.isArray(detail)) {
+          var joined = detail.map(function (d) {
+            if (typeof d === 'string') return d;
+            if (d && (d.msg || d.message)) return d.msg || d.message;
+            // FastAPI validation: missing body.file
+            if (d && d.loc && d.type === 'missing') {
+              var loc = Array.isArray(d.loc) ? d.loc.join('.') : String(d.loc);
+              if (String(loc).indexOf('file') !== -1) return '请先选择要寄送的文件';
+              return '缺少参数：' + loc;
+            }
+            try { return JSON.stringify(d); } catch (e) { return String(d); }
+          }).filter(Boolean).join('; ');
+          return joined || ('请求无效 (' + status + ')');
+        }
+        if (detail && typeof detail === 'object') {
+          if (detail.msg) return detail.msg;
+          try { return JSON.stringify(detail); } catch (e) { return String(detail); }
+        }
+        if (typeof data === 'string' && data) {
+          // nginx HTML body etc.
+          if (data.indexOf('413') !== -1 || /request entity too large/i.test(data)) {
+            return '文件过大（网关限制），请减小文件或提高 Nginx client_max_body_size';
+          }
+          return data.slice(0, 200);
+        }
+        return status ? (fail + ' (' + status + ')') : fail;
+      }
       function showMsg(el, text, kind, opts) {
         var msg = kind === 'err' ? friendly(text) : text;
         el.className = 'msg show ' + (kind || 'info');
@@ -371,8 +416,19 @@
         });
       });
       drop.addEventListener('drop', function (e) {
-        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if (f) setFile(f);
+        var files = e.dataTransfer && e.dataTransfer.files;
+        var f = files && files[0];
+        if (f) {
+          setFile(f);
+          // Keep <input> in sync when the browser allows it (helps some mobile WebViews).
+          try {
+            if (typeof DataTransfer !== 'undefined') {
+              var dt = new DataTransfer();
+              dt.items.add(f);
+              fileInput.files = dt.files;
+            }
+          } catch (err) { /* ignore */ }
+        }
       });
 
       var sendBtn = document.getElementById('sendBtn');
@@ -381,27 +437,50 @@
       var resultCode = document.getElementById('resultCode');
       var resultMeta = document.getElementById('resultMeta');
       var lastPickupUrl = '';
+      var maxBytes = {{ limits.max_bytes|int }};
 
       sendBtn.addEventListener('click', async function () {
         hideMsg(sendMsg);
         sendResult.classList.remove('show');
-        if (!chosenFile) {
+        // Prefer in-memory choice; fall back to input (e.g. after page restore).
+        var file = chosenFile || (fileInput.files && fileInput.files[0]) || null;
+        if (!file) {
           showMsg(sendMsg, '请先选择要寄送的文件', 'err');
+          return;
+        }
+        if (file.size === 0) {
+          showMsg(sendMsg, '文件为空，请重新选择', 'err');
+          return;
+        }
+        if (maxBytes > 0 && file.size > maxBytes) {
+          showMsg(sendMsg, '文件过大（上限 ' + Math.max(1, Math.floor(maxBytes / (1024 * 1024))) + ' MB）', 'err');
           return;
         }
         sendBtn.disabled = true;
         sendBtn.textContent = '上传中…';
         try {
           var fd = new FormData();
-          fd.append('file', chosenFile, chosenFile.name);
+          fd.append('file', file, file.name || 'file');
           fd.append('ttl_hours', document.getElementById('ttlHours').value);
           fd.append('max_downloads', document.getElementById('maxDownloads').value);
           var note = document.getElementById('note').value || '';
           if (note) fd.append('note', note);
-          var res = await fetch(api('/tools/express/send'), { method: 'POST', body: fd });
-          var data = await res.json().catch(function () { return {}; });
+          var res = await fetch(api('/tools/express/send'), {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+          });
+          var rawText = await res.text();
+          var data = {};
+          if (rawText) {
+            try { data = JSON.parse(rawText); } catch (parseErr) { data = rawText; }
+          }
           if (!res.ok) {
-            showMsg(sendMsg, data.detail || ('寄送失败 (' + res.status + ')'), 'err');
+            showMsg(sendMsg, errDetail(data, res.status, '寄送失败'), 'err', { toast: true });
+            return;
+          }
+          if (!data || !data.code) {
+            showMsg(sendMsg, '服务器响应异常，未返回取件码', 'err', { toast: true });
             return;
           }
           resultCode.textContent = data.code;
@@ -476,10 +555,18 @@
         try {
           var fd = new FormData();
           fd.append('code', code);
-          var res = await fetch(api('/tools/express/lookup'), { method: 'POST', body: fd });
-          var data = await res.json().catch(function () { return {}; });
+          var res = await fetch(api('/tools/express/lookup'), {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+          });
+          var rawText = await res.text();
+          var data = {};
+          if (rawText) {
+            try { data = JSON.parse(rawText); } catch (parseErr) { data = rawText; }
+          }
           if (!res.ok) {
-            showMsg(pickupMsg, data.detail || '查询失败', 'err');
+            showMsg(pickupMsg, errDetail(data, res.status, '查询失败'), 'err');
             return;
           }
           var lines = [

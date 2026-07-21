@@ -122,33 +122,58 @@ async def api_send(
     """Upload a file and receive a 6-digit pickup code."""
     ensure_express_dir()
     limit = express_max_bytes()
-    # Re-check with express-specific limit (may differ from global max).
+    # Express-specific limit (may differ from global MAX_UPLOAD_BYTES).
     if file.size is not None and file.size > limit:
         raise HTTPException(
             status_code=413,
             detail=f"文件过大（上限 {limit // (1024 * 1024)} MB）",
         )
-    check_upload_size_header(file)
+    check_upload_size_header(file, max_bytes=limit)
 
     hours = _parse_ttl(ttl_hours)
     max_dl = _parse_max_downloads(max_downloads)
     note_s = (note or "").strip()[:200]
 
+    # Prefer original name; empty upload filename still allowed.
+    original = (file.filename or "").strip() or "file"
+
     fd, tmp_path = tempfile.mkstemp(prefix="express_")
     os.close(fd)
     try:
-        await save_upload(file, tmp_path, max_bytes=limit)
+        try:
+            await save_upload(file, tmp_path, max_bytes=limit)
+        except HTTPException as exc:
+            # Map common English messages to Chinese for this tool surface.
+            detail = str(exc.detail or "")
+            if "Empty file" in detail or detail == "Empty file":
+                raise HTTPException(status_code=400, detail="文件为空，请重新选择") from exc
+            if "too large" in detail.lower() or "文件过大" in detail:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"文件过大（上限 {limit // (1024 * 1024)} MB）",
+                ) from exc
+            raise
         try:
             pkg = create_package(
                 tmp_path,
-                file.filename or "file",
+                original,
                 content_type=file.content_type or "",
                 ttl_hours=hours,
                 max_downloads=max_dl,
                 note=note_s,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            msg = str(exc)
+            if "empty or missing" in msg.lower():
+                msg = "文件为空或无效，请重新选择"
+            elif "too large" in msg.lower():
+                msg = f"文件过大（上限 {limit // (1024 * 1024)} MB）"
+            raise HTTPException(status_code=400, detail=msg) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"服务器无法保存文件：{exc}",
+            ) from exc
     finally:
         try:
             os.unlink(tmp_path)
