@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from office import AmountError, to_rmb_upper
-from tools.common import templates
+from tools.common import templates, with_nav
 
 router = APIRouter(prefix="/tools/rmb", tags=["rmb"])
 
@@ -19,13 +19,13 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/rmb.html",
-        {
+        with_nav({
             "tool": {
                 "name": "人民币大写",
                 "slug": "rmb",
                 "category": "office",
             }
-        },
+        }),
     )
 
 

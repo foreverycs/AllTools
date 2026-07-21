@@ -12,7 +12,7 @@ from coding import (
     encode_unicode,
     probe_unicode,
 )
-from tools.common import templates
+from tools.common import templates, with_nav
 
 router = APIRouter(prefix="/tools/unicode", tags=["unicode"])
 
@@ -24,13 +24,13 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/unicode.html",
-        {
+        with_nav({
             "tool": {
                 "name": "中文 Unicode 还原",
                 "slug": "unicode",
                 "category": "coding",
             }
-        },
+        }),
     )
 
 

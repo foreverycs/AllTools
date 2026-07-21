@@ -4,13 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="在线工具平台 — PDF/Word 转换、发票合并、编码工具，本地部署，即开即用" />
-  <meta name="theme-color" content="#eef1f8" />
+  <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
   {# Cross-document View Transitions (Chrome/Edge): soft fade between catalog pages #}
   <meta name="view-transition" content="same-origin" />
   <title>工具集 · Toolkit</title>
+  {% include "partials/theme_boot.html" %}
   <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/home.css') }}" />
+  {% include "partials/pwa_head.html" %}
+  {% include "partials/root_script.html" %}
+  <script src="{{ static_url('/static/js/toolkit-ux.js') }}" defer></script>
   {# Critical home layout inlined so a truncated/stale home.css cannot collapse the page #}
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -322,86 +327,51 @@
   <div class="site-page">
     {% include "partials/top_nav.html" %}
 
-    {# —— Command hero —— #}
-    <section class="home-hero" aria-labelledby="hero-title">
+    {# —— Focused hero: search + short pitch + category shortcuts —— #}
+    <section class="home-hero home-hero-compact" aria-labelledby="hero-title">
       <div class="hero-copy">
         <div class="home-kicker">
           <span class="kicker-pulse" aria-hidden="true"></span>
-          SYSTEM ONLINE · 本地工具平台
+          本地部署 · 数据不出域
         </div>
         <h1 id="hero-title">
-          打开就能用的<br>
-          <span class="grad">办公与开发工具台</span>
+          办公与开发<br>
+          <span class="grad">打开即用</span>
         </h1>
         <p class="home-lead">
-          一站完成 <strong>PDF ↔ Word</strong>、<strong>发票合并打印</strong>、
-          <strong>人民币大写</strong>、<strong>Base64 / 代码格式化</strong>，
-          以及特色的 <strong>文件快递</strong>。
-          选下方工具即可开始，无需安装客户端。
+          PDF ↔ Word、发票合并、编码调试与文件快递。
+          浏览器直达，无需安装客户端。
         </p>
+        <div class="home-search-cta">
+          <button type="button" class="home-search-btn" id="homeSearchBtn" aria-label="搜索工具">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+            </svg>
+            <span>搜索工具…</span>
+            <kbd class="home-search-kbd">Ctrl+K</kbd>
+          </button>
+        </div>
         <div class="home-cta-row">
           {% if featured_tools %}
-          <a class="home-btn home-btn-primary" href="#featured">
-            文件快递
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M5 12h14M13 6l6 6-6 6"/>
-            </svg>
-          </a>
-          <a class="home-btn home-btn-ghost" href="#launch">
-            全部工具
-          </a>
-          {% else %}
-          <a class="home-btn home-btn-primary" href="#launch">
-            立即使用工具
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M5 12h14M13 6l6 6-6 6"/>
-            </svg>
-          </a>
-          <a class="home-btn home-btn-ghost" href="#suites">
-            按栏目浏览
-          </a>
+          <a class="home-btn home-btn-primary" href="#featured">文件快递</a>
           {% endif %}
+          <a class="home-btn home-btn-ghost" href="#launch">全部工具</a>
+          <a class="home-btn home-btn-ghost" href="#suites">按栏目</a>
         </div>
         <ul class="hero-tags" aria-label="核心能力">
-          <li>文件快递</li>
           <li>文档互转</li>
           <li>发票排版</li>
-          <li>财务大写</li>
           <li>编码调试</li>
           <li>私有部署</li>
         </ul>
       </div>
 
-      <aside class="hero-panel" aria-label="平台状态">
+      <aside class="hero-panel" aria-label="快速入口">
         <div class="hud-head">
-          <span class="hud-title">MISSION CONTROL</span>
-          <span class="hud-live"><i></i> LIVE</span>
+          <span class="hud-title">快速入口</span>
+          <span class="hud-live"><i></i> {{ tool_count }} 工具</span>
         </div>
-        <div class="hud-stats">
-          <div class="hud-stat hud-stat-hero">
-            <div>
-              <div class="hud-val">{{ tool_count }}</div>
-              <div class="hud-lab">可用工具</div>
-            </div>
-            {% if featured_count %}
-            <div class="hud-mix" aria-label="模块 {{ module_count }}，特色 {{ featured_count }}">
-              <span class="hud-mix-chip"><strong>{{ module_count }}</strong><span>模块</span></span>
-              <span class="hud-mix-chip"><strong>{{ featured_count }}</strong><span>特色</span></span>
-            </div>
-            {% endif %}
-          </div>
-          <div class="hud-stat">
-            <div class="hud-val">{{ nav_items|length }}</div>
-            <div class="hud-lab">业务栏目</div>
-          </div>
-          <div class="hud-stat">
-            <div class="hud-val">本地</div>
-            <div class="hud-lab">部署模式</div>
-          </div>
-        </div>
-        <div class="hud-divider"></div>
         <div class="hud-routes">
-          <div class="hud-routes-label">快速通道</div>
           {% for item in nav_items %}
           <a class="hud-route" href="{{ url_path(item.route) }}" data-accent="{{ item.accent or 'indigo' }}">
             <span class="hud-route-icon" aria-hidden="true">{{ item.icon }}</span>
@@ -415,7 +385,25 @@
           </a>
           {% endfor %}
         </div>
+        <p class="hero-trust">文件在服务端处理，可私有化部署 · 提供 REST API</p>
       </aside>
+    </section>
+
+    {# tool-catalog-data is emitted by top_nav when tools_catalog is present #}
+
+    {# —— Recent tools (client-filled) —— #}
+    <section class="home-recent" id="recent" hidden aria-labelledby="recent-title">
+      <div class="section-head compact">
+        <div>
+          <div class="section-kicker">RECENT</div>
+          <h2 id="recent-title">最近使用</h2>
+          <p>继续上次打开的工具</p>
+        </div>
+        <div class="section-meta">
+          <button type="button" class="meta-pill recent-clear" id="recent-clear">清空</button>
+        </div>
+      </div>
+      <div class="recent-grid" id="recent-tools"></div>
     </section>
 
     {# —— Featured highlight (not listed under module grids) —— #}
@@ -557,35 +545,13 @@
       </div>
     </section>
 
-    {# —— Platform signals —— #}
-    <section class="home-signals" aria-label="平台特性">
-      <div class="section-head compact">
-        <div>
-          <div class="section-kicker">03 · SIGNALS</div>
-          <h2>为什么适合放进业务链路</h2>
-        </div>
-      </div>
-      <ul class="signal-grid">
-        <li>
-          <div class="signal-code">01</div>
-          <h4>即开即用</h4>
-          <p>浏览器直达，上传即可转换 / 合并 / 编码，降低培训成本。</p>
-        </li>
-        <li>
-          <div class="signal-code">02</div>
-          <h4>数据不出域</h4>
-          <p>本机或私有 Docker 部署，敏感文件无需依赖公网 SaaS。</p>
-        </li>
-        <li>
-          <div class="signal-code">03</div>
-          <h4>模块化扩展</h4>
-          <p>按栏目注册工具，可随业务持续增加新能力。</p>
-        </li>
-        <li>
-          <div class="signal-code">04</div>
-          <h4>API 就绪</h4>
-          <p>REST 与健康检查齐全，便于接入自动化与系统集成。</p>
-        </li>
+    {# Trust strip (compact — details live in footer) #}
+    <section class="home-trust-strip" aria-label="平台特性">
+      <ul>
+        <li><strong>即开即用</strong> 浏览器直达</li>
+        <li><strong>数据不出域</strong> 私有部署</li>
+        <li><strong>模块扩展</strong> 按栏目注册</li>
+        <li><strong>API 就绪</strong> 便于集成</li>
       </ul>
     </section>
 
@@ -647,5 +613,17 @@
       </div>
     </footer>
   </div>
+  <script>
+  (function () {
+    var btn = document.getElementById('homeSearchBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      if (window.ToolkitUX && ToolkitUX.openPalette) ToolkitUX.openPalette();
+      else if (document.getElementById('cmdPaletteBtn')) document.getElementById('cmdPaletteBtn').click();
+    });
+    var kbd = btn.querySelector('.home-search-kbd');
+    if (kbd && /Mac|iPhone|iPad/.test(navigator.platform || '')) kbd.textContent = '⌘K';
+  })();
+  </script>
 </body>
 </html>

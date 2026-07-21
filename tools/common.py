@@ -110,6 +110,77 @@ templates.env.globals["url_path"] = _jinja_url_path
 templates.env.globals["static_url"] = _jinja_static_url
 templates.env.globals["root_path"] = _jinja_root_path
 
+
+def with_nav(
+    context: Optional[dict] = None,
+    *,
+    active_nav: Optional[str] = None,
+) -> dict:
+    """Merge top-nav context into a tool (or other) page template dict.
+
+    Ensures ``nav_items`` / ``active_nav`` so ``partials/top_nav.html`` works
+    on tool pages the same way as home / category.
+    """
+    # Local import: tools package imports common at load time.
+    from tools import get_tool_by_slug, nav_categories
+
+    from tools import enabled_tools, featured_tools
+
+    ctx: dict = dict(context or {})
+    ctx.setdefault("nav_items", nav_categories())
+
+    tool = ctx.get("tool")
+    if not isinstance(tool, dict):
+        tool = {}
+    slug = str(tool.get("slug") or "").strip()
+    if slug:
+        reg = get_tool_by_slug(slug) or {}
+        # Fill missing fields from registry (route/icon needed for recent tools).
+        merged = {
+            "name": tool.get("name") or reg.get("name") or slug,
+            "slug": slug,
+            "category": tool.get("category") or reg.get("category"),
+            "icon": tool.get("icon") or reg.get("icon") or "🔧",
+            "route": tool.get("route") or reg.get("route") or f"/tools/{slug}",
+            "description": tool.get("description") or reg.get("description") or "",
+            "accent": tool.get("accent") or reg.get("accent") or "indigo",
+            "featured": bool(tool.get("featured") or reg.get("featured")),
+        }
+        tool = merged
+        ctx["tool"] = tool
+
+    if active_nav:
+        ctx["active_nav"] = active_nav
+    elif tool.get("featured") or slug == "express":
+        ctx["active_nav"] = "home"
+    elif tool.get("category"):
+        ctx["active_nav"] = str(tool["category"])
+    else:
+        ctx.setdefault("active_nav", "home")
+
+    # Flat catalog for command palette (same shape as homepage tools_catalog).
+    if "tools_catalog" not in ctx:
+        catalog: list = []
+        seen: set = set()
+        for t in list(enabled_tools()) + list(featured_tools()):
+            s = str(t.get("slug") or "")
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            catalog.append(
+                {
+                    "slug": s,
+                    "name": t.get("name"),
+                    "route": t.get("route"),
+                    "icon": t.get("icon"),
+                    "description": t.get("description"),
+                    "accent": t.get("accent") or "indigo",
+                    "category": t.get("category"),
+                }
+            )
+        ctx["tools_catalog"] = catalog
+    return ctx
+
 # Media types
 DOCX_MEDIA = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"

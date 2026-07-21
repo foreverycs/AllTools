@@ -300,6 +300,7 @@
           <button id="btn" disabled>开始合并</button>
           <div class="progress" id="progress"><i id="bar"></i></div>
           <div id="status"></div>
+          <div class="tool-result" id="result" hidden></div>
         </div>
 
         <div class="preview">
@@ -356,6 +357,8 @@
     var list = document.getElementById('list');
     var btn = document.getElementById('btn');
     var status = document.getElementById('status');
+    var resultEl = document.getElementById('result');
+    var UX = window.ToolkitUX || null;
     var dividerCheck = document.getElementById('divider');
     var progress = document.getElementById('progress');
     var bar = document.getElementById('bar');
@@ -375,6 +378,12 @@
     var bindDropZone = TU.bindDropZone;
     var xhrErrorMessage = TU.xhrErrorMessage;
     var appUrl = TU.appUrl;
+
+    function clearResult() {
+      status.textContent = '';
+      status.className = '';
+      if (UX) UX.hideResult(resultEl);
+    }
 
     function setProgress(pct) {
       progress.classList.add('show');
@@ -568,19 +577,43 @@
         fileInput.value = '';
         renderList();
 
-        status.className = 'ok';
-        if (single) {
-          status.textContent = '\u5B8C\u6210\uFF1A\u5DF2\u6392\u5728 A4 \u4E0A\u534A\u9875\uFF0C\u53EF\u9884\u89C8\u5E76\u6253\u5370\u3002';
+        var line = single
+          ? '已排在 A4 上半页，可在右侧预览并打印。'
+          : (inPages + ' 张已合并为 1 页 A4，可在右侧预览并打印。');
+        if (UX) {
+          status.textContent = '';
+          status.className = '';
+          UX.showResult(resultEl, {
+            kind: 'ok',
+            title: '合并完成',
+            detail: line,
+            againLabel: '继续合并',
+            onAgain: function () { clearResult(); },
+          });
         } else {
-          status.textContent = '\u5B8C\u6210\uFF1A' + inPages + ' \u5F20\u5DF2\u5408\u5E76\u4E3A 1 \u9875 A4\uFF0C\u53EF\u9884\u89C8\u5E76\u6253\u5370\u3002';
+          status.className = 'ok';
+          status.textContent = line;
         }
 
         if (window.matchMedia('(max-width: 860px)').matches) {
           document.querySelector('.preview').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       } catch (e) {
-        status.className = 'err';
-        status.textContent = e.message || String(e);
+        var msg = e.message || String(e);
+        if (UX) {
+          status.textContent = '';
+          status.className = '';
+          UX.showResult(resultEl, {
+            kind: 'err',
+            title: '合并失败',
+            detail: msg,
+            againLabel: '知道了',
+            onAgain: function () { clearResult(); },
+          });
+        } else {
+          status.className = 'err';
+          status.textContent = msg;
+        }
       } finally {
         hideProgress();
         btn.disabled = selected.length === 0;

@@ -71,6 +71,24 @@ def _page_ctx(
     featured = featured_tools()
     module_count = len(public)
     featured_count = len(featured)
+    # Flat catalog for homepage recent-tools hydration (modules + featured).
+    catalog: list = []
+    seen: set = set()
+    for t in list(public) + list(featured):
+        slug = str(t.get("slug") or "")
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        catalog.append(
+            {
+                "slug": slug,
+                "name": t.get("name"),
+                "route": t.get("route"),
+                "icon": t.get("icon"),
+                "description": t.get("description"),
+                "accent": t.get("accent") or "indigo",
+            }
+        )
     ctx: Dict[str, Any] = {
         "nav_items": nav_categories(),
         "active_nav": active_nav,
@@ -79,6 +97,7 @@ def _page_ctx(
         "featured_count": featured_count,
         "tool_count": module_count + featured_count,
         "featured_tools": featured,
+        "tools_catalog": catalog,
     }
     if extra:
         ctx.update(extra)
@@ -307,6 +326,76 @@ for router in TOOL_ROUTERS:
 
 # Admin console (password-protected)
 app.include_router(admin_router)
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    """Service worker at site root so scope covers the whole app."""
+    from fastapi.responses import FileResponse
+
+    path = os.path.join(BASE_DIR, "static", "sw.js")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="sw missing")
+    return FileResponse(
+        path,
+        media_type="application/javascript; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def web_manifest(request: Request):
+    """PWA manifest with start_url respecting reverse-proxy root_path."""
+    from fastapi.responses import JSONResponse
+    from tools.common import url_path
+
+    root = url_path("/", request)
+    if not root.endswith("/"):
+        # start_url should be a path the browser can open
+        start = root if root else "/"
+    else:
+        start = root
+    body = {
+        "name": "工具集",
+        "short_name": "工具集",
+        "description": "本地部署的办公与开发工具台：PDF/Word、发票合并、编码工具与文件快递",
+        "start_url": start,
+        "scope": start if start.endswith("/") else (start + "/" if start != "/" else "/"),
+        "display": "standalone",
+        "orientation": "any",
+        "background_color": "#0b1220",
+        "theme_color": "#4f46e5",
+        "lang": "zh-CN",
+        "categories": ["productivity", "utilities"],
+        "icons": [
+            {
+                "src": url_path("/static/icons/icon-192.png", request),
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": url_path("/static/icons/icon-512.png", request),
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": url_path("/static/icons/icon-maskable-512.png", request),
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+        ],
+    }
+    return JSONResponse(
+        body,
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/", response_class=HTMLResponse)

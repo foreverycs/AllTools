@@ -17,6 +17,7 @@ from tools.common import (
     safe_stem,
     save_upload,
     templates,
+    with_nav,
 )
 from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
 
@@ -31,7 +32,19 @@ MARGIN = 18
 
 @router.get("", response_class=HTMLResponse)
 async def tool_page(request: Request):
-    return templates.TemplateResponse(request, "tools/pdf-merge.html", {})
+    return templates.TemplateResponse(
+        request,
+        "tools/pdf-merge.html",
+        with_nav(
+            {
+                "tool": {
+                    "slug": "pdf-merge",
+                    "name": "发票合并",
+                    "category": "office",
+                }
+            }
+        ),
+    )
 
 
 def _make_divider() -> bytes:

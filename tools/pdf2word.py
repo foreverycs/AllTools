@@ -22,6 +22,7 @@ from tools.common import (
     safe_stem,
     save_upload,
     templates,
+    with_nav,
 )
 from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
 
@@ -33,7 +34,16 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/pdf2word.html",
-        {"ocr": ocr_info()},
+        with_nav(
+            {
+                "ocr": ocr_info(),
+                "tool": {
+                    "slug": "pdf2word",
+                    "name": "PDF 转 Word",
+                    "category": "document",
+                },
+            }
+        ),
     )
 
 

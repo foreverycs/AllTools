@@ -21,7 +21,7 @@ from coding import (
     validate_json,
 )
 from coding.code_format import MAX_INPUT_CHARS
-from tools.common import templates
+from tools.common import templates, with_nav
 
 router = APIRouter(prefix="/tools/code-format", tags=["code-format"])
 
@@ -37,10 +37,10 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/code-format.html",
-        {
+        with_nav({
             "tool": TOOL_META,
             "languages": list_languages(),
-        },
+        }),
     )
 
 

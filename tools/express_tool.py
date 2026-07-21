@@ -27,6 +27,7 @@ from tools.common import (
     save_upload,
     templates,
     url_path,
+    with_nav,
 )
 
 router = APIRouter(prefix="/tools/express", tags=["express"])
@@ -62,7 +63,7 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/express.html",
-        _tool_ctx(request),
+        with_nav(_tool_ctx(request)),
     )
 
 

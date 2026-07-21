@@ -38,6 +38,16 @@
   </nav>
 
   <div class="topbar-right">
+    <button type="button" class="topbar-search" id="cmdPaletteBtn" title="搜索工具 (Ctrl+K)" aria-label="搜索工具">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+      </svg>
+      <span class="topbar-search-label">搜索</span>
+      <kbd class="topbar-kbd">⌘K</kbd>
+    </button>
+    <button type="button" class="topbar-theme" id="themeToggle" title="切换浅色/深色" aria-label="切换主题">
+      <span class="topbar-theme-icon" aria-hidden="true"></span>
+    </button>
     <a class="topbar-link" href="{{ url_path('/admin') }}" title="管理后台" style="font-size:12px">后台</a>
     <div class="topbar-pill" title="服务状态">
       <span class="topbar-dot" aria-hidden="true"></span>
@@ -45,6 +55,9 @@
     </div>
   </div>
 </header>
+{% if tools_catalog is defined and tools_catalog and not catalog_script_emitted|default(false) %}
+<script type="application/json" id="tool-catalog-data">{{ tools_catalog|tojson }}</script>
+{% endif %}
 <script>
 (function () {
   var btn = document.getElementById('navToggle');

@@ -8,7 +8,7 @@
 {% set back_label = "文档处理" %}
 {% set chip = "PDF → Word" %}
 
-{% block title %}PDF 转 Word — 工具箱{% endblock %}
+{% block title %}PDF 转 Word — 工具集{% endblock %}
 
 {% block content %}
 <div class="card">
@@ -65,6 +65,7 @@
       <button id="btn" disabled>开始转换</button>
       <div class="progress" id="progress"><i id="bar"></i></div>
       <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
 </div>
 {% endblock %}
 
@@ -83,6 +84,8 @@
     const ocrEnabled = document.getElementById('ocrEnabled');
     const progress = document.getElementById('progress');
     const bar = document.getElementById('bar');
+    const resultEl = document.getElementById('result');
+    const UX = window.ToolkitUX || null;
 
     /** @type {File[]} */
     let selected = [];
@@ -149,6 +152,7 @@
           renderList();
           status.textContent = '';
           status.className = '';
+          if (UX) UX.hideResult(resultEl);
         });
         li.append(icon, name, size, rm);
         list.appendChild(li);
@@ -157,6 +161,12 @@
       btn.textContent = selected.length > 1
         ? `开始转换（${selected.length} 个文件 → ZIP）`
         : '开始转换';
+    }
+
+    function clearResult() {
+      status.textContent = '';
+      status.className = '';
+      if (UX) UX.hideResult(resultEl);
     }
 
     function addFiles(fileList) {
@@ -185,11 +195,20 @@
       }
       renderList();
       if (errors.length) {
-        status.className = 'err';
-        status.textContent = errors.join('；');
+        if (UX) {
+          UX.showResult(resultEl, {
+            kind: 'err',
+            title: '文件未全部添加',
+            detail: errors.join('；'),
+          });
+          status.textContent = '';
+          status.className = '';
+        } else {
+          status.className = 'err';
+          status.textContent = errors.join('；');
+        }
       } else {
-        status.textContent = '';
-        status.className = '';
+        clearResult();
       }
       fileInput.value = '';
     }
@@ -200,6 +219,7 @@
       if (!selected.length) return;
       persistOpts();
       btn.disabled = true;
+      if (UX) UX.hideResult(resultEl);
       status.className = 'info';
       status.textContent = selected.length > 1
         ? `批量转换中（${selected.length} 个）…`
@@ -302,24 +322,67 @@
         }
 
         const doneCount = multi ? (files || selected.length) : 1;
+        const outName = multi
+          ? 'pdf2word_batch.zip'
+          : (selected[0] && selected[0].name
+            ? selected[0].name.replace(/\.pdf$/i, '') + '.docx'
+            : 'result.docx');
         // Clear selection so the page is ready for the next job.
         selected = [];
         fileInput.value = '';
         renderList();
 
         let line = multi
-          ? `完成：${doneCount} 个文件，共 ${pages} 页、${tables} 个表格、${images} 张图。`
-          : `完成：${pages} 页、${tables} 个表格、${images} 张图，文件已下载。`;
+          ? `已处理 ${doneCount} 个文件，共 ${pages} 页、${tables} 个表格、${images} 张图。文件已开始下载。`
+          : `共 ${pages} 页、${tables} 个表格、${images} 张图，文件已开始下载。`;
         if (warns.includes('image_only')) {
-          status.className = 'warn';
-          status.textContent = line + ' 提示：检测到纯图片/扫描页，已按图片嵌入（无 OCR）。';
+          line += ' 检测到纯图片/扫描页，已按图片嵌入（未 OCR）。';
+          if (UX) {
+            status.textContent = '';
+            status.className = '';
+            UX.showResult(resultEl, {
+              kind: 'warn',
+              title: '转换完成（含提示）',
+              detail: line,
+              filename: outName,
+              againLabel: '继续转换',
+              onAgain: () => { clearResult(); },
+            });
+          } else {
+            status.className = 'warn';
+            status.textContent = line;
+          }
+        } else if (UX) {
+          status.textContent = '';
+          status.className = '';
+          UX.showResult(resultEl, {
+            kind: 'ok',
+            title: '转换完成',
+            detail: line,
+            filename: outName,
+            againLabel: '继续转换',
+            onAgain: () => { clearResult(); },
+          });
         } else {
           status.className = 'ok';
           status.textContent = line;
         }
       } catch (e) {
-        status.className = 'err';
-        status.textContent = e.message || String(e);
+        const msg = e.message || String(e);
+        if (UX) {
+          status.textContent = '';
+          status.className = '';
+          UX.showResult(resultEl, {
+            kind: 'err',
+            title: '转换失败',
+            detail: msg,
+            againLabel: '知道了',
+            onAgain: () => { clearResult(); },
+          });
+        } else {
+          status.className = 'err';
+          status.textContent = msg;
+        }
       } finally {
         hideProgress();
         btn.disabled = selected.length === 0;

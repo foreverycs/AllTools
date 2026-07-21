@@ -19,6 +19,7 @@ from tools.common import (
     safe_stem,
     save_upload,
     templates,
+    with_nav,
 )
 from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
 from word2pdf import convert_to_pdf, engine_info
@@ -34,7 +35,16 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/word2pdf.html",
-        {"engine": info},
+        with_nav(
+            {
+                "engine": info,
+                "tool": {
+                    "slug": "word2pdf",
+                    "name": "Word 转 PDF",
+                    "category": "document",
+                },
+            }
+        ),
     )
 
 

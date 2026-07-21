@@ -1,0 +1,12 @@
+{# Apply theme before paint to avoid flash. Safe if localStorage blocked. #}
+<script>
+(function () {
+  try {
+    var k = "toolkit_theme_v1";
+    var t = localStorage.getItem(k);
+    if (t === "light" || t === "dark") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  } catch (e) {}
+})();
+</script>

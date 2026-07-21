@@ -61,6 +61,7 @@
       <button id="btn" disabled>开始转换</button>
       <div class="progress" id="progress"><i id="bar"></i></div>
       <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
 </div>
 {% endblock %}
 
@@ -76,9 +77,17 @@
     const status = document.getElementById('status');
     const progress = document.getElementById('progress');
     const bar = document.getElementById('bar');
+    const resultEl = document.getElementById('result');
+    const UX = window.ToolkitUX || null;
 
     /** @type {File[]} */
     let selected = [];
+
+    function clearResult() {
+      status.textContent = '';
+      status.className = '';
+      if (UX) UX.hideResult(resultEl);
+    }
 
     const {
       fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl,
@@ -257,18 +266,49 @@
         }
 
         const doneCount = multi ? (files || selected.length) : 1;
-        // Clear selection so the page is ready for the next job.
+        const outName = multi
+          ? 'word2pdf_batch.zip'
+          : (selected[0] && selected[0].name
+            ? selected[0].name.replace(/\.docx?$/i, '') + '.pdf'
+            : 'result.pdf');
         selected = [];
         fileInput.value = '';
         renderList();
 
-        status.className = 'ok';
-        status.textContent = multi
-          ? `完成：${doneCount} 个文件已打包下载${engine ? '（引擎：' + engine + '）' : ''}。`
-          : `完成：PDF 已下载${engine ? '（引擎：' + engine + '）' : ''}。`;
+        const line = multi
+          ? `已处理 ${doneCount} 个文件并开始下载${engine ? '（引擎：' + engine + '）' : ''}。`
+          : `PDF 已开始下载${engine ? '（引擎：' + engine + '）' : ''}。`;
+        if (UX) {
+          status.textContent = '';
+          status.className = '';
+          UX.showResult(resultEl, {
+            kind: 'ok',
+            title: '转换完成',
+            detail: line,
+            filename: outName,
+            againLabel: '继续转换',
+            onAgain: () => { clearResult(); },
+          });
+        } else {
+          status.className = 'ok';
+          status.textContent = line;
+        }
       } catch (e) {
-        status.className = 'err';
-        status.textContent = e.message || String(e);
+        const msg = e.message || String(e);
+        if (UX) {
+          status.textContent = '';
+          status.className = '';
+          UX.showResult(resultEl, {
+            kind: 'err',
+            title: '转换失败',
+            detail: msg,
+            againLabel: '知道了',
+            onAgain: () => { clearResult(); },
+          });
+        } else {
+          status.className = 'err';
+          status.textContent = msg;
+        }
       } finally {
         hideProgress();
         btn.disabled = !ENGINE_READY || selected.length === 0;
@@ -276,8 +316,16 @@
     });
 
     if (!ENGINE_READY) {
-      status.className = 'warn';
-      status.textContent = '请先安装转换引擎后再使用。';
+      if (UX) {
+        UX.showResult(resultEl, {
+          kind: 'warn',
+          title: '引擎不可用',
+          detail: '请先安装 LibreOffice（或 Windows 上的 Microsoft Word）后再使用。',
+        });
+      } else {
+        status.className = 'warn';
+        status.textContent = '请先安装转换引擎后再使用。';
+      }
     }
   </script>
 {% endblock %}

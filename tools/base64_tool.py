@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from coding import DecodeError, decode_base64, encode_base64, probe_base64
-from tools.common import templates
+from tools.common import templates, with_nav
 
 router = APIRouter(prefix="/tools/base64", tags=["base64"])
 
@@ -22,13 +22,13 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/base64.html",
-        {
+        with_nav({
             "tool": {
                 "name": "Base64 编解码",
                 "slug": "base64",
                 "category": "coding",
             }
-        },
+        }),
     )
 
 

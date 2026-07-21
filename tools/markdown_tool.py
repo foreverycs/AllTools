@@ -8,7 +8,7 @@ from starlette.requests import Request
 
 from coding import MarkdownError, render_markdown, sample_markdown
 from coding.markdown_render import MAX_INPUT_CHARS
-from tools.common import templates
+from tools.common import templates, with_nav
 
 router = APIRouter(prefix="/tools/markdown", tags=["markdown"])
 
@@ -18,7 +18,7 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/markdown.html",
-        {
+        with_nav({
             "tool": {
                 "name": "Markdown 编辑",
                 "slug": "markdown",
@@ -26,7 +26,7 @@ async def tool_page(request: Request):
             },
             "sample": sample_markdown(),
             "max_chars": MAX_INPUT_CHARS,
-        },
+        }),
     )
 
 

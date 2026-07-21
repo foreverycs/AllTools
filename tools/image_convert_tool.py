@@ -22,6 +22,7 @@ from tools.common import (
     safe_stem,
     save_upload,
     templates,
+    with_nav,
 )
 from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
 
@@ -33,7 +34,7 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/image-convert.html",
-        {
+        with_nav({
             "tool": {
                 "name": "图片格式转换",
                 "slug": "image-convert",
@@ -41,7 +42,7 @@ async def tool_page(request: Request):
             },
             "input_formats": input_formats(),
             "output_formats": output_formats(),
-        },
+        }),
     )
 
 

@@ -313,6 +313,7 @@
         <div class="stat"><div class="k">格式</div><div class="v" id="statFmt">—</div></div>
       </div>
       <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
 </div>
 {% endblock %}
 
@@ -326,6 +327,8 @@
     const drop = document.getElementById("drop");
     const btn = document.getElementById("btn");
     const status = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const UX = window.ToolkitUX || null;
     const progress = document.getElementById("progress");
     const bar = document.getElementById("bar");
     const stripMeta = document.getElementById("stripMeta");
@@ -595,13 +598,39 @@
           if (src && tgt) msg += " · " + src.toUpperCase() + " → " + tgt.toUpperCase();
           if (orig && out) msg += " · " + fmtSize(orig) + " → " + fmtSize(out);
           if (punch) msg += " · 透明背景";
-          setStatus(msg, "ok");
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, {
+              kind: "ok",
+              title: punch ? "去底完成" : "转换完成",
+              detail: msg,
+              filename: name,
+              downloadBlob: blob,
+              downloadName: name,
+              againLabel: "继续转换",
+              onAgain: function () { UX.hideResult(resultEl); },
+            });
+          } else {
+            setStatus(msg, "ok");
+          }
           setProgress(100);
         } else {
-          setStatus(xhrErrorMessage(xhr) || "转换失败", "err");
+          var em = await xhrErrorMessage(xhr);
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, { kind: "err", title: "转换失败", detail: em || "转换失败" });
+          } else {
+            setStatus(em || "转换失败", "err");
+          }
         }
       } catch (err) {
-        setStatus((err && err.message) || "网络错误", "err");
+        var em2 = (err && err.message) || "网络错误";
+        if (UX) {
+          setStatus("", "");
+          UX.showResult(resultEl, { kind: "err", title: "转换失败", detail: em2 });
+        } else {
+          setStatus(em2, "err");
+        }
       } finally {
         btn.disabled = !selected;
         setTimeout(hideProgress, 600);

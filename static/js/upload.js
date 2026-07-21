@@ -49,6 +49,24 @@
    * }} [opts]
    * @returns {Promise<XMLHttpRequest>}
    */
+  function setBusy(on, reason) {
+    if (global.ToolkitUX && typeof global.ToolkitUX.setBusy === "function") {
+      global.ToolkitUX.setBusy(!!on, reason);
+    }
+  }
+
+  function trackJob(entry) {
+    if (global.ToolkitUX && typeof global.ToolkitUX.trackJob === "function") {
+      global.ToolkitUX.trackJob(entry);
+    }
+  }
+
+  function updateTrackedJob(id, patch) {
+    if (global.ToolkitUX && typeof global.ToolkitUX.updateTrackedJob === "function") {
+      global.ToolkitUX.updateTrackedJob(id, patch);
+    }
+  }
+
   function xhrPost(url, formData, opts) {
     opts = opts || {};
     var processHint =
@@ -60,6 +78,7 @@
       var processTimer = null;
       var tickTimer = null;
       var processStarted = 0;
+      var busyOn = opts.busy !== false;
 
       function clearTimers() {
         if (processTimer) {
@@ -70,6 +89,10 @@
           clearInterval(tickTimer);
           tickTimer = null;
         }
+      }
+
+      function finishBusy() {
+        if (busyOn) setBusy(false);
       }
 
       function startProcessHints() {
@@ -95,6 +118,7 @@
         }, 5000);
       }
 
+      if (busyOn) setBusy(true, "upload");
       xhr.open("POST", url);
       xhr.responseType = "blob";
       // Client-side safety net; reverse proxies should still set ≥600s.
@@ -116,19 +140,23 @@
       };
       xhr.onload = function () {
         clearTimers();
+        finishBusy();
         if (opts.onProgress) opts.onProgress(100, "done");
         resolve(xhr);
       };
       xhr.onerror = function () {
         clearTimers();
+        finishBusy();
         reject(new Error("网络错误"));
       };
       xhr.onabort = function () {
         clearTimers();
+        finishBusy();
         reject(new Error("已取消"));
       };
       xhr.ontimeout = function () {
         clearTimers();
+        finishBusy();
         reject(
           new Error(
             "请求超时。请检查反代 proxy_read_timeout（建议 ≥600s），或缩小页数 / 关闭 OCR 后重试"
@@ -207,6 +235,9 @@
       msg = errDetail(err.detail) || msg;
     } catch (e) {
       /* keep msg */
+    }
+    if (global.ToolkitUX && typeof global.ToolkitUX.friendlyError === "function") {
+      return global.ToolkitUX.friendlyError(msg);
     }
     return msg;
   }
@@ -314,10 +345,18 @@
     var timeout = typeof opts.timeoutMs === "number" ? opts.timeoutMs : 30 * 60 * 1000;
     var url = pollUrl.indexOf("http") === 0 ? pollUrl : appUrl(pollUrl);
     var started = Date.now();
+    var jobId = opts.jobId || null;
 
     return new Promise(function (resolve, reject) {
       function tick() {
         if (Date.now() - started > timeout) {
+          if (jobId) {
+            updateTrackedJob(jobId, {
+              status: "error",
+              message: "超时",
+              error: "转换超时",
+            });
+          }
           reject(new Error("转换超时。请缩小页数或关闭 OCR 后重试"));
           return;
         }
@@ -354,12 +393,27 @@
               }
               opts.onStatus(label, "info");
             }
+            if (jobId || job.id) {
+              updateTrackedJob(jobId || job.id, {
+                status: job.status,
+                progress: p,
+                message: job.message || job.status,
+                download_url: job.download_url,
+                download_name: job.download_name,
+                error: job.error || null,
+                tool: job.tool,
+              });
+            }
             if (job.status === "done") {
               resolve(job);
               return;
             }
             if (job.status === "error") {
-              reject(new Error(job.error || "转换失败"));
+              var em = job.error || "转换失败";
+              if (global.ToolkitUX && global.ToolkitUX.friendlyError) {
+                em = global.ToolkitUX.friendlyError(em);
+              }
+              reject(new Error(em));
               return;
             }
             setTimeout(tick, interval);
@@ -410,29 +464,83 @@
    */
   async function submitJobAndDownload(submitUrl, formData, opts) {
     opts = opts || {};
-    var submitted = await xhrPostJson(submitUrl, formData, opts);
-    var job = submitted.body || {};
-    if (!job.id && !job.poll_url) {
-      throw new Error("服务器未返回任务 ID");
+    var busyOn = opts.busy !== false;
+    // Guard only during upload/submit; polling is tracked in the jobs tray
+    // so the user may leave and resume download later.
+    if (busyOn) setBusy(true, "job-upload");
+    var jid = null;
+    try {
+      var submitted = await xhrPostJson(submitUrl, formData, opts);
+      var job = submitted.body || {};
+      if (!job.id && !job.poll_url) {
+        throw new Error("服务器未返回任务 ID");
+      }
+      jid = job.id;
+      var toolLabel =
+        opts.toolLabel ||
+        (document.body && document.body.getAttribute("data-tool-name")) ||
+        job.tool ||
+        "转换任务";
+      trackJob({
+        id: jid,
+        tool: job.tool,
+        title: toolLabel,
+        status: job.status || "queued",
+        progress: 0,
+        message: "任务已创建",
+        poll_url: job.poll_url || "/api/jobs/" + jid,
+        download_url: job.download_url,
+        download_name: opts.fallbackName || job.download_name,
+        created_at: Date.now(),
+        tool_route:
+          (document.body && document.body.getAttribute("data-tool-route")) || "",
+      });
+      if (busyOn) setBusy(false);
+      busyOn = false;
+      if (opts.onStatus) {
+        opts.onStatus("任务已创建，等待转换…（可离开本页，右下角任务托盘可回看）", "info");
+      }
+      if (opts.onProgress) opts.onProgress(75, "process");
+      var finished = await pollJob(job.poll_url || "/api/jobs/" + job.id, {
+        intervalMs: opts.intervalMs,
+        timeoutMs: opts.timeoutMs,
+        onProgress: opts.onProgress,
+        onStatus: opts.onStatus,
+        jobId: jid,
+      });
+      if (opts.onProgress) opts.onProgress(98, "process");
+      var dl =
+        finished.download_url ||
+        job.download_url ||
+        "/api/jobs/" + (finished.id || job.id) + "/download";
+      var fallback =
+        opts.fallbackName ||
+        finished.download_name ||
+        job.download_name ||
+        "download.bin";
+      var got = await downloadJob(dl, fallback);
+      updateTrackedJob(jid, {
+        status: "done",
+        progress: 1,
+        message: "已下载",
+        download_url: dl,
+        download_name: got.filename || fallback,
+        downloaded: true,
+      });
+      if (opts.onProgress) opts.onProgress(100, "done");
+      return { job: finished, filename: got.filename, headers: got.headers };
+    } catch (err) {
+      if (jid) {
+        updateTrackedJob(jid, {
+          status: "error",
+          message: (err && err.message) || "失败",
+          error: (err && err.message) || "失败",
+        });
+      }
+      throw err;
+    } finally {
+      if (busyOn) setBusy(false);
     }
-    if (opts.onStatus) {
-      opts.onStatus("任务已创建，等待转换…", "info");
-    }
-    if (opts.onProgress) opts.onProgress(75, "process");
-    var finished = await pollJob(job.poll_url || "/api/jobs/" + job.id, opts);
-    if (opts.onProgress) opts.onProgress(98, "process");
-    var dl =
-      finished.download_url ||
-      job.download_url ||
-      "/api/jobs/" + (finished.id || job.id) + "/download";
-    var fallback =
-      opts.fallbackName ||
-      finished.download_name ||
-      job.download_name ||
-      "download.bin";
-    var got = await downloadJob(dl, fallback);
-    if (opts.onProgress) opts.onProgress(100, "done");
-    return { job: finished, filename: got.filename, headers: got.headers };
   }
 
   global.ToolkitUpload = {

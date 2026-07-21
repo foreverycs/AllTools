@@ -9,6 +9,8 @@
      {% set use_upload_js = false %}     load static/js/upload.js in head
      {% set back_href / back_label / chip %} for default tool_nav block
 
+   Expects (from with_nav): nav_items, active_nav; optional tool dict.
+
    Blocks: head_styles, head_extra, body_attrs, body_class, tool_nav, content, scripts
 #}
 <!DOCTYPE html>
@@ -19,23 +21,44 @@
   {% if page_description is defined and page_description %}
   <meta name="description" content="{{ page_description }}" />
   {% endif %}
+  <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
+  <meta name="view-transition" content="same-origin" />
   <title>{% block title %}{{ page_title|default("工具") }} — 工具集{% endblock %}</title>
+  {% include "partials/theme_boot.html" %}
   <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
   {% if use_tool_page_css|default(true) %}
   <link rel="stylesheet" href="{{ static_url('/static/css/tool-page.css') }}" />
   {% endif %}
+  {% include "partials/pwa_head.html" %}
   {% block head_styles %}{% endblock %}
   {% include "partials/root_script.html" %}
+  <script src="{{ static_url('/static/js/toolkit-ux.js') }}"></script>
   {% if use_upload_js|default(false) %}
   <script src="{{ static_url('/static/js/upload.js') }}"></script>
   {% endif %}
   {% block head_extra %}{% endblock %}
 </head>
-<body class="{% block body_class %}tool-page{% endblock %}"{% if accent is defined and accent %} data-accent="{{ accent }}"{% endif %}{% block body_attrs %}{% endblock %}>
+<body
+  class="{% block body_class %}tool-page{% endblock %}"
+  {% if accent is defined and accent %}data-accent="{{ accent }}"{% endif %}
+  {% if tool is defined and tool and tool.slug %}
+  data-tool-slug="{{ tool.slug }}"
+  data-tool-name="{{ tool.name or page_title|default('') }}"
+  data-tool-route="{{ tool.route or '' }}"
+  data-tool-icon="{{ tool.icon or '🔧' }}"
+  data-tool-desc="{{ tool.description or page_description|default('') }}"
+  {% endif %}
+  {% block body_attrs %}{% endblock %}
+>
   <div class="bg" aria-hidden="true"></div>
   <div class="tool-shell">
   <div class="shell">
+    {% if nav_items is defined and nav_items %}
+    {% include "partials/top_nav.html" %}
+    {% endif %}
+
     {% block tool_nav %}
     {% if back_href is defined and back_label is defined %}
     {% include "partials/tool_nav.html" %}

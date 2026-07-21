@@ -17,6 +17,7 @@ from tools.common import (
     safe_stem,
     save_upload,
     templates,
+    with_nav,
 )
 from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
 
@@ -30,7 +31,7 @@ async def tool_page(request: Request):
     return templates.TemplateResponse(
         request,
         "tools/image-compress.html",
-        {
+        with_nav({
             "tool": {
                 "name": "图片压缩",
                 "slug": "image-compress",
@@ -38,7 +39,7 @@ async def tool_page(request: Request):
             },
             "formats": supported_formats(),
             "qualities": list(_QUALITY_PRESETS),
-        },
+        }),
     )
 
 

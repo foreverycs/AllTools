@@ -110,16 +110,14 @@ def test_home_lists_categories_and_base64():
     assert "特色功能" in r.text or "文件快递" in r.text
     assert "/tools/express" in r.text
     assert 'id="featured"' in r.text
-    # Homepage stats: total + module/featured chips
+    # Compact home: tool count in quick-entry panel + search entry
     module_n = len(enabled_tools())
     featured_n = len(featured_tools())
     total = module_n + featured_n
     assert str(total) in r.text
-    assert "可用工具" in r.text
-    assert "hud-stat-hero" in r.text
-    assert "hud-mix-chip" in r.text
-    assert "模块" in r.text and "特色" in r.text
-    assert str(module_n) in r.text and str(featured_n) in r.text
+    assert "工具" in r.text
+    assert "homeSearchBtn" in r.text or "搜索工具" in r.text
+    assert "快速入口" in r.text
 
 
 def test_express_not_in_office_module_page():
@@ -129,8 +127,9 @@ def test_express_not_in_office_module_page():
     office = client.get("/c/office")
     assert office.status_code == 200
     assert "发票合并" in office.text
-    # Featured tool must not appear as a regular module card on office page
-    assert "/tools/express" not in office.text
+    # Featured tool must not appear as a regular module card on office page.
+    # (Command-palette catalog JSON may still list express for global search.)
+    assert 'data-slug="express"' not in office.text
     assert "文件快递" not in office.text
 
 
