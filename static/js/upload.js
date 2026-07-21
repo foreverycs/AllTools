@@ -184,6 +184,7 @@
     var enabled = cfg.enabled || function () {
       return true;
     };
+    var paste = cfg.paste !== false;
 
     input.addEventListener("change", function (e) {
       onFiles(e.target.files);
@@ -205,6 +206,20 @@
       if (!enabled()) return;
       onFiles(e.dataTransfer.files);
     });
+
+    // Ctrl+V image/file paste while on the page (optional)
+    if (paste && global.ToolkitUX && global.ToolkitUX.bindPasteFiles) {
+      global.ToolkitUX.bindPasteFiles({
+        target: document,
+        enabled: enabled,
+        onFiles: function (files) {
+          onFiles(files);
+        },
+        accept: cfg.acceptFile || function () {
+          return true;
+        },
+      });
+    }
   }
 
   /**

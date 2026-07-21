@@ -174,14 +174,21 @@
 
     btnCopy.addEventListener('click', async () => {
       const text = output.value;
-      if (!text) return;
-      try {
-        await navigator.clipboard.writeText(text);
-        setStatus('ok', '已复制到剪贴板');
-      } catch (e) {
-        output.select();
-        document.execCommand('copy');
-        setStatus('ok', '已复制');
+      if (!text) {
+        if (window.ToolkitUX) ToolkitUX.toast('没有可复制的内容', 'warn');
+        return;
+      }
+      if (window.ToolkitUX) {
+        ToolkitUX.copyText(text, '已复制到剪贴板');
+      } else {
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus('ok', '已复制到剪贴板');
+        } catch (e) {
+          output.select();
+          document.execCommand('copy');
+          setStatus('ok', '已复制');
+        }
       }
     });
 

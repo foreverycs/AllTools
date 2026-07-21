@@ -334,14 +334,22 @@
       meta.innerHTML = '';
     });
     btnCopy.addEventListener('click', async () => {
-      if (!output.value) { setStatus('err', '没有可复制的内容'); return; }
-      try {
-        await navigator.clipboard.writeText(output.value);
-        setStatus('ok', '已复制到剪贴板');
-      } catch (_) {
-        output.select();
-        document.execCommand('copy');
-        setStatus('ok', '已复制到剪贴板');
+      if (!output.value) {
+        if (window.ToolkitUX) ToolkitUX.toast('没有可复制的内容', 'warn');
+        else setStatus('err', '没有可复制的内容');
+        return;
+      }
+      if (window.ToolkitUX) {
+        ToolkitUX.copyText(output.value, '已复制到剪贴板');
+      } else {
+        try {
+          await navigator.clipboard.writeText(output.value);
+          setStatus('ok', '已复制到剪贴板');
+        } catch (_) {
+          output.select();
+          document.execCommand('copy');
+          setStatus('ok', '已复制到剪贴板');
+        }
       }
     });
     btnSwap.addEventListener('click', () => {

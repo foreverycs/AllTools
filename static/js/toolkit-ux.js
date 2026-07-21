@@ -46,6 +46,127 @@
     return s;
   }
 
+  /* —— Toast —— */
+  var toastHost = null;
+  function ensureToastHost() {
+    if (toastHost && document.body.contains(toastHost)) return toastHost;
+    toastHost = document.createElement("div");
+    toastHost.className = "toolkit-toast-host";
+    toastHost.setAttribute("aria-live", "polite");
+    document.body.appendChild(toastHost);
+    return toastHost;
+  }
+
+  /**
+   * @param {string} message
+   * @param {'ok'|'err'|'warn'|'info'} [kind]
+   * @param {number} [ms]
+   */
+  function toast(message, kind, ms) {
+    var text = message == null ? "" : String(message);
+    if (!text) return;
+    var host = ensureToastHost();
+    var el = document.createElement("div");
+    el.className = "toolkit-toast kind-" + (kind || "info");
+    el.textContent = kind === "err" ? friendlyError(text) : text;
+    host.appendChild(el);
+    var life = typeof ms === "number" ? ms : kind === "err" ? 3200 : 2200;
+    setTimeout(function () {
+      el.style.opacity = "0";
+      el.style.transition = "opacity 0.18s ease";
+      setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 200);
+    }, life);
+  }
+
+  /**
+   * Copy text and toast. Returns Promise&lt;boolean&gt;.
+   */
+  function copyText(text, okMsg) {
+    var t = text == null ? "" : String(text);
+    if (!t) {
+      toast("没有可复制的内容", "warn");
+      return Promise.resolve(false);
+    }
+    var done = function () {
+      toast(okMsg || "已复制到剪贴板", "ok");
+      return true;
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(t).then(done).catch(function () {
+        return legacyCopy(t) ? done() : (toast("复制失败，请手动选择", "err"), false);
+      });
+    }
+    return Promise.resolve(
+      legacyCopy(t) ? done() : (toast("复制失败，请手动选择", "err"), false)
+    );
+  }
+
+  function legacyCopy(t) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = t;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Bind paste of files/images onto a zone (or document).
+   * @param {{
+   *   target?: HTMLElement|Document,
+   *   onFiles: (File[]) => void,
+   *   accept?: (File) => boolean,
+   *   enabled?: () => boolean
+   * }} cfg
+   */
+  function bindPasteFiles(cfg) {
+    var target = cfg.target || document;
+    var onFiles = cfg.onFiles;
+    var accept = cfg.accept || function () {
+      return true;
+    };
+    var enabled = cfg.enabled || function () {
+      return true;
+    };
+    target.addEventListener("paste", function (e) {
+      if (!enabled()) return;
+      var cd = e.clipboardData;
+      if (!cd) return;
+      var files = [];
+      if (cd.files && cd.files.length) {
+        files = Array.prototype.slice.call(cd.files);
+      } else if (cd.items) {
+        for (var i = 0; i < cd.items.length; i++) {
+          var it = cd.items[i];
+          if (it.kind === "file") {
+            var f = it.getAsFile();
+            if (f) files.push(f);
+          }
+        }
+      }
+      files = files.filter(accept);
+      if (!files.length) return;
+      e.preventDefault();
+      onFiles(files);
+      toast(
+        files.length === 1
+          ? "已从剪贴板粘贴文件"
+          : "已从剪贴板粘贴 " + files.length + " 个文件",
+        "ok"
+      );
+    });
+  }
+
   /* —— Recent tools —— */
   function readRecent() {
     try {
@@ -964,5 +1085,8 @@
     getTheme: getTheme,
     applyTheme: applyTheme,
     toggleTheme: toggleTheme,
+    toast: toast,
+    copyText: copyText,
+    bindPasteFiles: bindPasteFiles,
   };
 })(typeof window !== "undefined" ? window : globalThis);

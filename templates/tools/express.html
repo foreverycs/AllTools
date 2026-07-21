@@ -11,154 +11,181 @@
 {% block head_styles %}
 <style>
 .tool-page .tabs{
-      display: flex; gap: 6px; padding: 4px;
-      background: #f1f5f9; border-radius: 12px; margin-bottom: 18px;
-    }
+  display: flex; gap: 6px; padding: 4px;
+  background: var(--chip-bg, #f1f5f9); border-radius: 12px; margin-bottom: 18px;
+  border: 1px solid var(--line);
+}
 .tool-page .tab{
-      flex: 1; border: 0; background: transparent; cursor: pointer;
-      font: inherit; font-size: 13.5px; font-weight: 700;
-      color: #64748b; padding: 10px 12px; border-radius: 10px;
-      transition: background .15s, color .15s, box-shadow .15s;
-    }
+  flex: 1; border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-size: 13.5px; font-weight: 700;
+  color: var(--muted); padding: 10px 12px; border-radius: 10px;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
 .tool-page .tab.active{
-      background: #fff; color: #3730a3;
-      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-    }
+  background: var(--surface-solid, #fff); color: var(--tool-accent-ink, #3730a3);
+  box-shadow: var(--shadow-sm);
+}
 .tool-page .pane{ display: none; }
 .tool-page .pane.active{ display: block; }
 .tool-page .drop{
-      border: 1.5px dashed #c7d2fe;
-      border-radius: 14px;
-      background: #f8faff;
-      padding: 28px 16px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color .15s, background .15s;
-      margin-bottom: 14px;
-    }
+  border: 1.5px dashed var(--tool-accent-border, #c7d2fe);
+  border-radius: 14px;
+  background: var(--tool-accent-soft, #f8faff);
+  padding: 28px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  margin-bottom: 14px;
+  color: var(--ink);
+}
 .tool-page .drop:hover, .tool-page .drop.drag{
-      border-color: #818cf8;
-      background: #eef2ff;
-    }
-.tool-page .drop strong{ display: block; font-size: 14px; margin-bottom: 4px; }
+  border-color: var(--tool-accent-2, #818cf8);
+  background: rgba(99, 102, 241, 0.12);
+}
+.tool-page .drop strong{ display: block; font-size: 14px; margin-bottom: 4px; color: var(--ink); }
 .tool-page .drop span{ font-size: 12px; color: var(--muted); }
 .tool-page .drop input{ display: none; }
 .tool-page .file-name{
-      margin-top: 10px; font-size: 12.5px; font-weight: 650;
-      color: #4f46e5; word-break: break-all;
-    }
+  margin-top: 10px; font-size: 12.5px; font-weight: 650;
+  color: var(--tool-accent, #4f46e5); word-break: break-all;
+}
 .tool-page .row{
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-@media (max-width: 560px)  {
-.tool-page .row{ grid-template-columns: 1fr; }
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+@media (max-width: 560px) {
+  .tool-page .row{ grid-template-columns: 1fr; }
 }
 .tool-page .field label{
-      display: block; font-size: 12px; font-weight: 700;
-      color: #475569; margin-bottom: 6px;
-    }
+  display: block; font-size: 12px; font-weight: 700;
+  color: var(--ink-2); margin-bottom: 6px;
+}
 .tool-page .field input, .tool-page .field select, .tool-page .field textarea{
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font: inherit;
-      font-size: 13.5px;
-      background: #fff;
-      color: var(--ink);
-      outline: none;
-      transition: border-color .15s, box-shadow .15s;
-    }
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13.5px;
+  background: var(--surface-solid, #fff);
+  color: var(--ink);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
 .tool-page .field input:focus, .tool-page .field select:focus, .tool-page .field textarea:focus{
-      border-color: #a5b4fc;
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-    }
+  border-color: var(--tool-accent-border, #a5b4fc);
+  box-shadow: 0 0 0 3px var(--tool-focus, rgba(99, 102, 241, 0.15));
+}
 .tool-page .field .hint{ font-size: 11.5px; color: var(--muted); margin-top: 5px; }
 .tool-page .field textarea{ resize: vertical; min-height: 64px; }
 .tool-page .code-input{
-      font-family: var(--mono);
-      font-size: 1.5rem !important;
-      font-weight: 700;
-      letter-spacing: 0.28em;
-      text-align: center;
-      padding: 14px 12px !important;
-    }
+  font-family: var(--mono);
+  font-size: 1.5rem !important;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-align: center;
+  padding: 14px 12px !important;
+}
 .tool-page .actions{
-      display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px;
-    }
+  display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px;
+}
 .tool-page .btn{
-      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--ink-2);
-      font: inherit; font-size: 13.5px; font-weight: 700;
-      padding: 11px 16px; border-radius: 11px;
-      cursor: pointer;
-      transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
-    }
-.tool-page .btn:hover{ border-color: #c7d2fe; color: #4f46e5; background: #f8f9ff; }
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface-solid, #fff);
+  color: var(--ink-2);
+  font: inherit; font-size: 13.5px; font-weight: 700;
+  padding: 11px 16px; border-radius: 11px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+}
+.tool-page .btn:hover{
+  border-color: var(--tool-accent-border, #c7d2fe);
+  color: var(--tool-accent, #4f46e5);
+  background: var(--tool-accent-soft, #f8f9ff);
+}
 .tool-page .btn:disabled{ opacity: 0.5; cursor: not-allowed; }
 .tool-page .btn-primary{
-      background: linear-gradient(135deg, #6366f1, #4f46e5);
-      border-color: transparent;
-      color: #fff;
-      box-shadow: 0 8px 18px rgba(79, 70, 229, 0.28);
-    }
+  background: linear-gradient(135deg, var(--tool-accent-2, #6366f1), var(--tool-accent, #4f46e5));
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--tool-btn-shadow, 0 8px 18px rgba(79, 70, 229, 0.28));
+}
 .tool-page .btn-primary:hover{
-      background: linear-gradient(135deg, #4f46e5, #4338ca);
-      color: #fff;
-      border-color: transparent;
-    }
+  filter: brightness(1.05);
+  color: #fff;
+  border-color: transparent;
+}
 .tool-page .msg{
-      margin-top: 14px;
-      padding: 12px 14px;
-      border-radius: 12px;
-      font-size: 13px;
-      line-height: 1.5;
-      display: none;
-    }
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  display: none;
+}
 .tool-page .msg.show{ display: block; }
-.tool-page .msg.ok{ background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-.tool-page .msg.err{ background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-.tool-page .msg.info{ background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
+.tool-page .msg.ok{
+  background: var(--success-bg, #ecfdf5);
+  color: var(--success-ink, #047857);
+  border: 1px solid var(--success-line, #a7f3d0);
+}
+.tool-page .msg.err{
+  background: var(--danger-bg, #fef2f2);
+  color: var(--danger-ink, #b91c1c);
+  border: 1px solid var(--danger-line, #fecaca);
+}
+.tool-page .msg.info{
+  background: var(--tool-accent-soft, #eef2ff);
+  color: var(--tool-accent-ink, #3730a3);
+  border: 1px solid var(--tool-accent-border, #c7d2fe);
+}
 .tool-page .result{
-      margin-top: 14px;
-      padding: 16px;
-      border-radius: 14px;
-      background: linear-gradient(145deg, #eef2ff, #f0f9ff);
-      border: 1px solid #c7d2fe;
-      display: none;
-    }
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--tool-accent-soft, #eef2ff);
+  border: 1px solid var(--tool-accent-border, #c7d2fe);
+  display: none;
+}
 .tool-page .result.show{ display: block; }
+.tool-page .result-kicker{
+  text-align: center;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--tool-accent, #6366f1);
+  letter-spacing: 0.06em;
+}
 .tool-page .result-code{
-      font-family: var(--mono);
-      font-size: 2rem;
-      font-weight: 800;
-      letter-spacing: 0.22em;
-      color: #312e81;
-      text-align: center;
-      margin: 6px 0 10px;
-    }
+  font-family: var(--mono);
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: var(--tool-accent-ink, #312e81);
+  text-align: center;
+  margin: 6px 0 10px;
+  user-select: all;
+}
 .tool-page .result-meta{
-      font-size: 12.5px;
-      color: #475569;
-      line-height: 1.6;
-      text-align: center;
-    }
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.6;
+  text-align: center;
+}
+.tool-page .result-meta strong{ color: var(--ink-2); }
 .tool-page .result-actions{
-      display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
-      margin-top: 12px;
-    }
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+  margin-top: 12px;
+}
 .tool-page .tips{
-      margin-top: 16px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.55;
-    }
-.tool-page .tips strong{ color: #475569; }
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.tool-page .tips strong{ color: var(--ink-2); }
 </style>
 {% endblock %}
 
@@ -218,7 +245,7 @@
         </div>
         <div class="msg" id="sendMsg"></div>
         <div class="result" id="sendResult">
-          <div style="text-align:center;font-size:12px;font-weight:700;color:#6366f1">取件码</div>
+          <div class="result-kicker">取件码</div>
           <div class="result-code" id="resultCode">------</div>
           <div class="result-meta" id="resultMeta"></div>
           <div class="result-actions">
@@ -257,6 +284,7 @@
 <script>
     (function () {
       var ROOT = (window.__ROOT__ || {{ root_path()|tojson }}) || '';
+      var UX = window.ToolkitUX || null;
       function api(path) {
         if (!path) return ROOT || '/';
         if (path.charAt(0) !== '/') path = '/' + path;
@@ -275,9 +303,16 @@
         if (sec < 86400) return (sec / 3600).toFixed(1) + ' 小时';
         return (sec / 86400).toFixed(1) + ' 天';
       }
-      function showMsg(el, text, kind) {
+      function friendly(text) {
+        if (UX && UX.friendlyError) return UX.friendlyError(text);
+        return text;
+      }
+      function showMsg(el, text, kind, opts) {
+        var msg = kind === 'err' ? friendly(text) : text;
         el.className = 'msg show ' + (kind || 'info');
-        el.textContent = text;
+        el.textContent = msg;
+        opts = opts || {};
+        if (opts.toast && UX) UX.toast(msg, kind === 'err' ? 'err' : (kind || 'info'));
       }
       function hideMsg(el) {
         el.className = 'msg';
@@ -384,49 +419,41 @@
           if (data.note) lines.push('备注：' + data.note);
           resultMeta.innerHTML = lines.map(function (l) { return '<div>' + l + '</div>'; }).join('');
           sendResult.classList.add('show');
-          showMsg(sendMsg, data.message || '寄送成功', 'ok');
+          showMsg(sendMsg, data.message || '寄送成功，请复制取件码发给对方', 'ok', { toast: true });
         } catch (e) {
-          showMsg(sendMsg, '网络错误：' + (e.message || e), 'err');
+          showMsg(sendMsg, '网络错误：' + (e.message || e), 'err', { toast: true });
         } finally {
           sendBtn.disabled = false;
           sendBtn.textContent = '生成取件码';
         }
       });
 
-      function copyText(text) {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          return navigator.clipboard.writeText(text);
-        }
-        return new Promise(function (resolve, reject) {
-          var ta = document.createElement('textarea');
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          try {
-            document.execCommand('copy');
-            resolve();
-          } catch (e) { reject(e); }
-          document.body.removeChild(ta);
-        });
-      }
       document.getElementById('copyCodeBtn').addEventListener('click', function () {
-        var c = resultCode.textContent || '';
-        copyText(c).then(function () {
+        var c = (resultCode.textContent || '').trim();
+        if (!c || c === '------') {
+          if (UX) UX.toast('还没有取件码', 'warn');
+          return;
+        }
+        if (UX) {
+          UX.copyText(c, '已复制取件码 ' + c);
+        } else {
           showMsg(sendMsg, '已复制取件码 ' + c, 'ok');
-        }).catch(function () {
-          showMsg(sendMsg, '复制失败，请手动选择取件码', 'err');
-        });
+        }
       });
       document.getElementById('copyLinkBtn').addEventListener('click', function () {
         var link = lastPickupUrl;
         if (link && link.charAt(0) === '/') {
           link = window.location.origin + link;
         }
-        copyText(link || '').then(function () {
+        if (!link) {
+          if (UX) UX.toast('还没有取件链接', 'warn');
+          return;
+        }
+        if (UX) {
+          UX.copyText(link, '已复制取件链接');
+        } else {
           showMsg(sendMsg, '已复制取件链接', 'ok');
-        }).catch(function () {
-          showMsg(sendMsg, '复制失败', 'err');
-        });
+        }
       });
 
       // Pickup

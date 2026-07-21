@@ -1,5 +1,6 @@
-{# Tool page sub-nav: back link + chip.
+{# Tool page sub-nav: back link + chip + sibling tools.
    Expects: back_href, back_label, chip (optional)
+   Optional: sibling_tools (list of {name,route,icon})
 #}
 <div class="nav">
   <a class="back" href="{{ back_href }}">
@@ -12,3 +13,15 @@
   <span class="chip">{{ chip }}</span>
   {% endif %}
 </div>
+{% if sibling_tools is defined and sibling_tools %}
+<nav class="sibling-tools" aria-label="同栏目其他工具">
+  <span class="sibling-label">同栏目</span>
+  {% for s in sibling_tools %}
+  <a class="sibling-chip" href="{{ url_path(s.route) }}" title="{{ s.name }}">
+    <span class="sibling-icon" aria-hidden="true">{{ s.icon or '·' }}</span>
+    {{ s.name }}
+  </a>
+  {% endfor %}
+</nav>
+{% endif %}
+<p class="tool-privacy-hint">默认在您的服务端处理；上传类工具的输入归档可保留数天，管理后台可查看与清理。</p>

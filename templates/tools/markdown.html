@@ -301,6 +301,10 @@
     });
 
     document.getElementById("btnCopyMd").addEventListener("click", async function () {
+      if (window.ToolkitUX) {
+        ToolkitUX.copyText(editor.value, "已复制 Markdown");
+        return;
+      }
       try {
         await navigator.clipboard.writeText(editor.value);
         setStatus("ok", "已复制 Markdown");
@@ -314,7 +318,12 @@
     document.getElementById("btnCopyHtml").addEventListener("click", async function () {
       if (!lastHtml) await renderNow();
       if (!lastHtml) {
-        setStatus("info", "暂无 HTML 可复制");
+        if (window.ToolkitUX) ToolkitUX.toast("暂无 HTML 可复制", "warn");
+        else setStatus("info", "暂无 HTML 可复制");
+        return;
+      }
+      if (window.ToolkitUX) {
+        ToolkitUX.copyText(lastHtml, "已复制 HTML 片段");
         return;
       }
       try {

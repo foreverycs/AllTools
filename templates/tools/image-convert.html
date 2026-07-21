@@ -542,6 +542,10 @@
     bindDropZone({
       drop: drop,
       input: fileInput,
+      paste: true,
+      acceptFile: function (f) {
+        return f && ((f.type || "").indexOf("image/") === 0 || /\.(jpe?g|png|gif|webp|bmp|tiff?|ico)$/i.test(f.name || ""));
+      },
       onFiles: function (files) {
         if (files && files[0]) setFile(files[0]);
         fileInput.value = "";

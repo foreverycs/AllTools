@@ -179,6 +179,31 @@ def with_nav(
                 }
             )
         ctx["tools_catalog"] = catalog
+
+    # Sibling tools in the same category (for quick chips under tool_nav).
+    if "sibling_tools" not in ctx and tool.get("category") and slug:
+        cat_id = str(tool["category"])
+        siblings: list = []
+        for t in enabled_tools(include_featured=True):
+            if str(t.get("category") or "") != cat_id:
+                continue
+            if str(t.get("slug") or "") == slug:
+                continue
+            siblings.append(
+                {
+                    "slug": t.get("slug"),
+                    "name": t.get("name"),
+                    "route": t.get("route"),
+                    "icon": t.get("icon"),
+                    "accent": t.get("accent") or "indigo",
+                }
+            )
+        # Featured express lives under office but is not a sibling of office modules.
+        if tool.get("featured") or slug == "express":
+            siblings = []
+        ctx["sibling_tools"] = siblings[:6]
+    elif "sibling_tools" not in ctx:
+        ctx["sibling_tools"] = []
     return ctx
 
 # Media types

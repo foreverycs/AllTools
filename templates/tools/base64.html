@@ -119,6 +119,7 @@
 
     let mode = 'encode';
 
+    const UX = window.ToolkitUX || null;
     function setStatus(kind, text) {
       status.className = 'status show ' + kind;
       status.textContent = text;
@@ -183,14 +184,21 @@
 
     btnCopy.addEventListener('click', async () => {
       const text = output.value;
-      if (!text) return;
-      try {
-        await navigator.clipboard.writeText(text);
-        setStatus('ok', '已复制到剪贴板');
-      } catch (e) {
-        output.select();
-        document.execCommand('copy');
-        setStatus('ok', '已复制');
+      if (!text) {
+        if (UX) UX.toast('没有可复制的内容', 'warn');
+        return;
+      }
+      if (UX) {
+        UX.copyText(text, '已复制到剪贴板');
+      } else {
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus('ok', '已复制到剪贴板');
+        } catch (e) {
+          output.select();
+          document.execCommand('copy');
+          setStatus('ok', '已复制');
+        }
       }
     });
 
@@ -274,5 +282,25 @@
         btnRun.click();
       }
     });
+
+    // Paste image/file → encode as file (encode mode)
+    if (UX && UX.bindPasteFiles) {
+      UX.bindPasteFiles({
+        target: document,
+        enabled: function () { return mode === 'encode'; },
+        accept: function (f) { return f && f.size > 0 && f.size <= 5 * 1024 * 1024; },
+        onFiles: function (files) {
+          if (!files || !files[0]) return;
+          try {
+            var dt = new DataTransfer();
+            dt.items.add(files[0]);
+            fileInput.files = dt.files;
+            setStatus('info', '已粘贴文件：' + files[0].name + '（点编码）');
+          } catch (e) {
+            setStatus('warn', '已检测到剪贴板文件，请改用「选择文件」');
+          }
+        },
+      });
+    }
   </script>
 {% endblock %}
