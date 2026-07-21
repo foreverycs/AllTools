@@ -280,6 +280,13 @@ async def request_context_and_security_headers(request: Request, call_next):
         else:
             # Unversioned /static requests: short cache so reverse-proxy mistakes heal faster
             response.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
+    elif response.status_code == 200 and (
+        path == "/" or path.startswith("/c/")
+    ):
+        # Catalog pages: short private cache so top-nav switches feel warm after first visit.
+        response.headers.setdefault(
+            "Cache-Control", "private, max-age=30, stale-while-revalidate=120"
+        )
     remaining = getattr(request.state, "rate_limit_remaining", None)
     if remaining is not None:
         response.headers.setdefault(

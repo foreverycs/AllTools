@@ -988,12 +988,27 @@
 }
 
 @keyframes home-enter {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Shorter enter so category ↔ home feels snappier after full navigation */
+.home-hero { animation-duration: 0.28s; animation-delay: 0s; }
+.home-featured { animation-duration: 0.28s; animation-delay: 0.02s; }
+.home-launch { animation-duration: 0.28s; animation-delay: 0.03s; }
+.home-suites { animation-duration: 0.28s; animation-delay: 0.04s; }
+.home-signals { animation-duration: 0.28s; animation-delay: 0.05s; }
+
+/* Skip continuous blur/mask work while leaving (nav click) */
+html.nav-leaving .home-bg-orb,
+html.nav-leaving .hero-panel {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .home-hero, .home-launch, .home-suites, .home-signals { animation: none; }
+  .home-hero, .home-featured, .home-launch, .home-suites, .home-signals { animation: none; }
   .kicker-pulse { animation: none; }
   .home-btn, .launch-card, .suite-go, .hud-route { transition: none; }
 }

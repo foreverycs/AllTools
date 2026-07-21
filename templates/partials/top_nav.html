@@ -49,11 +49,75 @@
 (function () {
   var btn = document.getElementById('navToggle');
   var menu = document.getElementById('topMenu');
-  if (!btn || !menu) return;
-  btn.addEventListener('click', function () {
-    var open = menu.classList.toggle('is-open');
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    btn.textContent = open ? '收起' : '菜单';
+  if (btn && menu) {
+    btn.addEventListener('click', function () {
+      var open = menu.classList.toggle('is-open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.textContent = open ? '收起' : '菜单';
+    });
+  }
+
+  /* Smooth category / home switching: prefetch + instant active + View Transitions */
+  var prefetched = Object.create(null);
+  function sameOrigin(href) {
+    try {
+      var u = new URL(href, location.href);
+      return u.origin === location.origin;
+    } catch (e) {
+      return false;
+    }
+  }
+  function prefetch(href) {
+    if (!href || prefetched[href] || !sameOrigin(href)) return;
+    var dest = href.split('#')[0];
+    var here = location.href.split('#')[0];
+    if (dest === here) return;
+    prefetched[href] = true;
+    var link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.as = 'document';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+  function markActive(a) {
+    var bar = document.querySelector('.topbar-menu');
+    if (!bar) return;
+    bar.querySelectorAll('.topbar-link').forEach(function (el) {
+      el.classList.remove('active');
+      el.removeAttribute('aria-current');
+    });
+    a.classList.add('active');
+    a.setAttribute('aria-current', 'page');
+  }
+
+  document.querySelectorAll('.topbar-link[href]').forEach(function (a) {
+    var href = a.getAttribute('href');
+    if (!href || href.charAt(0) === '#') return;
+    a.addEventListener('pointerenter', function () { prefetch(href); }, { passive: true });
+    a.addEventListener('focus', function () { prefetch(href); });
+    a.addEventListener('touchstart', function () { prefetch(href); }, { passive: true });
+    a.addEventListener('click', function (ev) {
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
+      if (!sameOrigin(href)) return;
+      /* Instant chrome feedback before the new document paints */
+      markActive(a);
+      document.documentElement.classList.add('nav-leaving');
+    });
   });
+
+  /* Warm sibling category pages after first paint (idle) */
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(function () {
+      document.querySelectorAll('.topbar-link[href]').forEach(function (a) {
+        prefetch(a.getAttribute('href'));
+      });
+    }, { timeout: 1800 });
+  } else {
+    setTimeout(function () {
+      document.querySelectorAll('.topbar-link[href]').forEach(function (a) {
+        prefetch(a.getAttribute('href'));
+      });
+    }, 900);
+  }
 })();
 </script>
