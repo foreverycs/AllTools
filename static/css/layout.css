@@ -515,19 +515,45 @@
 }
 .site-footer-bottom-links a:hover { color: var(--indigo); }
 
-/* legacy simple footer (category pages etc.) */
+/* Compact full-width footer (category pages etc.) — aligns with tool-card grid */
 .site-footer-inner {
-  display: inline-flex;
-  flex-direction: column;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 14px 24px;
+  justify-content: space-between;
+  gap: 10px 20px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px 22px;
   border-radius: 16px;
-  background: var(--surface);
+  background: var(--surface-solid, #fff);
   border: 1px solid var(--line);
-  backdrop-filter: blur(10px);
-  margin: 0 auto;
-  text-align: center;
+  box-shadow: var(--shadow-sm);
 }
-.site-footer-brand { font-size: 13px; font-weight: 700; color: #475569; }
-.site-footer-note { font-size: 12px; color: var(--muted-2); }
+.site-footer-brand {
+  font-size: 13.5px;
+  font-weight: 750;
+  color: var(--ink-2, #1e293b);
+  letter-spacing: -0.01em;
+}
+.site-footer-note {
+  font-size: 12.5px;
+  color: var(--muted-2);
+  line-height: 1.45;
+}
+.site-footer-note a {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 650;
+  transition: color 0.15s ease;
+}
+.site-footer-note a:hover {
+  color: var(--indigo, #4f46e5);
+}
+@media (max-width: 560px) {
+  .site-footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 14px 16px;
+  }
+}
