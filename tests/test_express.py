@@ -173,7 +173,18 @@ def test_resolve_blocks_traversal(express_env):
     assert ex.resolve_package_file({"stored_rel": ""}) is None
 
 
-def test_registry_has_express():
+def test_registry_has_express(tmp_path, monkeypatch):
+    # Isolate from any local file/tool_catalog.json so the default registry
+    # (express → text) is used regardless of the developer's custom categories.
+    d = tmp_path / "file"
+    d.mkdir()
+    monkeypatch.setenv("UPLOAD_FILE_DIR", str(d))
+    import core.settings as settings_mod
+    from core import tool_catalog as tc
+
+    settings_mod.clear_settings_cache()
+    tc.clear_cache()
+
     from tools import (
         TOOL_REGISTRY,
         TOOL_ROUTERS,
@@ -201,6 +212,45 @@ def test_registry_has_express():
         c for c in tools_by_category(include_disabled=True) if c["id"] == "text"
     )
     assert "express" in {t["slug"] for t in text_admin["tools"]}
+
+
+def test_featured_tool_counts_in_assigned_category(tmp_path, monkeypatch):
+    """Regression: a featured tool (文件快递) assigned to a custom category
+    must be counted in nav/tab counts (the homepage grid renders it there),
+    even though it stays out of the module catalog."""
+    d = tmp_path / "file"
+    d.mkdir()
+    monkeypatch.setenv("UPLOAD_FILE_DIR", str(d))
+    monkeypatch.setenv("UPLOAD_RETENTION_DAYS", "5")
+
+    import core.settings as settings_mod
+    from core import tool_catalog as tc
+    from tools import TOOL_CATEGORIES, nav_categories, tools_by_category
+
+    settings_mod.clear_settings_cache()
+    tc.clear_cache()
+
+    cats = [dict(c) for c in TOOL_CATEGORIES]
+    cats.append(
+        {
+            "id": "custommsg8remw",
+            "name": "创意",
+            "name_en": "",
+            "description": "",
+            "icon": "🧩",
+            "accent": "indigo",
+            "route": "/#col-custommsg8remw",
+            "builtin": False,
+        }
+    )
+    tc.save_catalog(cats, {"express": "custommsg8remw"})
+
+    nav = {c["id"]: c for c in nav_categories()}
+    assert nav["custommsg8remw"]["tool_count"] == 1
+    assert "文件快递" in nav["custommsg8remw"]["tool_names"]
+    # Featured stays out of the public module catalog (unchanged design).
+    for cat in tools_by_category():
+        assert "express" not in {t["slug"] for t in cat["tools"]}
 
 
 def test_api_send_lookup_pickup(express_client):

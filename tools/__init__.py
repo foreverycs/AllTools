@@ -395,7 +395,18 @@ def nav_categories(*, include_disabled: bool = False) -> List[Dict[str, Any]]:
     """Top-nav menu items (all registered categories, including empty)."""
     from core.tool_catalog import get_categories
 
-    by_id = {c["id"]: c for c in tools_by_category(include_disabled=include_disabled)}
+    # Featured tools (e.g. 文件快递) are rendered as cards in the homepage grid
+    # under their assigned category, so count them too. Otherwise a category
+    # holding only a featured tool (via an admin assignment) would show a
+    # misleading count of 0. Admin view already covers featured via the full
+    # registry (include_disabled=True).
+    by_id = {
+        c["id"]: c
+        for c in tools_by_category(
+            include_disabled=include_disabled,
+            include_featured=not include_disabled,
+        )
+    }
     items = []
     for c in get_categories():
         filled = by_id.get(c["id"])
