@@ -21,7 +21,7 @@
   <div class="admin-panel" style="margin-bottom:18px">
     <div class="admin-panel-h">基础设置</div>
     <div class="admin-panel-b">
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:#334155;cursor:pointer;margin-bottom:16px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:var(--ink-2);cursor:pointer;margin-bottom:16px">
         <input type="checkbox" name="enabled" value="1" {% if cfg.enabled %}checked{% endif %} style="width:16px;height:16px;accent-color:#6366f1" />
         启用打赏模块（需同时上传二维码）
       </label>
@@ -48,7 +48,7 @@
           <input id="don-qr" type="file" name="qr" accept="image/png,image/jpeg,image/gif,image/webp" />
         </div>
         {% if cfg.has_qr %}
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:#b91c1c;cursor:pointer">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:var(--danger-ink,#b91c1c);cursor:pointer">
           <input type="checkbox" name="remove_qr" value="1" style="width:16px;height:16px;accent-color:#dc2626" />
           删除当前二维码（不再展示）
         </label>

@@ -168,7 +168,15 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="10" class="admin-muted" style="text-align:center;padding:32px 0">没有匹配的快递记录</td></tr>
+          <tr>
+            <td colspan="10">
+              <div class="admin-empty">
+                <div class="admin-empty-icon">📦</div>
+                <div class="admin-empty-title">没有匹配的快递记录</div>
+                <div class="admin-empty-sub">试试调整状态筛选或搜索关键词</div>
+              </div>
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>

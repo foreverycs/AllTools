@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex,nofollow" />
   <title>{% block title %}管理后台{% endblock %} — 工具集</title>
+  {% include "partials/theme_boot.html" %}
   <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/admin.css') }}" />
   <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
@@ -82,6 +83,10 @@
       </a>
     </nav>
     <div class="admin-side-foot">
+      <button type="button" class="admin-theme-toggle" id="adminThemeToggleSide" title="切换浅色/深色" aria-label="切换主题" style="width:100%;justify-content:flex-start;gap:8px">
+        <span class="admin-theme-icon" aria-hidden="true"></span>
+        <span class="admin-theme-label">切换主题</span>
+      </button>
       <a href="{{ url_path('/') }}">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 12H5M11 18l-6-6 6-6"/>
@@ -109,12 +114,13 @@
       </button>
       <div class="admin-topbar-brand">
         <span class="admin-topbar-mark">管</span>
-        <div class="admin-topbar-text">
-          <span class="admin-topbar-title">管理后台</span>
-          <span class="admin-topbar-sub">v{{ app_version }}</span>
-        </div>
+      <div class="admin-topbar-text">
+        <span class="admin-topbar-title">管理后台</span>
+        <span class="admin-topbar-sub">v{{ app_version }}</span>
       </div>
-    </header>
+      <button type="button" class="admin-theme-toggle" id="adminThemeToggleTop" title="切换浅色/深色" aria-label="切换主题" style="margin-left:auto"><span class="admin-theme-icon" aria-hidden="true"></span></button>
+    </div>
+  </header>
     <main class="admin-main" id="adminMain">
       {% block content %}{% endblock %}
     </main>
@@ -296,6 +302,29 @@
           softNavigate(window.location.href, false);
         }
       });
+    })();
+  </script>
+  <script>
+    (function () {
+      function currentTheme() {
+        var t = document.documentElement.getAttribute('data-theme');
+        return t === 'light' ? 'light' : 'dark';
+      }
+      function applyTheme(theme) {
+        var dark = theme !== 'light';
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        document.documentElement.classList.toggle('light-mode', !dark);
+        try { localStorage.setItem('toolkit_theme_v1', dark ? 'dark' : 'light'); } catch (e) {}
+        document.querySelectorAll('.admin-theme-icon').forEach(function (el) {
+          el.textContent = dark ? '☀' : '☾';
+        });
+      }
+      document.querySelectorAll('#adminThemeToggleSide, #adminThemeToggleTop').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+        });
+      });
+      applyTheme(currentTheme());
     })();
   </script>
 </body>
