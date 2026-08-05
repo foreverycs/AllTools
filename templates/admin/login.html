@@ -15,7 +15,6 @@
   <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/home.css') }}" />
   <script src="{{ static_url('/static/js/toolkit-ux.js') }}"></script>
-  <script src="{{ static_url('/static/js/pill-nav.js') }}" defer></script>
   <style>
     /* Admin login — styled with the shared homepage tokens so it matches
        the home look and follows the light/dark theme. */
@@ -24,7 +23,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 96px 16px 48px;
+      padding: 24px 16px;
       position: relative;
       z-index: 1;
     }
@@ -86,7 +85,6 @@
 </head>
 <body class="antialiased">
   <div class="bg-grid" aria-hidden="true"></div>
-  {% include "partials/pill_nav.html" %}
 
   <main class="login-main">
     <div class="login-card">
