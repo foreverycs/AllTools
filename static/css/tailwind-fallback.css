@@ -5,84 +5,82 @@
 
 /* Base reset — mirrors Tailwind Preflight so removing the CDN
    does not change default browser margins / box-sizing. */
-*,
-*::before,
-*::after {
+*,*::before,*::after{
   box-sizing: border-box;
   border-width: 0;
   border-style: solid;
   border-color: currentColor;
 }
-html {
+html{
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
   tab-size: 4;
 }
-body {
+body{
   margin: 0;
   line-height: inherit;
 }
-h1, h2, h3, h4, h5, h6 {
+h1,h2,h3,h4,h5,h6{
   font-size: inherit;
   font-weight: inherit;
 }
-a {
+a{
   color: inherit;
   text-decoration: inherit;
 }
-ul, ol {
+ul,ol{
   list-style: none;
   margin: 0;
   padding: 0;
 }
-blockquote, dl, dd, hr, figure, p, pre {
+blockquote,dl,dd,hr,figure,p,pre{
   margin: 0;
 }
-button, input, optgroup, select, textarea {
+button,input,optgroup,select,textarea{
   font: inherit;
   color: inherit;
 }
-img, video {
+img,video{
   max-width: 100%;
   height: auto;
 }
-hr {
+hr{
   height: 0;
   color: inherit;
   border-top-width: 1px;
 }
 
-.flex { display: flex; }
-.flex-wrap { flex-wrap: wrap; }
-.items-center { align-items: center; }
-.justify-center { justify-content: center; }
-.gap-2 { gap: 0.5rem; }
-.gap-3 { gap: 0.75rem; }
+.flex{ display: flex; }
+.flex-wrap{ flex-wrap: wrap; }
+.items-center{ align-items: center; }
+.justify-center{ justify-content: center; }
 
-.relative { position: relative; }
-.absolute { position: absolute; }
-.z-10 { z-index: 10; }
-.pointer-events-none { pointer-events: none; }
+.gap-3{ gap: 0.75rem; }
 
-.mx-auto { margin-left: auto; margin-right: auto; }
-.mb-6 { margin-bottom: 1.5rem; }
+.relative{ position: relative; }
+.absolute{ position: absolute; }
+.z-10{ z-index: 10; }
+.pointer-events-none{ pointer-events: none; }
 
-.px-4 { padding-left: 1rem; padding-right: 1rem; }
-@media (min-width: 640px) { .sm\:px-6 { padding-left: 1.5rem; padding-right: 1.5rem; } }
-@media (min-width: 1024px) { .lg\:px-8 { padding-left: 2rem; padding-right: 2rem; } }
+.mx-auto{ margin-left: auto; margin-right: auto; }
+.mb-6{ margin-bottom: 1.5rem; }
 
-.max-w-5xl { max-width: 64rem; }
-.max-w-7xl { max-width: 80rem; }
+.px-4{ padding-left: 1rem; padding-right: 1rem; }
+@media (min-width: 640px) { .sm\:px-6{ padding-left: 1.5rem; padding-right: 1.5rem; } }
+@media (min-width: 1024px) { .lg\:px-8{ padding-left: 2rem; padding-right: 2rem; } }
 
-.min-h-screen { min-height: 100vh; }
-.text-center { text-align: center; }
-.overflow-hidden { overflow: hidden; }
-.overflow-x-hidden { overflow-x: hidden; }
+.max-w-5xl{ max-width: 64rem; }
+.max-w-7xl{ max-width: 80rem; }
 
-.text-2xl { font-size: 1.5rem; line-height: 2rem; }
-.font-extrabold { font-weight: 800; }
-.tracking-tight { letter-spacing: -0.025em; }
-.antialiased {
+.min-h-screen{ min-height: 100vh; }
+.text-center{ text-align: center; }
+.overflow-hidden{ overflow: hidden; }
+.overflow-x-hidden{ overflow-x: hidden; }
+
+.text-2xl{ font-size: 1.5rem; line-height: 2rem; }
+.font-extrabold{ font-weight: 800; }
+.tracking-tight{ letter-spacing: -0.025em; }
+.antialiased{
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
