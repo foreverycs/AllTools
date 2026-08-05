@@ -198,6 +198,12 @@ def with_nav(
     ctx: dict = dict(context or {})
     ctx.setdefault("nav_items", nav_categories())
 
+    # Donation block shown at the bottom of tool pages (enabled + QR set).
+    if "donation" not in ctx:
+        from storage.donation import donation_public
+
+        ctx["donation"] = donation_public()
+
     tool = ctx.get("tool")
     if not isinstance(tool, dict):
         tool = {}

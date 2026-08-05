@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import quote
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from admin.auth import (
@@ -1000,6 +1000,91 @@ def _bust_public_and_health() -> None:
     global _health_cache, _health_cache_ts
     _health_cache = {}
     _health_cache_ts = 0.0
+
+
+@router.get("/donation", response_class=HTMLResponse)
+async def donation_page(request: Request):
+    """管理打赏功能：启用开关、文案与二维码图片。"""
+    redir = require_admin(request)
+    if redir:
+        return redir
+    from storage.donation import get_config
+
+    return _tpl(
+        request,
+        "admin/donation.html",
+        active="donation",
+        cfg=get_config(),
+        flash=request.query_params.get("msg"),
+    )
+
+
+@router.post("/donation")
+async def donation_save(request: Request):
+    """保存打赏设置（可同时更换二维码图片 / 删除二维码）。"""
+    redir = require_admin(request)
+    if redir:
+        return redir
+
+    form = await request.form()
+    if not verify_csrf(request, str(form.get("csrf_token") or "")):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
+
+    from storage.donation import (
+        get_config,
+        remove_qr_image,
+        save_config,
+        save_qr_image,
+    )
+
+    enabled = str(form.get("enabled") or "").strip().lower() in (
+        "1",
+        "true",
+        "on",
+        "yes",
+        "enabled",
+    )
+    title = str(form.get("title") or "").strip()
+    subtitle = str(form.get("subtitle") or "").strip()
+
+    msgs: list[str] = []
+
+    # 上传新二维码（如有）。
+    qr_file: UploadFile = form.get("qr")
+    if qr_file is not None and getattr(qr_file, "filename", ""):
+        data = await qr_file.read()
+        if not data:
+            msgs.append("未选择有效图片")
+        else:
+            err = save_qr_image(data)
+            if err:
+                msgs.append(err)
+            else:
+                msgs.append("二维码已更新")
+
+    # 显式删除二维码（与上传互斥，删除优先）。
+    if str(form.get("remove_qr") or "").strip().lower() in (
+        "1",
+        "true",
+        "on",
+        "yes",
+    ):
+        if get_config().get("has_qr"):
+            remove_qr_image()
+            msgs.append("二维码已删除")
+        else:
+            msgs.append("当前无二维码可删除")
+
+    save_config(enabled=enabled, title=title, subtitle=subtitle)
+    msgs.append("已开启打赏" if enabled else "已关闭打赏")
+
+    global _health_cache, _health_cache_ts
+    _health_cache = {}
+    _health_cache_ts = 0.0
+
+    return _redirect(
+        _admin_url("/admin/donation", request) + "?msg=" + quote("；".join(msgs))
+    )
 
 
 @router.get("/api/stats")

@@ -47,6 +47,13 @@ def _import_root_path() -> str:
     return _normalize_root_path(os.environ.get("ROOT_PATH") or "")
 
 
+def _donation_public() -> dict:
+    """Public donation block for page footers (disabled ⇒ {enabled: False})."""
+    from storage.donation import donation_public
+
+    return donation_public()
+
+
 def _page_ctx(
     *,
     active_nav: str = "home",
@@ -73,6 +80,8 @@ def _page_ctx(
         "express_enabled": any(
             str(t.get("slug")) == "express" for t in snap["featured"]
         ),
+        # Donation block (bottom of page) — enabled + QR set by admin.
+        "donation": _donation_public(),
     }
     if extra:
         ctx.update(extra)
@@ -289,6 +298,21 @@ async def sitemap_xml(request: Request):
     from core.seo import sitemap_response
 
     return sitemap_response(request)
+
+
+@app.get("/donation/qr", include_in_schema=False)
+async def donation_qr(request: Request):
+    """Serve the admin-uploaded donation QR code (image/png)."""
+    from storage.donation import qr_media_type, qr_path
+
+    path = qr_path()
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Donation QR not set")
+    return FileResponse(
+        path,
+        media_type=qr_media_type(),
+        headers={"Cache-Control": "private, max-age=600"},
+    )
 
 
 @app.get("/api/tools")

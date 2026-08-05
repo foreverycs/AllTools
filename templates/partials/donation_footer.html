@@ -1,0 +1,21 @@
+{# 打赏模块 — 前台页面底部展示（由管理后台控制开关与二维码）。
+   Expects: donation (dict from donation_public, may be {enabled: False})
+   Only renders when enabled + a QR is set. #}
+{% if donation is defined and donation.enabled and donation.qr_url %}
+<section class="donation-block" aria-label="打赏支持">
+  <div class="donation-card">
+    <div class="donation-head">
+      <i class="donation-heart" aria-hidden="true">♥</i>
+      <span>打赏支持</span>
+    </div>
+    {% if donation.title %}
+    <div class="donation-title">{{ donation.title }}</div>
+    {% endif %}
+    {% if donation.subtitle %}
+    <div class="donation-subtitle">{{ donation.subtitle }}</div>
+    {% endif %}
+    <img class="donation-qr" src="{{ url_path(donation.qr_url) }}" alt="{{ donation.title or '打赏二维码' }}" loading="lazy" />
+    <div class="donation-hint">长按或扫码，支持一下</div>
+  </div>
+</section>
+{% endif %}

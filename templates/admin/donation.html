@@ -1,0 +1,79 @@
+{% extends "admin/base.html" %}
+{% block title %}打赏设置{% endblock %}
+{% block content %}
+<div class="admin-header">
+  <div>
+    <h1>打赏设置</h1>
+    <p>管理前台页面底部的打赏模块：开关、文案与收款二维码</p>
+  </div>
+</div>
+
+{% if flash %}
+<div class="admin-flash">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+  {{ flash }}
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_path('/admin/donation') }}" enctype="multipart/form-data">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+
+  <div class="admin-panel" style="margin-bottom:18px">
+    <div class="admin-panel-h">基础设置</div>
+    <div class="admin-panel-b">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:#334155;cursor:pointer;margin-bottom:16px">
+        <input type="checkbox" name="enabled" value="1" {% if cfg.enabled %}checked{% endif %} style="width:16px;height:16px;accent-color:#6366f1" />
+        启用打赏模块（需同时上传二维码）
+      </label>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:720px">
+        <div class="admin-field">
+          <label for="don-title">标题</label>
+          <input id="don-title" type="text" name="title" value="{{ cfg.title }}" maxlength="60" placeholder="赞助支持" />
+        </div>
+        <div class="admin-field">
+          <label for="don-subtitle">副标题（说明文案）</label>
+          <input id="don-subtitle" type="text" name="subtitle" value="{{ cfg.subtitle }}" maxlength="200" placeholder="如果工具集帮到了你，欢迎打赏支持一下" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="admin-panel" style="margin-bottom:18px">
+    <div class="admin-panel-h">收款二维码</div>
+    <div class="admin-panel-b" style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+      <div>
+        <div class="admin-field" style="margin-bottom:10px">
+          <label for="don-qr">上传新二维码（PNG / JPEG）</label>
+          <input id="don-qr" type="file" name="qr" accept="image/png,image/jpeg,image/gif,image/webp" />
+        </div>
+        {% if cfg.has_qr %}
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:#b91c1c;cursor:pointer">
+          <input type="checkbox" name="remove_qr" value="1" style="width:16px;height:16px;accent-color:#dc2626" />
+          删除当前二维码（不再展示）
+        </label>
+        {% else %}
+        <p style="font-size:12px;color:var(--muted-2)">尚未上传二维码，前台不会展示打赏模块。</p>
+        {% endif %}
+      </div>
+
+      {% if cfg.has_qr %}
+      <div style="text-align:center">
+        <div style="width:160px;height:160px;padding:10px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-sm)">
+          <img src="{{ url_path('/donation/qr') }}" alt="收款二维码" style="width:100%;height:100%;object-fit:contain;display:block" />
+        </div>
+        <p style="font-size:12px;color:var(--muted-2);margin-top:8px">当前生效的二维码</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="admin-actions">
+    <button class="admin-btn admin-btn-primary" type="submit">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      保存设置
+    </button>
+    <a class="admin-btn" href="{{ url_path('/') }}">查看前台</a>
+  </div>
+</form>
+{% endblock %}

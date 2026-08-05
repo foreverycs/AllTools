@@ -14,6 +14,7 @@
   <link rel="prefetch" href="{{ url_path('/admin/express') }}" as="document" />
   <link rel="prefetch" href="{{ url_path('/admin/tools') }}" as="document" />
   <link rel="prefetch" href="{{ url_path('/admin/categories') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/donation') }}" as="document" />
   <link rel="prefetch" href="{{ url_path('/admin/system') }}" as="document" />
 </head>
 <body class="admin-body">
@@ -66,6 +67,12 @@
           <rect x="3" y="3" width="7" height="7" rx="1"/><path d="M19 3h-4v7h4V3z"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M19 14h-4v7h4v-7z"/>
         </svg>
         分类管理
+      </a>
+      <a href="{{ url_path('/admin/donation') }}" class="{% if active == 'donation' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+        </svg>
+        打赏设置
       </a>
       <a href="{{ url_path('/admin/system') }}" class="{% if active == 'system' %}active{% endif %}">
         <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

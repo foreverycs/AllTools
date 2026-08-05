@@ -999,3 +999,65 @@ html[data-theme="dark"] .tool-card {
     padding: 14px 16px;
   }
 }
+
+/* --- Donation (打赏) block shown in page footers --- */
+.donation-block {
+  display: flex;
+  justify-content: center;
+  padding: 26px 16px 8px;
+}
+.donation-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 300px;
+  width: 100%;
+  padding: 20px 24px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(217, 119, 6, 0.10), rgba(217, 119, 6, 0.02));
+  border: 1px solid rgba(217, 119, 6, 0.18);
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+.donation-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--amber, #d97706);
+}
+.donation-heart {
+  font-style: normal;
+  color: #ef4444;
+  font-size: 14px;
+}
+.donation-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink-2, #1e293b);
+}
+.donation-subtitle {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted-2);
+}
+.donation-qr {
+  width: 152px;
+  height: 152px;
+  margin-top: 8px;
+  padding: 10px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  object-fit: contain;
+}
+.donation-hint {
+  font-size: 11.5px;
+  color: var(--muted-3, #94a3b8);
+}
+
