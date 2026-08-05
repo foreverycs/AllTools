@@ -1,0 +1,108 @@
+"""Shared conversion HTTP helpers: temp workspace, error mapping, archive."""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import shutil
+import tempfile
+from typing import Any, Dict, Optional
+
+from fastapi import BackgroundTasks, HTTPException
+
+from core.errors import ToolkitError
+from storage import archive_conversion
+
+
+class TempWorkspace:
+    """Create a temp dir, clean on failure, or schedule cleanup after response."""
+
+    __slots__ = ("prefix", "base_dir", "path")
+
+    def __init__(self, prefix: str = "toolkit_", base_dir: Optional[str] = None):
+        self.prefix = prefix
+        self.base_dir = base_dir
+        self.path: Optional[str] = None
+
+    def create(self) -> str:
+        if self.base_dir:
+            self.path = tempfile.mkdtemp(prefix=self.prefix, dir=self.base_dir)
+        else:
+            self.path = tempfile.mkdtemp(prefix=self.prefix)
+        return self.path
+
+    def join(self, *parts: str) -> str:
+        if not self.path:
+            raise RuntimeError("TempWorkspace not created")
+        return os.path.join(self.path, *parts)
+
+    def cleanup_now(self) -> None:
+        if self.path:
+            shutil.rmtree(self.path, ignore_errors=True)
+            self.path = None
+
+    def schedule_cleanup(self, background_tasks: BackgroundTasks) -> None:
+        if self.path:
+            background_tasks.add_task(shutil.rmtree, self.path, ignore_errors=True)
+
+
+def map_conversion_error(
+    exc: BaseException,
+    *,
+    label: str = "Conversion failed",
+    name_prefix: Optional[str] = None,
+) -> HTTPException:
+    """Map conversion-layer exceptions to HTTPException.
+
+    ``ToolkitError`` subclasses (including Word→PDF failures) keep their
+    status codes. Prefer letting the global handler catch ToolkitError when
+    possible; this helper remains for route try/except that must clean temp dirs.
+    """
+    if isinstance(exc, HTTPException):
+        return exc
+
+    if isinstance(exc, ToolkitError):
+        status = exc.status_code
+        detail = exc.detail
+    elif isinstance(exc, ValueError):
+        status = 400
+        detail = str(exc)
+    else:
+        status = 500
+        detail = f"{label}: {exc}"
+
+    if name_prefix:
+        detail = f"{name_prefix}: {detail}"
+    return HTTPException(status_code=status, detail=detail)
+
+
+def job_urls(job_id: str) -> dict:
+    """Return poll / download URLs for an async job."""
+    return {
+        "poll_url": f"/api/jobs/{job_id}",
+        "download_url": f"/api/jobs/{job_id}/download",
+    }
+
+
+async def archive_input(
+    *,
+    tool: str,
+    original_name: str,
+    input_path: str,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Archive upload on a worker thread (never raises to the caller)."""
+    await asyncio.to_thread(
+        archive_conversion,
+        tool=tool,
+        original_name=original_name,
+        input_path=input_path,
+        extra=extra,
+    )
+
+
+__all__ = [
+    "TempWorkspace",
+    "map_conversion_error",
+    "archive_input",
+]

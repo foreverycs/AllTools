@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="antialiased">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <title>工具集 · Toolkit</title>
+  {%- set seo_title = '工具集 · Toolkit' -%}
+  {%- set seo_description = '在线工具平台 — PDF/Word 转换、发票合并、编码工具，本地部署，即开即用' -%}
+  {%- set seo_path = '/' -%}
+  {%- set seo_type = 'website' -%}
+  {%- set _ld_website = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    'name': '工具集',
+    'alternateName': 'Toolkit Suite',
+    'url': seo_url('/'),
+    'description': '在线工具平台 — PDF/Word 转换、发票合并、编码工具，本地部署，即开即用',
+    'inLanguage': 'zh-CN'
+  } -%}
+  {%- set _ld_items = [] -%}
+  {%- for t in tools_catalog -%}
+  {%- set _ = _ld_items.append({
+    '@type': 'ListItem',
+    'position': loop.index,
+    'name': t.name,
+    'url': seo_url(t.route)
+  }) -%}
+  {%- endfor -%}
+  {%- set _ld_item_list = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    'name': '工具集 · 全部工具',
+    'itemListElement': _ld_items
+  } -%}
+  {%- set seo_jsonld = [_ld_website, _ld_item_list] -%}
+  {% include "partials/seo_head.html" %}
+  <link rel="stylesheet" href="{{ static_url('/static/css/phosphor/regular.css') }}" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="{{ static_url('/static/css/phosphor/regular.css') }}"></noscript>
+  <link rel="stylesheet" href="{{ static_url('/static/css/tailwind-fallback.css') }}" />
+  {% include "partials/theme_boot.html" %}
+  {% include "partials/pwa_head.html" %}
+  {% include "partials/root_script.html" %}
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/home.css') }}" />
+  <script src="{{ static_url('/static/js/toolkit-ux.js') }}" defer></script>
+  <script src="{{ static_url('/static/js/pill-nav.js') }}" defer></script>
+  <script src="{{ static_url('/static/js/sound-effects.js') }}" defer></script>
+</head>
+<body class="page-home antialiased overflow-x-hidden">
+
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  {% include "partials/pill_nav.html" %}
+
+  <main class="min-h-screen">
+    <!-- ===== TOOLS SECTION (primary hero) ===== -->
+    <section id="tools-section">
+      <div id="tools-shell">
+        <div id="tools-head">
+          <canvas id="hero-flow-canvas" aria-hidden="true"></canvas>
+          <div class="hero-demo-copy">
+            <div id="hero-demo-kicker"><i aria-hidden="true">✦</i> {{ tool_count }} 个免费在线工具</div>
+            <h1 id="hero-demo-heading"><span class="hero-main">日常办公，</span><span class="grad">一步到位</span></h1>
+            <div class="hero-demo-desc" id="hero-demo-description">PDF ↔ Word、发票合并、编码调试与文件快递。浏览器直达、无需安装客户端，文件在服务端安全处理，可私有化部署。</div>
+          </div>
+          <div id="tools-meta" aria-label="工具库概览">
+            <div class="tools-stat"><b id="total-tools-count">{{ tool_count }}</b><span id="hero-stat-total">免费工具</span><small id="hero-stat-total-note">即开即用</small></div>
+            <div class="tools-stat"><b>{{ module_count }}</b><span>业务模块</span><small>按栏目归类</small></div>
+            <div class="tools-stat"><b>{{ featured_count }}</b><span>特色功能</span><small>独立入口</small></div>
+            <div class="tools-stat tools-stat-live"><b><i aria-hidden="true"></i>在线</b><span>服务状态</span><small>随时可用</small></div>
+          </div>
+        </div>
+
+        {% if express_enabled %}
+        <!-- ===== 文件快递 Spotlight (特色功能横幅) ===== -->
+        <section class="express-spotlight" aria-label="文件快递">
+          <div class="es-card">
+            <div class="es-glow" aria-hidden="true"></div>
+            <div class="es-icon" aria-hidden="true">📦</div>
+            <div class="es-body">
+              <div class="es-kicker">特色功能 · 文件快递</div>
+              <h2>临时传文件，无需账号</h2>
+              <p>上传生成 6 位取件码，对方输入即可下载；可设有效期与下载次数，文件到期自动过期。</p>
+              <div class="es-actions">
+                <a class="es-btn-primary" href="{{ url_path('/tools/express') }}">
+                  <i aria-hidden="true">✉</i>寄送文件
+                </a>
+                <form class="es-pickup" id="es-pickup" action="{{ url_path('/tools/express') }}" method="get">
+                  <label for="es-code" class="es-pickup-label">取件码</label>
+                  <input id="es-code" name="code" inputmode="numeric" maxlength="6" autocomplete="off"
+                         placeholder="6 位取件码" aria-label="输入取件码" />
+                  <button type="submit" class="es-btn-ghost">取件</button>
+                </form>
+              </div>
+            </div>
+            <div class="es-steps" aria-hidden="true">
+              <span>① 上传得码</span><i>→</i><span>② 分享取件码</span><i>→</i><span>③ 对方下载</span>
+            </div>
+          </div>
+        </section>
+        {% endif %}
+      </div>
+
+      <div id="tools-catalog">
+        <div id="filter-wrap">
+          <div id="filter-strip">
+            <div id="filter-tabs" role="tablist">
+              <button class="ft active" data-filter="" data-label="全部工具" type="button" role="tab"><i aria-hidden="true">◇</i><span>全部工具</span><span class="ft-count">{{ tool_count }}</span></button>
+              {% for item in nav_items %}
+              <button class="ft" id="col-{{ item.id }}" data-filter="{{ item.id }}" data-label="{{ item.name }}" type="button" role="tab"><i aria-hidden="true">{{ item.icon }}</i><span>{{ item.name }}</span><span class="ft-count">{{ item.tool_count }}</span></button>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div id="catalog-main">
+          <div id="tools-search-wrap">
+            <div id="tools-search-wrapper" role="search">
+              <svg class="ph-magnifying-glass" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input type="text" id="search-input" placeholder="搜索工具、格式或操作…" autocomplete="off" aria-label="搜索工具">
+              <span id="tools-search-scope" aria-live="polite"><svg class="ph-magnifying-glass" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span id="tools-search-scope-label">在&nbsp;<b>全部工具</b> 中</span></span>
+              <button id="tools-search-clear" type="button" aria-label="清空搜索">✕</button>
+              <button id="tools-search-btn" type="button" aria-label="搜索"><svg class="ph-magnifying-glass" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+            </div>
+          </div>
+          <div id="search-overlay"><div class="so-inner"><div class="so-spinner"></div><div class="so-text">搜索中…</div></div></div>
+
+          <div id="tools-grid">
+            {% for t in tools_catalog %}
+            <a href="{{ url_path(t.route) }}" class="tc" data-cat="{{ t.category }}" data-accent="{{ t.accent or 'indigo' }}">
+              <div class="tc-i"><i aria-hidden="true">{{ t.icon }}</i></div>
+              <div><h4>{{ t.name }}</h4><p>{{ t.description }}</p></div>
+            </a>
+            {% endfor %}
+          </div>
+
+          <div id="no-results" hidden>
+            <span class="nr-ic" aria-hidden="true">🔍</span>
+            <div class="nr-title">没有匹配的工具</div>
+            <div class="nr-hint">换个关键词，或点击上方栏目切换</div>
+          </div>
+        </div>
+      </div>
+      <button id="catalog-back-to-top" type="button" aria-label="回到顶部" title="回到顶部" tabindex="-1">↑</button>
+    </section>
+
+    <!-- ===== CTA SECTION ===== -->
+    <section id="cta-section" class="relative overflow-hidden" style="padding:48px 0 96px">
+      <div class="absolute pointer-events-none" style="top:6%;left:10%;width:440px;height:440px;background:radial-gradient(circle,rgba(99,102,241,.16),transparent 65%);filter:blur(60px)"></div>
+      <div class="absolute pointer-events-none" style="bottom:4%;right:8%;width:400px;height:400px;background:radial-gradient(circle,rgba(34,211,238,.12),transparent 65%);filter:blur(60px)"></div>
+      <div class="max-w-5xl mx-auto px-4 relative z-10 text-center">
+        <div class="cta-kicker"><span class="cta-kicker-dot" aria-hidden="true"></span>LOCAL-FIRST · 数据不出域 · 完全免费</div>
+        <h2 class="cta-heading">打开即用，<span class="grad">一站搞定</span></h2>
+        <p class="cta-sub">本地部署优先的办公与开发工具台 —— PDF↔Word 转换、发票合并(OCR)、编码调试与取件码文件快递。无需注册，浏览器直达。</p>
+
+        <div class="cta-term" role="img" aria-label="终端演示：本地处理、无需账号、能力清单">
+          <div class="cta-term-bar">
+            <span class="cta-term-dot" style="--c:#ff5f57"></span>
+            <span class="cta-term-dot" style="--c:#febc2e"></span>
+            <span class="cta-term-dot" style="--c:#28c840"></span>
+            <span class="cta-term-title">toolkit — 本机会话</span>
+            <span class="cta-term-tag">localhost</span>
+          </div>
+          <div class="cta-term-body">
+            <p><span class="cta-prompt" aria-hidden="true">❯</span> 文件在哪里处理？</p>
+            <p class="cta-ok">✓ 全部在你的服务器内完成，数据不出域</p>
+            <p><span class="cta-prompt" aria-hidden="true">❯</span> 需要注册账号吗？</p>
+            <p class="cta-ok">✓ 不需要，打开即用，可私有化部署</p>
+            <p><span class="cta-prompt" aria-hidden="true">❯</span> 能处理哪些任务？</p>
+            <p class="cta-ok">✓ PDF↔Word · 发票合并(OCR) · Base64 / JSON / Unicode · 取件码快递</p>
+            <p class="cta-cursor" aria-hidden="true">▊</p>
+          </div>
+        </div>
+
+        <div id="cta-tools" class="flex flex-wrap justify-center gap-3"></div>
+        <a href="{{ url_path('/docs') }}" class="cta-more-link">了解更多 —</a>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer style="border-top:1px solid rgba(217,119,6,.15);color:#d4c5a9;padding:64px 0 40px;background:transparent">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="footer-grid">
+        <div>
+          <a href="#top" class="flex items-center gap-3 mb-6" style="text-decoration:none;width:fit-content;cursor:pointer;transition:opacity .2s" onmouseenter="this.style.opacity='.8'" onmouseleave="this.style.opacity='1'" aria-label="回到顶部">
+            <div style="width:40px;height:40px;background:linear-gradient(135deg,#d97706,#f59e0b);border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;border:none;box-shadow:0 4px 12px rgba(217,119,6,.35)">AT</div>
+            <span class="font-extrabold text-2xl tracking-tight" style="color:#f5f0e8">工具集.</span>
+          </a>
+          <p style="font-size:14px;font-weight:500;line-height:1.7;color:#b8a88a;margin-bottom:20px">你的本地部署优先在线工具箱。文档转换、发票合并、财务大写与编解码一站完成——文件在服务端处理，数据不出域。</p>
+          <p class="footer-maker">
+            <i class="ph ph-heart-straight" aria-hidden="true"></i>
+            <span>用爱制作 · 本地部署优先</span>
+          </p>
+        </div>
+        <div class="footer-links">
+          <div>
+            <h3 style="color:#d97706;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.15em;margin-bottom:16px">热门工具</h3>
+            <ul id="footer-popular-tools" style="list-style:none;padding:0;margin:0;font-size:14px">
+              {% for t in tools_catalog[:5] %}
+              <li><a href="{{ url_path(t.route) }}" class="bw-link">{{ t.name }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div>
+            <h3 style="color:#d97706;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.15em;margin-bottom:16px">分类</h3>
+            <ul style="list-style:none;padding:0;margin:0;font-size:14px">
+              {% for item in nav_items %}
+              <li><a href="{{ url_path(item.route) }}" class="bw-link">{{ item.name }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div>
+            <h3 style="color:#d97706;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.15em;margin-bottom:16px">支持与法律</h3>
+            <ul style="list-style:none;padding:0;margin:0;font-size:14px">
+              <li><a href="{{ url_path('/health') }}" class="bw-link">服务状态</a></li>
+              <li><a href="{{ url_path('/api/tools') }}" class="bw-link">工具目录 API</a></li>
+              <li><a href="{{ url_path('/docs') }}" class="bw-link">接口文档</a></li>
+              <li><a href="{{ url_path('/admin') }}" class="bw-link">管理后台</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Community / share -->
+      <div class="footer-community">
+        <div class="footer-fmhy-note">
+          <i class="ph ph-seal-check" aria-hidden="true"></i>
+          <p>数据不离开你的环境，支持 <a href="{{ url_path('/docs') }}" target="_blank" rel="noopener">REST API<i class="ph ph-arrow-up-right" aria-hidden="true"></i></a> 集成，便于与你的系统自动化对接。</p>
+        </div>
+        <div class="footer-share-cta">
+          <p class="footer-share-copy">觉得工具集好用？分享给可能需要它的人。</p>
+          <div class="footer-share-action">
+            <button class="footer-share-btn" id="footer-share-btn" type="button">
+              <i class="ph ph-share-network" aria-hidden="true"></i>
+              <span>分享工具集</span>
+            </button>
+            <span class="footer-share-status" id="footer-share-status" role="status" aria-live="polite"></span>
+          </div>
+        </div>
+        <span id="footer-share-title" hidden>工具集 · 免费在线工具</span>
+        <span id="footer-share-text" hidden>浏览器端工具集，支持 PDF/Word 转换、发票合并、编码调试等日常任务。</span>
+        <span id="footer-share-copied" hidden>链接已复制</span>
+      </div>
+
+      <div style="margin-top:32px;padding-top:24px;border-top:1px solid rgba(217,119,6,.12);display:flex;flex-direction:column;align-items:center;gap:12px">
+        <p style="font-size:13px;font-weight:500;color:#9a8a6e">© 2026 工具集 · 本地部署优先</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+  /* ============================================================
+     ToolKnit Homepage v3 — Interactions (ported)
+     ============================================================ */
+  document.addEventListener('DOMContentLoaded', function () {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.ft[data-filter]'));
+    var pnCats = Array.prototype.slice.call(document.querySelectorAll('.pn-cat[data-pn]'));
+    var pnIndicator = document.getElementById('pn-indicator');
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.tc[data-cat]'));
+    var searchInput = document.getElementById('search-input');
+    var noResults = document.getElementById('no-results');
+    var scopeLabel = document.getElementById('tools-search-scope-label');
+    var currentCat = '';
+
+    function moveIndicator(btn) {
+      if (!pnIndicator || !btn) return;
+      var cats = btn.parentElement;
+      if (!cats) return;
+      var cr = cats.getBoundingClientRect();
+      var br = btn.getBoundingClientRect();
+      pnIndicator.classList.add('show');
+      pnIndicator.style.width = br.width + 'px';
+      pnIndicator.style.left = (br.left - cr.left) + 'px';
+    }
+    function scheduleReposition() {
+      var act = document.querySelector('.pn-cat.active');
+      if (!act) return;
+      moveIndicator(act);
+    }
+    /* Category jump: land just below the express spotlight while keeping the
+       whole es-card fully visible above. Falls back to the catalog top when
+       the express spotlight is not rendered. */
+    function jumpToCatalog() {
+      var target = document.querySelector('.express-spotlight') || document.getElementById('tools-catalog');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    window.addEventListener('load', scheduleReposition);
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(scheduleReposition);
+    }
+    setTimeout(scheduleReposition, 300);
+    function setFilter(cat) {
+      currentCat = cat || '';
+      pnCats.forEach(function (c) { var on = (c.getAttribute('data-pn')||'') === currentCat; c.classList.toggle('active', on); if (on) moveIndicator(c); });
+      tabs.forEach(function (t) { var on = (t.getAttribute('data-filter')||'') === currentCat; t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); });
+      var label = '全部工具';
+      tabs.forEach(function (t) { if ((t.getAttribute('data-filter')||'')===currentCat) label = t.getAttribute('data-label'); });
+      if (scopeLabel) scopeLabel.innerHTML = '在&nbsp;<b>' + label + '</b> 中';
+      applyFilter();
+    }
+    function applyFilter() {
+      var q = (searchInput && searchInput.value || '').trim().toLowerCase();
+      var shown = 0;
+      cards.forEach(function (c) {
+        var okCat = !currentCat || c.getAttribute('data-cat') === currentCat;
+        var hay = (c.textContent || '').toLowerCase();
+        var okQ = !q || hay.indexOf(q) !== -1;
+        var show = okCat && okQ;
+        c.classList.toggle('tc-hide', !show);
+        if (show) shown++;
+      });
+      if (noResults) noResults.hidden = shown !== 0;
+    }
+    tabs.forEach(function (t) { t.addEventListener('click', function () { setFilter(t.getAttribute('data-filter')); }); });
+    pnCats.forEach(function (c) { c.addEventListener('click', function () { setFilter(c.getAttribute('data-pn')); jumpToCatalog(); }); });
+    if (searchInput) searchInput.addEventListener('input', applyFilter);
+    document.getElementById('tools-search-clear').addEventListener('click', function () { searchInput.value = ''; applyFilter(); searchInput.focus(); });
+    document.getElementById('tools-search-btn').addEventListener('click', function () { applyFilter(); });
+
+    /* Tap ripple on tabs */
+    tabs.forEach(function (t) {
+      t.addEventListener('pointerdown', function (e) { var r = t.getBoundingClientRect(); t.style.setProperty('--rx', (e.clientX - r.left) + 'px'); t.style.setProperty('--ry', (e.clientY - r.top) + 'px'); });
+    });
+
+    /* Mouse-follow glow */
+    cards.forEach(function (c) {
+      c.addEventListener('pointermove', function (e) { var r = c.getBoundingClientRect(); c.style.setProperty('--mx', (e.clientX - r.left) + 'px'); c.style.setProperty('--my', (e.clientY - r.top) + 'px'); });
+    });
+
+    /* Mobile sheet category items → filter grid (open/close handled by pill-nav.js) */
+    document.querySelectorAll('.ms-item[data-ms]').forEach(function (a) { a.addEventListener('click', function (e) { e.preventDefault(); setFilter(a.getAttribute('data-ms')); jumpToCatalog(); }); });
+
+    /* Back to top */
+    var btt = document.getElementById('catalog-back-to-top');
+    window.addEventListener('scroll', function () { var y = window.scrollY || document.documentElement.scrollTop; btt.classList.toggle('is-visible', y > 500); });
+    btt.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+
+    /* 文件快递 Spotlight —— 取件码校验，非法则不跳转 */
+    var esPickup = document.getElementById('es-pickup');
+    var esCode = document.getElementById('es-code');
+    if (esPickup && esCode) {
+      esPickup.addEventListener('submit', function (e) {
+        var code = esCode.value.replace(/\s+/g, '');
+        if (!/^\d{6}$/.test(code)) {
+          e.preventDefault();
+          esCode.focus();
+          esCode.style.borderColor = 'var(--danger-ink)';
+          setTimeout(function () { esCode.style.borderColor = ''; }, 1200);
+          return;
+        }
+        esCode.value = code;
+      });
+    }
+
+    /* Hero flow canvas (subtle particle network) */
+    var cv = document.getElementById('hero-flow-canvas');
+    if (cv && cv.getContext) {
+      var ctx = cv.getContext('2d');
+      var pts = [];
+      for (var i = 0; i < 36; i++) pts.push({ x: Math.random(), y: Math.random(), vx: (Math.random()-.5)*0.0012, vy: (Math.random()-.5)*0.0012, r: Math.random()*1.5+0.5 });
+      function resize() { var r = document.getElementById('tools-head').getBoundingClientRect(); cv.width = r.width; cv.height = r.height; }
+      resize(); window.addEventListener('resize', resize);
+      (function flow() {
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        ctx.strokeStyle = 'rgba(99,102,241,.28)';
+        ctx.fillStyle = 'rgba(129,140,248,.6)';
+        for (var i = 0; i < pts.length; i++) {
+          var p = pts[i];
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < 0 || p.x > 1) p.vx *= -1;
+          if (p.y < 0 || p.y > 1) p.vy *= -1;
+          ctx.beginPath(); ctx.arc(p.x*cv.width, p.y*cv.height, p.r, 0, 7); ctx.fill();
+        }
+        for (var i = 0; i < pts.length; i++) for (var j = i+1; j < pts.length; j++) {
+          var a = pts[i], b = pts[j];
+          var dx = (a.x-b.x)*cv.width, dy = (a.y-b.y)*cv.height;
+          var d = Math.sqrt(dx*dx+dy*dy);
+          if (d < 150) { ctx.globalAlpha = (1 - d/150) * 0.5; ctx.beginPath(); ctx.moveTo(a.x*cv.width, a.y*cv.height); ctx.lineTo(b.x*cv.width, b.y*cv.height); ctx.stroke(); }
+        }
+        ctx.globalAlpha = 1;
+        requestAnimationFrame(flow);
+      })();
+    }
+
+    /* CTA tools (quick links) */
+    var cta = document.getElementById('cta-tools');
+    if (cta) {
+      var ctas = Array.prototype.slice.call(document.querySelectorAll('.tc[data-cat]')).slice(0, 4);
+      ctas.forEach(function (c) {
+        var a = document.createElement('a');
+        a.href = c.getAttribute('href');
+        a.textContent = c.querySelector('h4') ? c.querySelector('h4').textContent : '';
+        a.className = 'cta-quick-link';
+        cta.appendChild(a);
+      });
+    }
+
+    /* Footer share button — copies the current URL to the clipboard */
+    var shareBtn = document.getElementById('footer-share-btn');
+    var shareStatus = document.getElementById('footer-share-status');
+    if (shareBtn) {
+      var copiedMsg = (document.getElementById('footer-share-copied') || {}).textContent || '链接已复制';
+      function showStatus(msg, err) {
+        if (!shareStatus) return;
+        shareStatus.textContent = msg;
+        shareStatus.classList.add('is-visible');
+        if (err) shareStatus.classList.add('is-error');
+        clearTimeout(showStatus._t);
+        showStatus._t = setTimeout(function () {
+          shareStatus.classList.remove('is-visible', 'is-error');
+        }, 2000);
+      }
+      shareBtn.addEventListener('click', function () {
+        // Always copy the current URL to the clipboard — no share sheet / navigation.
+        var url = location.href.split('#')[0];
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(function () {
+            showStatus(copiedMsg);
+          }).catch(function () { showStatus('复制失败', true); });
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); showStatus(copiedMsg); } catch (e2) { showStatus('复制失败', true); }
+          document.body.removeChild(ta);
+        }
+      });
+    }
+
+    /* Phosphor icons — map our emoji/names to real line icons (ToolKnit look) */
+    var catIcons = {
+      'pdf': 'ph-file-pdf',
+      'image': 'ph-image',
+      'video': 'ph-video',
+      'audio': 'ph-speaker-high',
+      'text': 'ph-text-t',
+      'office': 'ph-briefcase',
+      'document': 'ph-file-pdf',
+      'coding': 'ph-code',
+    };
+    function catIcon(id) { return catIcons[id] || 'ph-squares-four'; }
+    function toolIcon(name) {
+      var n = (name || '').toLowerCase();
+      if (/word|文档/.test(n)) return 'ph-file-doc';
+      if (/合并|发票/.test(n)) return 'ph-files';
+      if (/base64|编码|解码|code/.test(n)) return 'ph-key';
+      if (/unicode/.test(n)) return 'ph-text-t';
+      if (/markdown/.test(n)) return 'ph-markdown-logo';
+      if (/人民币|金额|大写|currency/.test(n)) return 'ph-currency-cny';
+      if (/压缩|compress/.test(n)) return 'ph-image-square';
+      if (/转换|convert/.test(n)) return 'ph-images';
+      if (/图片|pdf.*image|image.*pdf/.test(n)) return 'ph-file-pdf';
+      if (/快递|package|取件/.test(n)) return 'ph-package';
+      return 'ph-wrench';
+    }
+    document.querySelectorAll('.ft[data-filter]').forEach(function (t) {
+      var ic = t.querySelector('i'); if (ic) { ic.className = 'ph ' + catIcon(t.getAttribute('data-filter')); ic.textContent = ''; }
+    });
+    cards.forEach(function (c) {
+      var h = c.querySelector('h4'); var ic = c.querySelector('.tc-i i');
+      if (ic && h) { ic.className = 'ph ' + toolIcon(h.textContent); ic.textContent = ''; }
+    });
+
+    window.addEventListener('resize', function () { var act = document.querySelector('.pn-cat.active'); if (act) moveIndicator(act); });
+    setFilter('');
+  });
+  </script>
+</body>
+</html>

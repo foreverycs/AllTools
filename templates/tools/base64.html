@@ -1,0 +1,266 @@
+{% extends "tools/base.html" %}
+{% set page_title = "Base64 编解码" %}
+{% set page_description = "Base64 编码解码 — 文本与文件，标准 / URL-safe" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-coding") %}
+{% set back_label = "编码工具" %}
+{% set chip = "编码工具 · Base64" %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">🔑</div>
+        <div>
+          <h1>Base64 编解码</h1>
+          <p>文本即时编码 / 解码，支持标准与 URL-safe、换行折叠，也可对小文件编码。</p>
+        </div>
+      </div>
+
+      <div class="mode-tabs" role="tablist">
+        <button type="button" class="mode-tab active" data-mode="decode" role="tab">解码 Decode</button>
+        <button type="button" class="mode-tab" data-mode="encode" role="tab">编码 Encode</button>
+      </div>
+
+      <div class="opts">
+        <label class="field">字符集
+          <select id="charset">
+            <option value="utf-8" selected>UTF-8</option>
+            <option value="utf-16">UTF-16</option>
+            <option value="latin-1">Latin-1</option>
+            <option value="ascii">ASCII</option>
+          </select>
+        </label>
+        <label class="field">变体
+          <select id="variant">
+            <option value="standard" selected>Standard (+/)</option>
+            <option value="urlsafe">URL-safe (-_)</option>
+          </select>
+        </label>
+        <label class="field" id="wrapField">换行
+          <select id="wrap">
+            <option value="0" selected>不换行</option>
+            <option value="64">每 64 字符</option>
+            <option value="76">每 76 字符 (MIME)</option>
+          </select>
+        </label>
+        <label class="check" id="strictWrap">
+          <input type="checkbox" id="strict" />
+          严格校验
+        </label>
+      </div>
+
+      <div class="file-row" id="fileRow">
+        <input type="file" id="file" />
+        <span class="tips" style="margin:0">可选：上传 ≤ 5 MB 文件直接编码（优先于左侧文本）</span>
+      </div>
+
+      <div class="panes">
+        <div class="pane">
+          <div class="pane-label">
+            <span id="inputLabel">明文</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnSample">示例</button>
+              <button type="button" class="mini" id="btnClearIn">清空</button>
+            </div>
+          </div>
+          <textarea id="input" placeholder="在此输入要编码的文本…" spellcheck="false"></textarea>
+        </div>
+        <div class="pane">
+          <div class="pane-label">
+            <span id="outputLabel">Base64</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnCopy">复制</button>
+              <button type="button" class="mini" id="btnClearOut">清空</button>
+            </div>
+          </div>
+          <textarea id="output" readonly placeholder="结果将显示在这里…" spellcheck="false"></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" id="btnRun">编码</button>
+        <button type="button" class="btn btn-ghost" id="btnSwap">交换输入/输出</button>
+      </div>
+
+      <div class="meta" id="meta"></div>
+      <div class="status" id="status"></div>
+      <p class="tips">
+        提示：解码失败时请检查是否选对了变体（URL-safe 使用 <code>-_</code>）。
+        二进制内容解码后可查看 hex；文本以所选字符集解释。
+      </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const modeTabs = document.querySelectorAll('.mode-tab');
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const charset = document.getElementById('charset');
+    const variant = document.getElementById('variant');
+    const wrap = document.getElementById('wrap');
+    const strict = document.getElementById('strict');
+    const fileInput = document.getElementById('file');
+    const fileRow = document.getElementById('fileRow');
+    const wrapField = document.getElementById('wrapField');
+    const strictWrap = document.getElementById('strictWrap');
+    const btnRun = document.getElementById('btnRun');
+    const btnSwap = document.getElementById('btnSwap');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnSample = document.getElementById('btnSample');
+    const btnClearIn = document.getElementById('btnClearIn');
+    const btnClearOut = document.getElementById('btnClearOut');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+    const inputLabel = document.getElementById('inputLabel');
+    const outputLabel = document.getElementById('outputLabel');
+
+    let mode = 'encode';
+
+    const UX = window.ToolkitUX || null;
+    const TP = window.ToolPage || {};
+
+    function applyMode(next) {
+      mode = next;
+      modeTabs.forEach((t) => {
+        const on = t.getAttribute('data-mode') === mode;
+        t.classList.toggle('active', on);
+      });
+      if (mode === 'encode') {
+        inputLabel.textContent = '明文';
+        outputLabel.textContent = 'Base64';
+        input.placeholder = '在此输入要编码的文本…';
+        btnRun.textContent = '编码';
+        fileRow.classList.remove('is-inactive');
+        fileRow.setAttribute('aria-hidden', 'false');
+        wrapField.style.display = '';
+        strictWrap.style.display = 'none';
+      } else {
+        inputLabel.textContent = 'Base64';
+        outputLabel.textContent = '明文 / 结果';
+        input.placeholder = '粘贴 Base64 字符串…';
+        btnRun.textContent = '解码';
+        fileRow.classList.add('is-inactive');
+        fileRow.setAttribute('aria-hidden', 'true');
+        wrapField.style.display = 'none';
+        strictWrap.style.display = '';
+        fileInput.value = '';
+      }
+      TP.clearStatus(status);
+      meta.innerHTML = '';
+    }
+
+    modeTabs.forEach((tab) => {
+      tab.addEventListener('click', () => applyMode(tab.getAttribute('data-mode')));
+    });
+    applyMode('decode');
+
+    btnClearIn.addEventListener('click', () => { input.value = ''; fileInput.value = ''; });
+    btnClearOut.addEventListener('click', () => { output.value = ''; meta.innerHTML = ''; });
+
+    btnSample.addEventListener('click', () => {
+      if (mode === 'encode') {
+        input.value = 'Hello, 工具集! 👋';
+      } else {
+        input.value = 'SGVsbG8sIOaJi+acuumHkeS/oSDwn5iC';
+      }
+    });
+
+    btnSwap.addEventListener('click', () => {
+      const a = input.value;
+      input.value = output.value;
+      output.value = a;
+      applyMode(mode === 'encode' ? 'decode' : 'encode');
+    });
+
+    btnCopy.addEventListener('click', () => {
+      TP.copyText(output.value, '已复制到剪贴板');
+    });
+
+    const META_FIELDS = [
+      { key: 'input_bytes', label: '输入' },
+      { key: 'input_chars', label: '输入' },
+      { key: 'output_chars', label: '输出' },
+      { key: 'raw_bytes', label: '解码' },
+      { key: 'variant', label: '变体' },
+      { key: 'charset', label: '字符集' },
+      { key: 'filename', label: '文件' },
+    ];
+
+    btnRun.addEventListener('click', async () => {
+      TP.clearStatus(status);
+      btnRun.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('charset', charset.value);
+        fd.append('variant', variant.value);
+
+        let url;
+        if (mode === 'encode') {
+          url = TP.appUrl('/tools/base64/encode');
+          fd.append('wrap', wrap.value);
+          const f = fileInput.files && fileInput.files[0];
+          if (f) {
+            fd.append('file', f);
+          } else {
+            fd.append('text', input.value);
+          }
+        } else {
+          url = TP.appUrl('/tools/base64/decode');
+          fd.append('text', input.value);
+          fd.append('strict', strict.checked ? 'true' : 'false');
+        }
+
+        const data = await TP.runForm(url, fd);
+
+        if (mode === 'encode') {
+          output.value = data.result || '';
+          TP.setStatus(status, 'ok', '编码完成');
+        } else {
+          if (data.text_ok) {
+            output.value = data.result || '';
+            TP.setStatus(status, 'ok', '解码完成');
+          } else {
+            output.value = data.result || '';
+            if (data.raw_hex) {
+              output.value = (output.value ? output.value + '\n\n' : '') +
+                '/* raw hex */\n' + data.raw_hex;
+            }
+            TP.setStatus(status, 'info', data.text_error
+              ? '字节已解码，但无法按当前字符集显示为文本：' + data.text_error
+              : '已解码为原始字节（见 hex）');
+          }
+        }
+        TP.renderMeta(meta, data, META_FIELDS);
+      } catch (err) {
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    });
+
+    TP.setupShortcut(input, () => btnRun.click());
+
+    // Paste image/file → encode as file (encode mode)
+    if (UX && UX.bindPasteFiles) {
+      UX.bindPasteFiles({
+        target: document,
+        enabled: function () { return mode === 'encode'; },
+        accept: function (f) { return f && f.size > 0 && f.size <= 5 * 1024 * 1024; },
+        onFiles: function (files) {
+          if (!files || !files[0]) return;
+          try {
+            var dt = new DataTransfer();
+            dt.items.add(files[0]);
+            fileInput.files = dt.files;
+            TP.setStatus(status, 'info', '已粘贴文件：' + files[0].name + '（点编码）');
+          } catch (e) {
+            TP.setStatus(status, 'warn', '已检测到剪贴板文件，请改用「选择文件」');
+          }
+        },
+      });
+    }
+  </script>
+{% endblock %}

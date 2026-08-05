@@ -1,0 +1,38 @@
+{# Shared SEO head: canonical, robots, OpenGraph, Twitter card, JSON-LD.
+   Required vars: seo_path (app-relative, e.g. "/" or "/tools/pdf2word")
+   Optional vars (with sensible defaults):
+     seo_title, seo_description        – fall back to page_title/_meta if unset
+     seo_type (default "website")      – og:type
+     seo_image                         – og:image override (absolute or relative)
+     seo_jsonld                        – list[dict] or a single dict to embed
+   Globals from tools.common: seo_url, og_image_url, robots_meta, url_path
+#}
+{% set _seo_title = (seo_title|default(page_title|default('工具集'))) %}
+{% set _seo_desc = (seo_description|default(page_description|default(''))) %}
+{% set _seo_img = (seo_image|default(og_image_url())) %}
+<link rel="canonical" href="{{ seo_url(seo_path) }}" />
+<meta name="robots" content="{{ robots_meta() }}" />
+{% if _seo_desc %}
+<meta name="description" content="{{ _seo_desc }}" />
+{% endif %}
+<meta property="og:locale" content="zh_CN" />
+<meta property="og:site_name" content="工具集" />
+<meta property="og:type" content="{{ seo_type|default('website') }}" />
+<meta property="og:title" content="{{ _seo_title }}" />
+{% if _seo_desc %}
+<meta property="og:description" content="{{ _seo_desc }}" />
+{% endif %}
+<meta property="og:url" content="{{ seo_url(seo_path) }}" />
+<meta property="og:image" content="{{ _seo_img }}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="{{ _seo_title }}" />
+{% if _seo_desc %}
+<meta name="twitter:description" content="{{ _seo_desc }}" />
+{% endif %}
+<meta name="twitter:image" content="{{ _seo_img }}" />
+{% if seo_jsonld is defined and seo_jsonld %}
+{% set _ld_items = seo_jsonld if seo_jsonld is iterable and seo_jsonld is not string else [seo_jsonld] %}
+{% for _item in _ld_items %}
+<script type="application/ld+json">{{ _item|tojson }}</script>
+{% endfor %}
+{% endif %}

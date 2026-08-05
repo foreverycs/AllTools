@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="管理后台登录 — 工具集" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#faf6ef" media="(prefers-color-scheme: light)" />
+  <title>管理后台登录 · 工具集</title>
+  {% include "partials/theme_boot.html" %}
+  {% include "partials/pwa_head.html" %}
+  {% include "partials/root_script.html" %}
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/home.css') }}" />
+  <script src="{{ static_url('/static/js/toolkit-ux.js') }}"></script>
+  <script src="{{ static_url('/static/js/pill-nav.js') }}" defer></script>
+  <style>
+    /* Admin login — styled with the shared homepage tokens so it matches
+       the home look and follows the light/dark theme. */
+    .login-main {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 96px 16px 48px;
+      position: relative;
+      z-index: 1;
+    }
+    .login-card {
+      position: relative;
+      width: min(400px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 34px 30px 28px;
+      overflow: hidden;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      animation: login-in .5s var(--ease, ease) both;
+    }
+    html.light-mode .login-card { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08); }
+    @keyframes login-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @media (prefers-reduced-motion: reduce) { .login-card { animation: none; } }
+    .login-card-bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent, #6366f1), #22d3ee); }
+    .login-mark {
+      width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center;
+      color: #fff; font-size: 22px; margin-bottom: 18px;
+      background: linear-gradient(145deg, var(--accent, #6366f1), #22d3ee);
+      box-shadow: 0 10px 24px -6px var(--accent-glow, rgba(99,102,241,.5));
+    }
+    .login-card h1 { font-size: 1.3rem; font-weight: 800; margin: 0 0 6px; color: var(--text); }
+    .login-sub { font-size: 13px; color: var(--text-soft); margin: 0 0 22px; }
+    .login-card label { display: block; font-size: 12px; font-weight: 700; color: var(--text-soft); margin-bottom: 8px; }
+    .login-card input[type="password"] {
+      display: block; width: 100%; height: 46px; box-sizing: border-box; padding: 0 16px;
+      font: inherit; font-size: 14px; line-height: 1;
+      border-radius: 12px; border: 1px solid var(--border); background: var(--surface-hov);
+      color: var(--text); margin: 0 0 14px; transition: border-color .15s, box-shadow .15s;
+    }
+    .login-card input[type="password"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .login-btn {
+      width: 100%; height: 46px; box-sizing: border-box; padding: 0 16px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      border: none; border-radius: 12px; font: inherit; font-size: 14px;
+      font-weight: 700; color: #fff; cursor: pointer;
+      background: linear-gradient(135deg, var(--accent, #6366f1), #22d3ee);
+      box-shadow: 0 10px 24px -8px var(--accent-glow, rgba(99,102,241,.5));
+      transition: transform .15s, box-shadow .15s;
+    }
+    .login-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 30px -8px var(--accent-glow, rgba(99,102,241,.6)); }
+    .login-btn:active { transform: translateY(0); }
+    .login-err {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--danger-bg, rgba(190,18,60,.12)); border: 1px solid var(--danger-line, rgba(244,63,94,.3));
+      color: var(--danger-ink, #fca5a5); padding: 10px 14px; border-radius: 12px; font-size: 13px; margin-bottom: 14px;
+    }
+    .login-hint { margin: 16px 0 0; font-size: 12px; color: var(--text-mute); line-height: 1.6; }
+    .login-hint code { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; background: var(--surface-hov); padding: 2px 6px; border-radius: 5px; color: var(--accent); }
+    .login-back { margin-top: 14px; text-align: center; font-size: 12.5px; }
+    .login-back a { color: var(--text-soft); text-decoration: none; transition: color .2s; }
+    .login-back a:hover { color: var(--text); }
+  </style>
+</head>
+<body class="antialiased">
+  <div class="bg-grid" aria-hidden="true"></div>
+  {% include "partials/pill_nav.html" %}
+
+  <main class="login-main">
+    <div class="login-card">
+      <div class="login-card-bar" aria-hidden="true"></div>
+      <div class="login-mark" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+      </div>
+      <h1>管理后台登录</h1>
+      <p class="login-sub">查看上传归档、清理记录与系统状态</p>
+      {% if error %}
+      <div class="login-err">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        {{ error }}
+      </div>
+      {% endif %}
+      <form method="post" action="{{ url_path('/admin/login') }}">
+        <input type="hidden" name="next" value="{{ next_url or '/admin' }}" />
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+        <label for="password">管理密码</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password" autofocus placeholder="请输入密码" />
+        <button class="login-btn" type="submit">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          登录
+        </button>
+      </form>
+      <p class="login-hint">
+        默认密码 <code>admin123</code>，生产环境请设置环境变量 <code>ADMIN_PASSWORD</code>
+      </p>
+      <p class="login-back">
+        <a href="{{ url_path('/') }}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+          返回前台
+        </a>
+      </p>
+    </div>
+  </main>
+</body>
+</html>

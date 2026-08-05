@@ -1,0 +1,220 @@
+{% extends "tools/base.html" %}
+{% set page_title = "中文 Unicode 还原" %}
+{% set page_description = "Unicode 转义还原与编码" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-coding") %}
+{% set back_label = "编码工具" %}
+{% set chip = "编码工具 · Unicode" %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">文</div>
+        <div>
+          <h1>中文 Unicode 还原</h1>
+          <p>把 <code>\uXXXX</code>、<code>U+XXXX</code>、HTML 实体等转义还原成中文，也可反向编码。</p>
+        </div>
+      </div>
+
+      <div class="mode-tabs" role="tablist">
+        <button type="button" class="mode-tab active" data-mode="decode" role="tab">还原 Decode</button>
+        <button type="button" class="mode-tab" data-mode="encode" role="tab">编码 Encode</button>
+      </div>
+
+      <div class="opts">
+        <label class="field" id="modeField">还原格式
+          <select id="decodeMode">
+            <option value="auto" selected>自动识别</option>
+            <option value="backslash_u">\uXXXX / \UXXXXXXXX</option>
+            <option value="percent_u">%uXXXX</option>
+            <option value="u_plus">U+XXXX</option>
+            <option value="html_entity">HTML 实体</option>
+          </select>
+        </label>
+        <label class="field" id="styleField" style="display:none">编码样式
+          <select id="encodeStyle">
+            <option value="backslash_u" selected>\uXXXX</option>
+            <option value="u_plus">U+XXXX</option>
+            <option value="html_entity">&#x…;</option>
+            <option value="percent_u">%uXXXX</option>
+          </select>
+        </label>
+        <label class="check" id="upperWrap" style="display:none">
+          <input type="checkbox" id="uppercase" />
+          十六进制大写
+        </label>
+      </div>
+
+      <div class="panes">
+        <div class="pane">
+          <div class="pane-label">
+            <span id="inputLabel">含转义的文本</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnSample">示例</button>
+              <button type="button" class="mini" id="btnClearIn">清空</button>
+            </div>
+          </div>
+          <textarea id="input" placeholder="粘贴 \u4f60\u597d 或 JSON 片段…" spellcheck="false"></textarea>
+          <div class="samples" id="samples">
+            <button type="button" class="sample-chip" data-text="\u4f60\u597d\uff0c\u4e16\u754c">你好，世界</button>
+            <button type="button" class="sample-chip" data-text="{&quot;name&quot;:&quot;\u5f20\u4e09&quot;}">JSON</button>
+            <button type="button" class="sample-chip" data-text="\\u4e2d\\u6587">双重转义</button>
+            <button type="button" class="sample-chip" data-text="U+4E2D U+6587">U+</button>
+            <button type="button" class="sample-chip" data-text="&amp;#x4f60;&amp;#x597d;">HTML</button>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="pane-label">
+            <span id="outputLabel">还原结果</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnCopy">复制</button>
+              <button type="button" class="mini" id="btnClearOut">清空</button>
+            </div>
+          </div>
+          <textarea id="output" readonly placeholder="结果将显示在这里…" spellcheck="false"></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" id="btnRun">还原</button>
+        <button type="button" class="btn btn-ghost" id="btnSwap">交换输入/输出</button>
+      </div>
+
+      <div class="meta" id="meta"></div>
+      <div class="status" id="status"></div>
+      <p class="tips">
+        支持 <code>\u4e2d</code>、<code>\u{4e2d}</code>、<code>\\u4e2d</code>（双重转义）、
+        <code>%u4E2D</code>、<code>U+4E2D</code>、<code>&amp;#x4e2d;</code>。
+        按 Ctrl/Cmd + Enter 快速转换。
+      </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const modeTabs = document.querySelectorAll('.mode-tab');
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const decodeMode = document.getElementById('decodeMode');
+    const encodeStyle = document.getElementById('encodeStyle');
+    const uppercase = document.getElementById('uppercase');
+    const modeField = document.getElementById('modeField');
+    const styleField = document.getElementById('styleField');
+    const upperWrap = document.getElementById('upperWrap');
+    const btnRun = document.getElementById('btnRun');
+    const btnSwap = document.getElementById('btnSwap');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnSample = document.getElementById('btnSample');
+    const btnClearIn = document.getElementById('btnClearIn');
+    const btnClearOut = document.getElementById('btnClearOut');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+    const inputLabel = document.getElementById('inputLabel');
+    const outputLabel = document.getElementById('outputLabel');
+    const samples = document.getElementById('samples');
+
+    const UX = window.ToolkitUX || null;
+    const TP = window.ToolPage || {};
+
+    function applyMode(next) {
+      mode = next;
+      modeTabs.forEach((t) => {
+        const on = t.getAttribute('data-mode') === mode;
+        t.classList.toggle('active', on);
+      });
+      const isDecode = mode === 'decode';
+      modeField.style.display = isDecode ? '' : 'none';
+      styleField.style.display = isDecode ? 'none' : '';
+      upperWrap.style.display = isDecode ? 'none' : '';
+      samples.style.display = isDecode ? '' : 'none';
+      inputLabel.textContent = isDecode ? '含转义的文本' : '明文';
+      outputLabel.textContent = isDecode ? '还原结果' : 'Unicode 转义';
+      btnRun.textContent = isDecode ? '还原' : '编码';
+      input.placeholder = isDecode
+        ? '粘贴 \\u4f60\\u597d 或 JSON 片段…'
+        : '输入要编码的中文…';
+    }
+
+    modeTabs.forEach((t) => {
+      t.addEventListener('click', () => applyMode(t.getAttribute('data-mode')));
+    });
+
+    btnClearIn.addEventListener('click', () => { input.value = ''; });
+    btnClearOut.addEventListener('click', () => { output.value = ''; meta.innerHTML = ''; });
+
+    btnSample.addEventListener('click', () => {
+      if (mode === 'decode') {
+        input.value = '\\u4f60\\u597d\\uff0c\\u4e16\\u754c\\uff01';
+      } else {
+        input.value = '你好，世界！';
+      }
+      run();
+    });
+
+    samples.addEventListener('click', (e) => {
+      const t = e.target.closest('.sample-chip');
+      if (!t) return;
+      // data-text may contain HTML entities; use getAttribute for raw string
+      const raw = t.getAttribute('data-text') || '';
+      // Browser decodes HTML entities in attributes; restore common ones for demos
+      input.value = raw;
+      if (mode !== 'decode') applyMode('decode');
+      run();
+    });
+
+    btnCopy.addEventListener('click', () => {
+      TP.copyText(output.value, '已复制到剪贴板');
+    });
+
+    btnSwap.addEventListener('click', () => {
+      const a = input.value;
+      input.value = output.value;
+      output.value = a;
+      applyMode(mode === 'decode' ? 'encode' : 'decode');
+    });
+
+    const UNICODE_META_FIELDS = [
+      { key: 'replacements', label: '替换' },
+      { key: 'escaped_chars', label: '转义' },
+      { key: 'passes', label: '轮次' },
+      { key: 'input_chars', label: '输入' },
+      { key: 'output_chars', label: '输出' },
+      { key: 'mode', label: '模式' },
+      { key: 'style', label: '样式' },
+    ];
+
+    async function run() {
+      TP.clearStatus(status);
+      btnRun.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('text', input.value);
+        let url;
+        if (mode === 'decode') {
+          fd.append('mode', decodeMode.value);
+          fd.append('max_passes', '3');
+          url = TP.appUrl('/tools/unicode/decode');
+        } else {
+          fd.append('style', encodeStyle.value);
+          fd.append('uppercase', uppercase.checked ? 'true' : 'false');
+          url = TP.appUrl('/tools/unicode/encode');
+        }
+        const data = await TP.runForm(url, fd);
+        output.value = data.result != null ? data.result : '';
+        TP.setStatus(status, 'ok', mode === 'decode'
+          ? (data.changed ? '还原完成' : '未发现可还原的转义')
+          : '编码完成');
+        TP.renderMeta(meta, data, UNICODE_META_FIELDS);
+      } catch (err) {
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    }
+
+    btnRun.addEventListener('click', run);
+    TP.setupShortcut(input, () => btnRun.click());
+  </script>
+{% endblock %}

@@ -1,0 +1,96 @@
+# 生产环境 · 多实例（Redis 共享任务存储 + 共享限流）——最终 compose 文件
+#
+# 用法：
+#   docker compose up --build -d                    # 启动 Redis + 单实例
+#   docker compose up -d --scale toolbox=3          # 扩容到 3 个应用实例
+#
+# 说明：
+#   - 已内置 Redis 服务；异步任务元数据(JOBS_BACKEND)与接口 IP 限流
+#     (RATE_LIMIT_BACKEND) 均切到 Redis，多实例间共享一份状态。
+#   - 结果文件写入共享卷 ./file（JOB_OUTPUT_DIR=/app/file/jobs），任一实例
+#     都能轮询/下载。
+#   - 应用不发布宿主端口（ports 被移除），多实例扩容不冲突；请在前面加
+#     Nginx / 负载均衡，经 compose 网络访问 toolbox:8000。
+#   - 生产账号密钥在项目根 .env（ADMIN_PASSWORD / ADMIN_SECRET）中配置。
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  toolbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # China-friendly pull of library/python (avoids docker.io timeout).
+        # Alternatives if this mirror fails:
+        #   docker.1ms.run/library/python:3.12-slim
+        #   dockerproxy.com/library/python:3.12-slim
+        #   python:3.12-slim   # only if the host has a working registry-mirror
+        PYTHON_IMAGE: docker.m.daocloud.io/library/python:3.12-slim
+        # Smaller image: WITH_JAVA=0 (default) skips the JRE (saves ~250MB);
+        # WITH_OCR=0 disables Tesseract OCR (smaller still, loses PDF OCR).
+        WITH_JAVA: "0"
+        WITH_OCR: "1"
+    image: pdf2word-toolbox:latest
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Multi-instance note: publishing a host port conflicts when scaled >1.
+    # For single-instance / quick access, publish 8002 -> container 8000 below.
+    # Before scaling to multiple replicas, remove this mapping and front with
+    # Nginx/load balancer on the compose network -> toolbox:8000.
+    ports:
+      - "8002:8000"
+    # Secrets and admin flags live in project-root .env (required for production).
+    env_file:
+      - .env
+    environment:
+      LIBREOFFICE_PATH: /usr/bin/soffice
+      HOME: /tmp
+      SAL_USE_VCLPLUGIN: svp
+      UPLOAD_RETENTION_DAYS: "5"
+      UPLOAD_FILE_DIR: /app/file
+      CONVERT_CONCURRENCY: "2"
+      # Prefer keys from env_file (.env) over any process shell leftovers:
+      DOTENV_OVERRIDE: "1"
+      # Redis-shared async job store + IP rate limit (multi-instance).
+      JOBS_BACKEND: redis
+      RATE_LIMIT_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      JOB_OUTPUT_DIR: /app/file/jobs
+      # If a reverse proxy (Nginx) reaches this app from a NON-loopback address
+      # (e.g. a separate nginx container/network, or a remote host), list its
+      # IP/host here so the per-client IP rate limit keeps working. Otherwise
+      # every user appears as the proxy IP and shares one rate bucket.
+      TRUSTED_PROXY_HOSTS: 127.0.0.1,::1
+    # Production uvicorn: single worker (jobs run on the submitting instance).
+    command: ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    volumes:
+      # Shared storage for upload history + async job output (all instances).
+      - ./file:/app/file
+      # Mount host .env so edits apply after container restart.
+      - ./.env:/app/.env:ro
+    mem_limit: 1g
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s

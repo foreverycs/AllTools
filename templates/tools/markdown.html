@@ -1,0 +1,391 @@
+{% extends "tools/base.html" %}
+{% set page_title = "Markdown 编辑" %}
+{% set page_description = "Markdown 编辑与实时预览" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-coding") %}
+{% set back_label = "编码工具" %}
+{% set chip = "编码工具 · Markdown" %}
+
+{% block head_styles %}
+<style>
+    /* Markdown preview typography (tool-specific) */
+    .tool-page .panes { gap: 12px; min-height: 420px; }
+    @media (max-width: 860px) {
+      .tool-page .panes { grid-template-columns: 1fr; min-height: 0; }
+      .tool-page .check { margin-left: 0; width: 100%; }
+    }
+    .tool-page .pane { min-height: 0; }
+    .tool-page #editor { flex: 1; min-height: 380px; font-size: 13px; }
+    .tool-page .preview-frame {
+      flex: 1; min-height: 380px;
+      border: 1px solid #e2e8f0; border-radius: 14px;
+      background: #fff; overflow: auto;
+      padding: 16px 18px;
+    }
+    .tool-page .toolbar .check { margin-left: auto; padding-bottom: 0; }
+    .md-body {
+      font-size: 14.5px; line-height: 1.65; color: #0f172a;
+      word-wrap: break-word;
+    }
+    .md-body > :first-child { margin-top: 0; }
+    .md-body h1, .md-body h2, .md-body h3, .md-body h4 {
+      line-height: 1.25; margin: 1.25em 0 0.5em; font-weight: 750;
+    }
+    .md-body h1 {
+      font-size: 1.55rem;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 0.3em;
+    }
+    .md-body h2 {
+      font-size: 1.25rem;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 0.25em;
+    }
+    .md-body h3 { font-size: 1.1rem; }
+    .md-body p, .md-body ul, .md-body ol, .md-body blockquote,
+    .md-body table, .md-body pre { margin: 0.7em 0; }
+    .md-body a { color: #4f46e5; }
+    .md-body code {
+      font-family: var(--mono); font-size: 0.9em;
+      background: #f1f5f9; padding: 0.12em 0.35em; border-radius: 4px;
+    }
+    .md-body pre {
+      background: #0f172a; color: #e2e8f0;
+      padding: 12px 14px; border-radius: 10px; overflow: auto;
+    }
+    .md-body pre code { background: transparent; padding: 0; color: inherit; }
+    .md-body blockquote {
+      margin-left: 0; padding: 0.2em 0 0.2em 0.9em;
+      border-left: 4px solid #fde68a; color: #475569;
+    }
+    .md-body table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+    .md-body th, .md-body td {
+      border: 1px solid #e2e8f0; padding: 0.4em 0.65em; text-align: left;
+    }
+    .md-body th { background: #f8fafc; }
+    .md-body img { max-width: 100%; height: auto; }
+    .md-body hr { border: 0; border-top: 1px solid #e2e8f0; margin: 1.25em 0; }
+    .md-body li { margin: 0.2em 0; }
+    .md-empty {
+      color: var(--muted-2); font-size: 13px; font-weight: 500;
+      padding: 24px 8px; text-align: center;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">MD</div>
+        <div>
+          <h1>Markdown 编辑</h1>
+          <p>左侧书写，右侧实时预览。支持标题、列表、表格、代码块与链接；服务端渲染并过滤危险 HTML。</p>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <button type="button" class="tb" data-wrap="**|**" title="粗体">B</button>
+        <button type="button" class="tb" data-wrap="*|*" title="斜体"><em>I</em></button>
+        <button type="button" class="tb" data-wrap="`|`" title="行内代码">&lt;/&gt;</button>
+        <button type="button" class="tb" data-prefix="# " title="标题">H1</button>
+        <button type="button" class="tb" data-prefix="- " title="列表">• 列表</button>
+        <button type="button" class="tb" data-prefix="> " title="引用">引用</button>
+        <button type="button" class="tb" data-insert="TABLE" title="表格">表格</button>
+        <button type="button" class="tb" data-insert="CODE" title="代码块">代码块</button>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <button type="button" class="tb" id="btnSample">示例</button>
+        <button type="button" class="tb" id="btnCopyMd">复制 MD</button>
+        <button type="button" class="tb" id="btnCopyHtml">复制 HTML</button>
+        <button type="button" class="tb" id="btnExport">导出 HTML</button>
+        <button type="button" class="tb" id="btnClear">清空</button>
+        <label class="check">
+          <input type="checkbox" id="livePreview" checked />
+          实时预览
+        </label>
+      </div>
+
+      <div class="panes">
+        <div class="pane">
+          <div class="pane-label">
+            <span>Markdown 源码</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnRender">立即渲染</button>
+            </div>
+          </div>
+          <textarea id="editor" spellcheck="false" placeholder="在此输入 Markdown…"></textarea>
+        </div>
+        <div class="pane">
+          <div class="pane-label">
+            <span>预览</span>
+            <span style="font-weight:500;color:var(--muted-2);font-size:11px" id="renderState">就绪</span>
+          </div>
+          <div class="preview-frame" id="preview">
+            <div class="md-empty">开始输入后将在此预览…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="meta" id="meta"></div>
+      <div class="status" id="status"></div>
+      <p class="tips">
+        提示：Tab 插入两个空格；Ctrl/Cmd + Enter 立即渲染。
+        默认 XSS 过滤开启。最大约 {{ (max_chars // 1024) if max_chars else 512 }}K 字符。
+      </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const SAMPLE = {{ sample|tojson }};
+    const SNIPPETS = {
+      TABLE: "\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+      CODE: "\n```\ncode\n```\n"
+    };
+    const editor = document.getElementById("editor");
+    const preview = document.getElementById("preview");
+    const livePreview = document.getElementById("livePreview");
+    const meta = document.getElementById("meta");
+    const status = document.getElementById("status");
+    const renderState = document.getElementById("renderState");
+    const root = window.__ROOT__ || "";
+
+    let lastHtml = "";
+    let timer = null;
+    let rendering = false;
+    let pending = false;
+
+    function setStatus(kind, text) {
+      if (!text) {
+        status.className = "status";
+        status.textContent = "";
+        return;
+      }
+      status.className = "status show " + kind;
+      status.textContent = text;
+    }
+
+    function showMeta(data) {
+      const parts = [];
+      if (data.chars != null) parts.push("字符 <strong>" + data.chars + "</strong>");
+      if (data.words != null) parts.push("词/字 <strong>" + data.words + "</strong>");
+      if (data.lines != null) parts.push("行 <strong>" + data.lines + "</strong>");
+      if (data.sanitized) parts.push("XSS 过滤 <strong>开</strong>");
+      meta.innerHTML = parts.join(" · ");
+    }
+
+    function detailMessage(data) {
+      const d = data && data.detail;
+      if (typeof d === "string") return d;
+      if (Array.isArray(d)) return d.map(function (x) { return x.msg || x.message || x; }).join("; ");
+      return (data && data.message) || "请求失败";
+    }
+
+    async function renderNow() {
+      if (rendering) {
+        pending = true;
+        return;
+      }
+      rendering = true;
+      pending = false;
+      renderState.textContent = "渲染中…";
+      try {
+        const fd = new FormData();
+        fd.append("text", editor.value);
+        fd.append("sanitize", "true");
+        const res = await fetch(root + "/tools/markdown/render", { method: "POST", body: fd });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(detailMessage(data));
+        lastHtml = data.html || "";
+        if (!lastHtml) {
+          preview.innerHTML = '<div class="md-empty">开始输入后将在此预览…</div>';
+        } else {
+          preview.innerHTML = '<div class="md-body"></div>';
+          preview.firstChild.innerHTML = lastHtml;
+        }
+        showMeta(data);
+        renderState.textContent = "已更新";
+        setStatus("");
+      } catch (err) {
+        renderState.textContent = "失败";
+        setStatus("err", err.message || String(err));
+      } finally {
+        rendering = false;
+        if (pending) renderNow();
+      }
+    }
+
+    function scheduleRender() {
+      if (!livePreview.checked) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(renderNow, 280);
+    }
+
+    function insertAround(before, after) {
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const val = editor.value;
+      const selected = val.slice(start, end) || "text";
+      const next = val.slice(0, start) + before + selected + after + val.slice(end);
+      editor.value = next;
+      const s = start + before.length;
+      editor.setSelectionRange(s, s + selected.length);
+      editor.focus();
+      scheduleRender();
+      persist();
+    }
+
+    function insertPrefix(prefix) {
+      const start = editor.selectionStart;
+      const val = editor.value;
+      const lineStart = val.lastIndexOf("\n", start - 1) + 1;
+      editor.value = val.slice(0, lineStart) + prefix + val.slice(lineStart);
+      editor.setSelectionRange(start + prefix.length, start + prefix.length);
+      editor.focus();
+      scheduleRender();
+      persist();
+    }
+
+    function insertText(text) {
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const val = editor.value;
+      editor.value = val.slice(0, start) + text + val.slice(end);
+      const pos = start + text.length;
+      editor.setSelectionRange(pos, pos);
+      editor.focus();
+      scheduleRender();
+      persist();
+    }
+
+    function persist() {
+      try { localStorage.setItem("md_editor_v1", editor.value); } catch (e) {}
+    }
+
+    document.querySelectorAll(".tb[data-wrap]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const parts = btn.getAttribute("data-wrap").split("|");
+        insertAround(parts[0], parts[1] || parts[0]);
+      });
+    });
+    document.querySelectorAll(".tb[data-prefix]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        insertPrefix(btn.getAttribute("data-prefix"));
+      });
+    });
+    document.querySelectorAll(".tb[data-insert]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const key = btn.getAttribute("data-insert");
+        insertText(SNIPPETS[key] || key);
+      });
+    });
+
+    document.getElementById("btnSample").addEventListener("click", function () {
+      editor.value = SAMPLE || "";
+      persist();
+      scheduleRender();
+    });
+    document.getElementById("btnClear").addEventListener("click", function () {
+      editor.value = "";
+      lastHtml = "";
+      preview.innerHTML = '<div class="md-empty">开始输入后将在此预览…</div>';
+      meta.innerHTML = "";
+      setStatus("");
+      renderState.textContent = "就绪";
+      persist();
+    });
+    document.getElementById("btnRender").addEventListener("click", renderNow);
+    livePreview.addEventListener("change", function () {
+      if (livePreview.checked) scheduleRender();
+    });
+
+    document.getElementById("btnCopyMd").addEventListener("click", async function () {
+      if (window.ToolkitUX) {
+        ToolkitUX.copyText(editor.value, "已复制 Markdown");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(editor.value);
+        setStatus("ok", "已复制 Markdown");
+      } catch (e) {
+        editor.select();
+        document.execCommand("copy");
+        setStatus("ok", "已复制 Markdown");
+      }
+    });
+
+    document.getElementById("btnCopyHtml").addEventListener("click", async function () {
+      if (!lastHtml) await renderNow();
+      if (!lastHtml) {
+        if (window.ToolkitUX) ToolkitUX.toast("暂无 HTML 可复制", "warn");
+        else setStatus("info", "暂无 HTML 可复制");
+        return;
+      }
+      if (window.ToolkitUX) {
+        ToolkitUX.copyText(lastHtml, "已复制 HTML 片段");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(lastHtml);
+        setStatus("ok", "已复制 HTML 片段");
+      } catch (e) {
+        setStatus("err", "复制失败");
+      }
+    });
+
+    document.getElementById("btnExport").addEventListener("click", async function () {
+      try {
+        const fd = new FormData();
+        fd.append("text", editor.value);
+        fd.append("sanitize", "true");
+        fd.append("title", "Markdown");
+        const res = await fetch(root + "/tools/markdown/export-html", { method: "POST", body: fd });
+        if (!res.ok) {
+          const data = await res.json().catch(function () { return {}; });
+          throw new Error(detailMessage(data));
+        }
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        const href = URL.createObjectURL(blob);
+        a.href = href;
+        a.download = "markdown-export.html";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(href);
+        setStatus("ok", "已导出 HTML");
+      } catch (err) {
+        setStatus("err", err.message || String(err));
+      }
+    });
+
+    editor.addEventListener("input", function () {
+      persist();
+      scheduleRender();
+    });
+    editor.addEventListener("keydown", function (e) {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        insertText("  ");
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        renderNow();
+      }
+    });
+
+    try {
+      const saved = localStorage.getItem("md_editor_v1");
+      if (saved != null && saved !== "") {
+        editor.value = saved;
+      } else {
+        editor.value = SAMPLE || "";
+      }
+    } catch (e) {
+      editor.value = SAMPLE || "";
+    }
+    renderNow();
+  </script>
+{% endblock %}

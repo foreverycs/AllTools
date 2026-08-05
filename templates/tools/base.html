@@ -1,0 +1,103 @@
+{# Shared chrome for all /tools/* pages.
+   Child templates set variables and fill blocks:
+
+     {% extends "tools/base.html" %}
+     {% set page_title = "…" %}
+     {% set page_description = "…" %}
+     {% set accent = "amber" %}          optional; with body_class tool-page
+     {% set use_tool_page_css = true %}  default true
+     {% set use_upload_js = false %}     load static/js/upload.js in head
+     {% set back_href / back_label / chip %} for default tool_nav block
+
+   Expects (from with_nav): nav_items, active_nav; optional tool dict.
+
+   Blocks: head_styles, head_extra, body_attrs, body_class, tool_nav, content, scripts
+#}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
+  <meta name="view-transition" content="same-origin" />
+  <title>{% block title %}{{ page_title|default("工具") }} — 工具集{% endblock %}</title>
+  {%- set _tool_slug = (tool.slug if tool is defined and tool else '') -%}
+  {%- set _tool_name = (tool.name if tool is defined and tool else (page_title|default('工具'))) -%}
+  {%- set _tool_desc = (tool.description if tool is defined and tool else (page_description|default(''))) -%}
+  {%- set _tool_route = (tool.route if tool is defined and tool else '') -%}
+  {%- set _seo_path = _tool_route if _tool_route else ('/tools/' ~ _tool_slug) if _tool_slug else '/' -%}
+  {%- set _seo_item = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    'name': _tool_name,
+    'applicationCategory': 'UtilitiesApplication',
+    'operatingSystem': 'Web',
+    'description': _tool_desc,
+    'url': seo_url(_seo_path),
+    'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'CNY'}
+  } if _tool_slug else none -%}
+  {%- set _seo_breadcrumb = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    'itemListElement': [
+      {'@type': 'ListItem', 'position': 1, 'name': '首页', 'item': seo_url('/')},
+      {'@type': 'ListItem', 'position': 2, 'name': _tool_name, 'item': seo_url(_seo_path)}
+    ]
+  } if _tool_slug and tool is defined and tool else none -%}
+  {%- set _seo_jsonld = [_seo_item, _seo_breadcrumb]|reject('none') -%}
+  {%- set seo_title = _tool_name -%}
+  {%- set seo_description = _tool_desc -%}
+  {%- set seo_path = _seo_path -%}
+  {%- set seo_type = 'website' -%}
+  {%- set seo_jsonld = _seo_jsonld -%}
+  {% include "partials/seo_head.html" %}
+  {% include "partials/theme_boot.html" %}
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
+  {% if use_tool_page_css|default(true) %}
+  <link rel="stylesheet" href="{{ static_url('/static/css/tool-page.css') }}" />
+  {% endif %}
+  <link rel="stylesheet" href="{{ static_url('/static/css/home.css') }}" />
+  {% include "partials/pwa_head.html" %}
+  {% block head_styles %}{% endblock %}
+  {% include "partials/root_script.html" %}
+  <script src="{{ static_url('/static/js/toolkit-ux.js') }}"></script>
+  <script src="{{ static_url('/static/js/tool-page.js') }}"></script>
+  <script src="{{ static_url('/static/js/pill-nav.js') }}" defer></script>
+  {% if use_upload_js|default(false) %}
+  <script src="{{ static_url('/static/js/upload.js') }}"></script>
+  {% endif %}
+  {% block head_extra %}{% endblock %}
+</head>
+<body
+  class="{% block body_class %}tool-page page-home antialiased overflow-x-hidden{% endblock %}"
+  {% if accent is defined and accent %}data-accent="{{ accent }}"{% endif %}
+  {% if tool is defined and tool and tool.slug %}
+  data-tool-slug="{{ tool.slug }}"
+  data-tool-name="{{ tool.name or page_title|default('') }}"
+  data-tool-route="{{ tool.route or '' }}"
+  data-tool-icon="{{ tool.icon or '🔧' }}"
+  data-tool-desc="{{ tool.description or page_description|default('') }}"
+  {% endif %}
+  {% block body_attrs %}{% endblock %}
+>
+  <div class="bg-grid" aria-hidden="true"></div>
+  {% if nav_items is defined and nav_items %}
+  {% include "partials/pill_nav.html" %}
+  {% endif %}
+  <div class="tool-shell">
+  <div class="shell">
+    {% block tool_nav %}
+    {% if back_href is defined and back_label is defined %}
+    {% include "partials/tool_nav.html" %}
+    {% endif %}
+    {% endblock %}
+
+    {% block content %}{% endblock %}
+  </div>
+  </div>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

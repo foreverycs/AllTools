@@ -1,0 +1,171 @@
+"""Tests for upload history under file/."""
+from __future__ import annotations
+
+import json
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture()
+def hist_dir(tmp_path, monkeypatch):
+    d = tmp_path / "file"
+    d.mkdir()
+    monkeypatch.setenv("UPLOAD_FILE_DIR", str(d))
+    monkeypatch.setenv("UPLOAD_RETENTION_DAYS", "5")
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    import core.settings as settings_mod
+    import storage.history as h
+
+    settings_mod.clear_settings_cache()
+    # Bypass cleanup throttle between archive and explicit purge tests
+    h._last_cleanup_ts = 0.0
+    yield h
+    settings_mod.clear_settings_cache()
+
+
+def _touch(path: Path, content: bytes = b"hello") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
+def test_archive_and_list(hist_dir, tmp_path):
+    h = hist_dir
+    src = _touch(tmp_path / "a.pdf", b"%PDF-in")
+    out = _touch(tmp_path / "a.docx", b"PK-out")
+
+    rec = h.archive_conversion(
+        tool="pdf2word",
+        original_name="报告.pdf",
+        input_path=str(src),
+        # legacy kwargs must be ignored (input-only archive)
+        output_path=str(out),
+        output_name="报告.docx",
+        extra={"pages": 1},
+    )
+    assert rec is not None
+    assert rec["tool"] == "pdf2word"
+    assert rec["original_name"] == "报告.pdf"
+    root = h.file_dir()
+    assert (root / rec["input_rel"]).is_file()
+    assert rec.get("output_rel") in (None, "")
+    # no *_out* files written
+    outs = list(root.rglob("*_out*"))
+    assert outs == []
+
+    items = h.list_records()
+    assert len(items) >= 1
+    assert items[0]["id"] == rec["id"]
+    assert items[0]["input_exists"] is True
+
+
+def test_cleanup_expired(hist_dir, tmp_path):
+    h = hist_dir
+    src = _touch(tmp_path / "old.pdf", b"old")
+    rec = h.archive_conversion(
+        tool="pdf2word",
+        original_name="old.pdf",
+        input_path=str(src),
+    )
+    assert rec is not None
+
+    # Backdate the record past retention via SQLite
+    import sqlite3
+
+    db_path = h.file_dir() / "records.db"
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=6)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("UPDATE records SET created_at = ? WHERE id = ?", (old_ts, rec["id"]))
+    conn.commit()
+    conn.close()
+
+    h._last_cleanup_ts = 0.0
+    removed = h._do_cleanup()
+    assert removed >= 1
+    items = h.list_records()
+    assert all(r["id"] != rec["id"] for r in items)
+
+
+def test_resolve_blocks_traversal(hist_dir):
+    h = hist_dir
+    assert h.resolve_stored("../secrets") is None
+    assert h.resolve_stored("..\\secrets") is None
+
+
+def test_api_uploads_requires_admin(hist_dir, tmp_path, monkeypatch):
+    h = hist_dir
+    src = _touch(tmp_path / "x.pdf", b"data")
+    rec = h.archive_conversion(
+        tool="pdf2word",
+        original_name="x.pdf",
+        input_path=str(src),
+    )
+    assert rec is not None
+
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-pass")
+    monkeypatch.setenv("ADMIN_SECRET", "test-secret-for-unit-tests-only")
+    monkeypatch.setenv("DOTENV_OVERRIDE", "0")
+
+    from fastapi.testclient import TestClient
+    import app as app_mod
+    import admin.auth as auth
+    import admin.routes as routes
+    import admin.rate_limit as rate_limit
+    import core.settings as settings_mod
+    import importlib
+
+    settings_mod.clear_settings_cache()
+    rate_limit.reset_all()
+    importlib.reload(auth)
+    importlib.reload(routes)
+    importlib.reload(app_mod)
+    # Re-apply after lifespan/load_dotenv may have run at import time
+    settings_mod.clear_settings_cache()
+    settings_mod.validate_security_settings()
+    client = TestClient(app_mod.app)
+
+    # Unauthenticated: list and download must not leak history/files
+    r = client.get("/api/uploads")
+    assert r.status_code == 401
+    dl = client.get(f"/api/uploads/{rec['id']}/download")
+    assert dl.status_code == 401
+
+    # Authenticated admin may list and download
+    rate_limit.reset_all()
+    login_page = client.get("/admin/login")
+    assert login_page.status_code == 200
+    csrf = client.cookies.get("toolkit_csrf")
+    assert csrf
+    login = client.post(
+        "/admin/login",
+        data={
+            "password": "test-pass",
+            "next": "/admin",
+            "csrf_token": csrf,
+        },
+        follow_redirects=False,
+    )
+    assert login.status_code in (303, 307, 302)
+    loc = login.headers.get("location") or ""
+    assert "error" not in loc
+
+    r = client.get("/api/uploads")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["retention_days"] == 5
+    assert any(i["original_name"] == "x.pdf" for i in body["items"])
+
+    dl = client.get(f"/api/uploads/{rec['id']}/download")
+    assert dl.status_code == 200
+    assert dl.content == b"data"
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "工具集" in home.text
+    assert "最近上传" not in home.text

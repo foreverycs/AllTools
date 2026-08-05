@@ -1,0 +1,265 @@
+{% extends "tools/base.html" %}
+{% set page_title = "人民币大写" %}
+{% set page_description = "人民币金额转中文大写 — 财务规范写法" %}
+{% set accent = "emerald" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-office") %}
+{% set back_label = "办公工具" %}
+{% set chip = "办公工具 · 人民币大写" %}
+
+{% block head_styles %}
+<style>
+  .rmb-wrap { display: flex; flex-direction: column; gap: 18px; }
+
+  .rmb-input-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: var(--tool-accent-soft);
+    border: 1.5px solid var(--tool-accent-border);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .rmb-input-card:focus-within {
+    border-color: var(--tool-accent);
+    box-shadow: 0 0 0 4px var(--tool-focus);
+  }
+  .rmb-input-card .cur {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--tool-accent);
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .rmb-input-card input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    font: inherit;
+    font-size: 22px;
+    font-weight: 650;
+    color: var(--ink);
+    letter-spacing: .02em;
+    padding: 4px 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .rmb-input-card input::placeholder {
+    color: var(--muted-2);
+    font-weight: 500;
+    font-size: 15px;
+  }
+  .rmb-input-card input:focus { outline: none; }
+
+  .rmb-opt-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+  }
+  .rmb-opt-row .check { font-size: 13px; color: var(--ink-2); }
+
+  .rmb-samples { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sample-chip {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 650;
+    color: var(--ink-2);
+    padding: 7px 13px;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    transition: color .12s, border-color .12s, background .12s, transform .12s;
+  }
+  .sample-chip:hover {
+    color: var(--tool-accent-ink);
+    border-color: var(--tool-accent-border);
+    background: var(--tool-accent-soft);
+    transform: translateY(-1px);
+  }
+
+  .rmb-out {
+    border-radius: 18px;
+    padding: 22px 20px;
+    text-align: center;
+    background: var(--chip-bg);
+    border: 1px dashed var(--tool-accent-border);
+    transition: background .18s, border-color .18s, box-shadow .18s;
+  }
+  .rmb-out.has-result {
+    background: var(--surface-solid);
+    border-style: solid;
+    border-color: var(--tool-accent-border);
+    box-shadow: 0 10px 26px rgba(5, 150, 105, .12);
+  }
+  .rmb-out .out-label {
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    margin-bottom: 10px;
+  }
+  .rmb-out .out-value {
+    font-size: clamp(20px, 3.4vw, 30px);
+    font-weight: 750;
+    line-height: 1.5;
+    letter-spacing: .03em;
+    color: var(--tool-accent-ink);
+    min-height: 1.5em;
+    word-break: break-all;
+  }
+  .rmb-out .out-empty { color: var(--muted-2); font-weight: 500; font-size: 15px; }
+  .rmb-out .out-actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sample-chip, .rmb-out { transition: none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">¥</div>
+        <div>
+          <h1>人民币大写</h1>
+          <p>将阿拉伯数字金额转为财务规范中文大写，支持角分、千分位与货币符号清洗。</p>
+        </div>
+      </div>
+
+      <div class="rmb-wrap">
+        <div class="rmb-input-card">
+          <span class="cur" aria-hidden="true">¥</span>
+          <input type="text" id="input" placeholder="请输入金额，如 1234.56" inputmode="decimal" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="rmb-opt-row">
+          <label class="check">
+            <input type="checkbox" id="prefix" checked />
+            加「人民币」前缀
+          </label>
+          <div class="rmb-samples" id="samples">
+            <button type="button" class="sample-chip" data-amount="1234.56">1234.56</button>
+            <button type="button" class="sample-chip" data-amount="10000">1 万</button>
+            <button type="button" class="sample-chip" data-amount="100000000">1 亿</button>
+            <button type="button" class="sample-chip" data-amount="0.05">0.05</button>
+            <button type="button" class="sample-chip" data-amount="0">0</button>
+          </div>
+        </div>
+
+        <div class="rmb-out" id="outBox">
+          <div class="out-label">大写金额</div>
+          <div class="out-value out-empty" id="output">结果将显示在这里…</div>
+          <div class="out-actions">
+            <button type="button" class="mini" id="btnCopy">复制</button>
+            <button type="button" class="mini" id="btnClearOut">清空</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn" id="btnRun">转换为大写</button>
+          <button type="button" class="btn btn-ghost" id="btnClearAll">全部清空</button>
+        </div>
+
+        <div class="meta" id="meta"></div>
+        <div class="status" id="status"></div>
+        <p class="tips">
+          提示：整数金额末尾带「整」；支持 <code>1,234.56</code>、<code>￥100</code>、全角数字。
+          默认四舍五入到分。按 Ctrl/Cmd + Enter 快速转换。
+        </p>
+      </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const outBox = document.getElementById('outBox');
+    const prefix = document.getElementById('prefix');
+    const btnRun = document.getElementById('btnRun');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnClearOut = document.getElementById('btnClearOut');
+    const btnClearAll = document.getElementById('btnClearAll');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+
+    const TP = window.ToolPage || {};
+
+    function setOutput(text) {
+      output.textContent = text || '';
+      output.classList.toggle('out-empty', !text);
+      outBox.classList.toggle('has-result', !!text);
+    }
+
+    btnClearOut.addEventListener('click', () => { setOutput(''); meta.innerHTML = ''; });
+    btnClearAll.addEventListener('click', () => {
+      input.value = '';
+      setOutput('');
+      meta.innerHTML = '';
+      TP.clearStatus(status);
+    });
+
+    document.getElementById('samples').addEventListener('click', (e) => {
+      const t = e.target.closest('.sample-chip');
+      if (!t) return;
+      input.value = t.getAttribute('data-amount') || '';
+      btnRun.click();
+    });
+
+    btnCopy.addEventListener('click', () => {
+      TP.copyText(output.textContent, '已复制大写金额');
+    });
+
+    const RMB_META_FIELDS = [
+      { key: 'amount', label: '规范金额' },
+      { key: 'yuan', label: '元' },
+      { key: 'jiao', label: '角' },
+      { key: 'fen', label: '分' },
+    ];
+
+    async function convert() {
+      TP.clearStatus(status);
+      btnRun.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('amount', input.value);
+        fd.append('prefix', prefix.checked ? 'true' : 'false');
+        const data = await TP.runForm(TP.appUrl('/tools/rmb/convert'), fd);
+        setOutput(data.result || '');
+        TP.setStatus(status, 'ok', '转换完成');
+        TP.renderMeta(meta, data, RMB_META_FIELDS);
+      } catch (err) {
+        setOutput('');
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    }
+
+    btnRun.addEventListener('click', convert);
+    prefix.addEventListener('change', () => {
+      if (input.value.trim()) convert();
+    });
+
+    TP.setupShortcut(input, () => btnRun.click());
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        convert();
+      }
+    });
+  </script>
+{% endblock %}

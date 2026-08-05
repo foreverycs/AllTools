@@ -1,0 +1,320 @@
+{% extends "tools/base.html" %}
+{% set page_title = "二维码生成" %}
+{% set page_description = "为网址、文本、Wi-Fi 与邮件生成自定义二维码" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-text") %}
+{% set back_label = "文本处理" %}
+{% set chip = "文本处理 · 二维码生成" %}
+
+{% block head_styles %}
+<style>
+  .qr-wrap { display: flex; flex-direction: column; gap: 18px; }
+
+  .qr-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .qr-tab {
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 650;
+    color: var(--ink-2);
+    padding: 9px 15px;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    transition: color .12s, border-color .12s, background .12s, transform .12s;
+  }
+  .qr-tab:hover { transform: translateY(-1px); border-color: var(--tool-accent-border); }
+  .qr-tab.active {
+    color: var(--tool-accent-ink);
+    background: var(--tool-accent-soft);
+    border-color: var(--tool-accent-border);
+  }
+
+  .qr-pane { display: none; flex-direction: column; gap: 12px; }
+  .qr-pane.active { display: flex; }
+
+  .qr-field { display: flex; flex-direction: column; gap: 6px; }
+  .qr-field label { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+  .qr-field input, .qr-field select, .qr-field textarea {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+    padding: 11px 13px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .qr-field input:focus, .qr-field select:focus, .qr-field textarea:focus {
+    outline: none;
+    border-color: var(--tool-accent);
+    box-shadow: 0 0 0 4px var(--tool-focus);
+  }
+  .qr-field textarea { min-height: 96px; resize: vertical; }
+  .qr-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .qr-row .qr-field { flex: 1 1 160px; }
+
+  .qr-opts { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .qr-opt { display: flex; flex-direction: column; gap: 6px; }
+  .qr-opt label { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+  .qr-opt select {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    color: var(--ink);
+  }
+  .check { font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+
+  .qr-out { text-align: center; }
+  .qr-out.has-result { background: var(--surface-solid); }
+  .qr-img-wrap {
+    display: inline-flex;
+    padding: 12px;
+    border-radius: 16px;
+    background: #fff;
+    border: 1px solid var(--line);
+    box-shadow: 0 12px 30px rgba(0,0,0,.18);
+  }
+  .qr-img-wrap img { display: block; width: 100%; max-width: 280px; height: auto; image-rendering: pixelated; }
+  .qr-content {
+    margin-top: 14px;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--muted-2);
+    background: var(--chip-bg);
+    border: 1px dashed var(--tool-accent-border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    word-break: break-all;
+    max-height: 120px;
+    overflow: auto;
+  }
+  .qr-empty { color: var(--muted-2); font-weight: 500; font-size: 15px; padding: 30px 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .qr-tab, .qr-out { transition: none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="icon" aria-hidden="true">▤</div>
+    <div>
+      <h1>二维码生成</h1>
+      <p>为网址、文本、Wi-Fi 与邮件创建自定义二维码，可调整尺寸与容错级别并下载 PNG。</p>
+    </div>
+  </div>
+
+  <div class="qr-wrap">
+    <div class="qr-tabs" id="qrTabs" role="tablist">
+      <button type="button" class="qr-tab active" data-kind="url">网址</button>
+      <button type="button" class="qr-tab" data-kind="text">文本</button>
+      <button type="button" class="qr-tab" data-kind="wifi">Wi-Fi</button>
+      <button type="button" class="qr-tab" data-kind="email">邮件</button>
+    </div>
+
+    <form id="qrForm" autocomplete="off">
+      <div class="qr-pane active" data-pane="url">
+        <div class="qr-field">
+          <label for="url">网址 URL</label>
+          <input type="text" id="url" name="url" placeholder="https://example.com" spellcheck="false" />
+        </div>
+      </div>
+
+      <div class="qr-pane" data-pane="text">
+        <div class="qr-field">
+          <label for="text">文本内容</label>
+          <textarea id="text" name="text" placeholder="输入要编码为二维码的任意文本…"></textarea>
+        </div>
+      </div>
+
+      <div class="qr-pane" data-pane="wifi">
+        <div class="qr-field">
+          <label for="wifi_ssid">Wi-Fi 名称（SSID）</label>
+          <input type="text" id="wifi_ssid" name="wifi_ssid" placeholder="如 MyWiFi" spellcheck="false" />
+        </div>
+        <div class="qr-row">
+          <div class="qr-field">
+            <label for="wifi_password">密码</label>
+            <input type="text" id="wifi_password" name="wifi_password" placeholder="无密码可留空" spellcheck="false" />
+          </div>
+          <div class="qr-field">
+            <label for="wifi_enc">加密方式</label>
+            <select id="wifi_enc" name="wifi_enc">
+              <option value="WPA" selected>WPA / WPA2</option>
+              <option value="WEP">WEP</option>
+              <option value="NOPASS">无密码（开放）</option>
+            </select>
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" id="wifi_hidden" name="wifi_hidden" value="1" /> 隐藏网络（不广播 SSID）</label>
+      </div>
+
+      <div class="qr-pane" data-pane="email">
+        <div class="qr-field">
+          <label for="email_addr">收件人邮箱</label>
+          <input type="email" id="email_addr" name="email_addr" placeholder="name@example.com" spellcheck="false" />
+        </div>
+        <div class="qr-row">
+          <div class="qr-field">
+            <label for="email_subject">主题（可选）</label>
+            <input type="text" id="email_subject" name="email_subject" placeholder="邮件主题" spellcheck="false" />
+          </div>
+        </div>
+        <div class="qr-field">
+          <label for="email_body">正文（可选）</label>
+          <textarea id="email_body" name="email_body" placeholder="邮件正文…"></textarea>
+        </div>
+      </div>
+
+      <div class="qr-opts" style="margin-top:14px">
+        <div class="qr-opt">
+          <label for="size">尺寸（px）</label>
+          <select id="size" name="size">
+            <option value="256">256</option>
+            <option value="384" selected>384</option>
+            <option value="512">512</option>
+            <option value="768">768</option>
+          </select>
+        </div>
+        <div class="qr-opt">
+          <label for="ec">容错级别</label>
+          <select id="ec" name="ec">
+            <option value="L">L（低，7%）</option>
+            <option value="M" selected>M（中，15%）</option>
+            <option value="Q">Q（较高，25%）</option>
+            <option value="H">H（最高，30%）</option>
+          </select>
+        </div>
+        <div style="margin-left:auto">
+          <button type="submit" class="btn" id="btnGenerate">生成二维码</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="qr-out" id="outBox">
+      <div class="out-label" style="font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2);margin-bottom:10px">二维码预览</div>
+      <div class="qr-empty" id="qrEmpty">填写内容并点击「生成二维码」…</div>
+      <div id="qrResult" hidden>
+        <div class="qr-img-wrap"><img id="qrImg" alt="二维码预览" /></div>
+        <div class="qr-content" id="qrContent"></div>
+        <div class="out-actions" style="display:flex;justify-content:center;gap:8px;margin-top:16px">
+          <button type="button" class="btn btn-ghost" id="btnCopyContent">复制内容</button>
+          <button type="button" class="btn" id="btnDownload">下载 PNG</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="meta" id="meta"></div>
+    <div class="status" id="status"></div>
+    <p class="tips">
+      提示：Wi-Fi 二维码可直接用系统相机扫描连接；邮件二维码扫码后会用系统邮件客户端预填收件人、主题与正文。
+      建议在中低容错下选用较大尺寸以保证清晰可扫。按 Ctrl/Cmd + Enter 快速生成。
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const TP = window.ToolPage || {};
+    const tabs = Array.prototype.slice.call(document.querySelectorAll('.qr-tab'));
+    const panes = Array.prototype.slice.call(document.querySelectorAll('.qr-pane'));
+    const form = document.getElementById('qrForm');
+    const btnGenerate = document.getElementById('btnGenerate');
+    const outBox = document.getElementById('outBox');
+    const qrEmpty = document.getElementById('qrEmpty');
+    const qrResult = document.getElementById('qrResult');
+    const qrImg = document.getElementById('qrImg');
+    const qrContent = document.getElementById('qrContent');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+    let currentKind = 'url';
+    let lastImage = '';
+
+    function switchKind(kind) {
+      currentKind = kind;
+      tabs.forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-kind') === kind); });
+      panes.forEach(function (p) { p.classList.toggle('active', p.getAttribute('data-pane') === kind); });
+    }
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        switchKind(t.getAttribute('data-kind'));
+        if (hasInput()) generate();
+      });
+    });
+
+    function hasInput() {
+      const v = form.querySelector('[data-pane="' + currentKind + '"]');
+      const first = v ? v.querySelector('input:not([type=checkbox]), textarea') : null;
+      return !!(first && first.value.trim());
+    }
+
+    function setResult(data) {
+      lastImage = data.image || '';
+      qrImg.src = lastImage;
+      qrContent.textContent = data.content || '';
+      qrEmpty.hidden = true;
+      qrResult.hidden = false;
+      outBox.classList.add('has-result');
+      TP.renderMeta(meta, data, [
+        { key: 'type', label: '类型' },
+        { key: 'bytes', label: '大小' },
+        { key: 'size', label: '尺寸' },
+      ]);
+    }
+
+    async function generate() {
+      TP.clearStatus(status);
+      btnGenerate.disabled = true;
+      try {
+        const fd = new FormData(form);
+        fd.set('type', currentKind);
+        const data = await TP.runForm(TP.appUrl('/tools/qrcode/generate'), fd);
+        setResult(data);
+        TP.setStatus(status, 'ok', '二维码已生成');
+      } catch (err) {
+        qrEmpty.hidden = false;
+        qrResult.hidden = true;
+        outBox.classList.remove('has-result');
+        meta.innerHTML = '';
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnGenerate.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', function (e) { e.preventDefault(); generate(); });
+
+    document.getElementById('btnDownload').addEventListener('click', function () {
+      if (!lastImage) return;
+      const a = document.createElement('a');
+      a.href = lastImage;
+      a.download = 'qrcode.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+    document.getElementById('btnCopyContent').addEventListener('click', function () {
+      TP.copyText(qrContent.textContent, '已复制二维码内容');
+    });
+
+    TP.setupShortcut(form.querySelector('input, textarea'), function () { generate(); });
+    form.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && e.target && e.target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        generate();
+      }
+    });
+  </script>
+{% endblock %}

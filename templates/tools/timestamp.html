@@ -1,0 +1,194 @@
+{% extends "tools/base.html" %}
+{% set page_title = "时间戳转换" %}
+{% set page_description = "Unix 时间戳与日期时间互转" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-coding") %}
+{% set back_label = "编码工具" %}
+{% set chip = "编码工具 · 时间戳" %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">🕒</div>
+        <div>
+          <h1>时间戳转换</h1>
+          <p>在 Unix 时间戳（秒 / 毫秒）与日期时间之间互转。输入数字自动识别为时间戳，输入日期时间自动转回时间戳。</p>
+        </div>
+      </div>
+
+      <div class="opts">
+        <label class="field">
+          时间戳 或 日期时间
+          <input type="text" id="value" placeholder="1725312888 或 2026-08-03 21:14:48 或 now" spellcheck="false" />
+          <span class="hint">支持 10 位秒 / 13 位毫秒，自动识别；日期默认按你当前的时区解析。</span>
+        </label>
+      </div>
+
+      <div class="quick-row">
+        <button type="button" class="mini" id="btnNowSec">现在（秒）</button>
+        <button type="button" class="mini" id="btnNowMs">现在（毫秒）</button>
+        <button type="button" class="mini" id="btnNow">当前时间</button>
+        <button type="button" class="mini" id="btnClear">清空</button>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" id="btnRun">转换</button>
+      </div>
+
+      <div class="meta" id="meta"></div>
+      <div class="status" id="status"></div>
+
+      <div class="kv-grid" id="result" hidden>
+        <div class="kv"><div class="k">输入类型</div><div class="v" id="rKind">—</div></div>
+        <div class="kv"><div class="k">时间戳（秒）</div><div class="v mono" id="rSec">—</div></div>
+        <div class="kv"><div class="k">时间戳（毫秒）</div><div class="v mono" id="rMs">—</div></div>
+        <div class="kv"><div class="k">本地时间</div><div class="v mono" id="rLocal">—</div></div>
+        <div class="kv"><div class="k">北京时间</div><div class="v mono" id="rBj">—</div></div>
+        <div class="kv"><div class="k">UTC</div><div class="v mono" id="rUtc">—</div></div>
+        <div class="kv"><div class="k">日期</div><div class="v" id="rDate">—</div></div>
+        <div class="kv"><div class="k">星期</div><div class="v" id="rWeek">—</div></div>
+        <div class="kv"><div class="k">年积日</div><div class="v" id="rYday">—</div></div>
+        <div class="kv"><div class="k">相对时间</div><div class="v" id="rRel">—</div></div>
+        <div class="kv span2"><div class="k">ISO</div><div class="v mono" id="rIso">—</div></div>
+      </div>
+
+      <p class="tips">
+        输入 <code>1754249288</code>（秒）或 <code>1754249288000</code>（毫秒）自动识别；
+        也可输入 <code>2026-08-03 21:14</code>、<code>2026/08/03</code>、<code>now</code>。
+        按 Ctrl/Cmd + Enter 快速转换。
+      </p>
+</div>
+{% endblock %}
+
+{% block head_styles %}
+<style>
+.tool-page .quick-row{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.tool-page .quick-row .mini{
+  border: 1px solid var(--line); background: var(--surface-solid); color: var(--ink);
+  padding: 8px 12px; border-radius: 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.tool-page .quick-row .mini:hover{ border-color: var(--c-border); }
+.tool-page .kv-grid{
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px;
+}
+@media (max-width: 620px){ .tool-page .kv-grid{ grid-template-columns: 1fr 1fr; } }
+.tool-page .kv-grid[hidden]{ display: none; }
+.tool-page .kv{
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+}
+.tool-page .kv .k{ font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.tool-page .kv .v{ font-size: 14px; color: var(--ink); font-weight: 650; word-break: break-all; }
+.tool-page .kv .v.mono{ font-family: var(--mono); font-size: 13px; font-weight: 550; }
+.tool-page .kv.span2{ grid-column: span 2; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const input = document.getElementById('value');
+    const btnRun = document.getElementById('btnRun');
+    const btnClear = document.getElementById('btnClear');
+    const btnNowSec = document.getElementById('btnNowSec');
+    const btnNowMs = document.getElementById('btnNowMs');
+    const btnNow = document.getElementById('btnNow');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+    const result = document.getElementById('result');
+    const fields = {
+      kind: document.getElementById('rKind'),
+      sec: document.getElementById('rSec'),
+      ms: document.getElementById('rMs'),
+      local: document.getElementById('rLocal'),
+      bj: document.getElementById('rBj'),
+      utc: document.getElementById('rUtc'),
+      date: document.getElementById('rDate'),
+      week: document.getElementById('rWeek'),
+      yday: document.getElementById('rYday'),
+      rel: document.getElementById('rRel'),
+      iso: document.getElementById('rIso'),
+    };
+
+    const UX = window.ToolkitUX || null;
+    const TP = window.ToolPage || {};
+
+    function tzOffset() {
+      return -new Date().getTimezoneOffset(); // minutes east of UTC
+    }
+
+    function setResult(data) {
+      if (!data) { result.hidden = true; return; }
+      fields.kind.textContent = data.kind === 'datetime' ? '日期时间 → 时间戳' : '时间戳 → 日期时间';
+      fields.sec.textContent = data.epoch_seconds != null ? String(data.epoch_seconds) : '—';
+      fields.ms.textContent = data.epoch_ms != null ? String(data.epoch_ms) : '—';
+      fields.local.textContent = data.local || '—';
+      fields.bj.textContent = data.beijing || '—';
+      fields.utc.textContent = data.utc || '—';
+      fields.date.textContent = data.date || '—';
+      fields.week.textContent = data.weekday ? data.weekday + ' ' + data.weekday_en : '—';
+      fields.yday.textContent = data.day_of_year != null ? String(data.day_of_year) : '—';
+      fields.rel.textContent = data.relative || '—';
+      fields.iso.textContent = data.iso || '—';
+      result.hidden = false;
+    }
+
+    async function run() {
+      if (TP.clearStatus) TP.clearStatus(status);
+      btnRun.disabled = true;
+      const value = input.value.trim();
+      if (!value) {
+        TP.setStatus && TP.setStatus(status, 'err', '请输入时间戳或日期时间');
+        btnRun.disabled = false;
+        return;
+      }
+      try {
+        const fd = new FormData();
+        fd.append('value', value);
+        fd.append('tz_offset', String(tzOffset()));
+        const data = await TP.runForm(TP.appUrl('/tools/timestamp/convert'), fd);
+        setResult(data);
+        if (TP.setStatus) TP.setStatus(status, 'ok', '转换完成');
+      } catch (err) {
+        setResult(null);
+        if (TP.setStatus) TP.setStatus(status, 'err', (err && err.message) || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    }
+
+    async function nowDate() {
+      btnRun.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('tz_offset', String(tzOffset()));
+        const data = await TP.runForm(TP.appUrl('/tools/timestamp/now'), fd);
+        input.value = String(data.epoch_seconds);
+        setResult(data);
+        if (TP.setStatus) TP.setStatus(status, 'ok', '已取当前时间');
+      } catch (err) {
+        if (TP.setStatus) TP.setStatus(status, 'err', (err && err.message) || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    }
+
+    btnNowSec.addEventListener('click', function () {
+      input.value = String(Math.floor(Date.now() / 1000));
+      run();
+    });
+    btnNowMs.addEventListener('click', function () {
+      input.value = String(Date.now());
+      run();
+    });
+    btnNow.addEventListener('click', nowDate);
+    btnClear.addEventListener('click', function () {
+      input.value = '';
+      setResult(null);
+      if (TP.clearStatus) TP.clearStatus(status);
+      input.focus();
+    });
+    btnRun.addEventListener('click', run);
+    TP.setupShortcut && TP.setupShortcut(input, function () { btnRun.click(); });
+  </script>
+{% endblock %}

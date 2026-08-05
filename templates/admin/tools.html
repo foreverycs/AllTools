@@ -1,0 +1,117 @@
+{% extends "admin/base.html" %}
+{% block title %}功能开关{% endblock %}
+{% block content %}
+<div class="admin-header">
+  <div>
+    <h1>功能开关</h1>
+    <p>控制前台展示与 API 是否开放；关闭后首页隐藏，访问返回 403</p>
+  </div>
+  <div class="admin-actions">
+    <span class="admin-badge {% if enabled_count == total %}ok{% elif enabled_count == 0 %}err{% else %}warn{% endif %}">
+      {{ enabled_count }} / {{ total }} 已启用
+    </span>
+    <a class="admin-btn" href="{{ url_path('/admin/system') }}">系统状态</a>
+  </div>
+</div>
+
+{% if flash %}
+<div class="admin-flash ok" role="status">{{ flash }}</div>
+{% endif %}
+
+<form method="post" action="{{ url_path('/admin/tools') }}" class="admin-tools-form" id="toolsFlagsForm">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+
+  <div class="admin-panel admin-tools-toolbar">
+    <div class="admin-tools-toolbar-l">
+      <button type="button" class="admin-btn" id="toolsSelectAll">全选启用</button>
+      <button type="button" class="admin-btn" id="toolsSelectNone">全部关闭</button>
+    </div>
+    <div class="admin-tools-toolbar-r">
+      <span class="admin-muted admin-mono" title="配置文件路径">{{ flags_meta.path }}</span>
+      <button type="submit" class="admin-btn admin-btn-primary">保存更改</button>
+    </div>
+  </div>
+
+  {% for cat in categories %}
+  <div class="admin-panel admin-tools-cat">
+    <div class="admin-panel-h">
+      <span>{{ cat.icon or '' }} {{ cat.name }}</span>
+      <span class="admin-muted" style="font-weight:600;font-size:12px">
+        {{ cat.tools|length }} 个工具
+      </span>
+    </div>
+    <div class="admin-tools-list">
+      {% for tool in cat.tools %}
+      <label class="admin-tool-row {% if not tool.enabled %}is-off{% endif %}">
+        <div class="admin-tool-main">
+          <span class="admin-tool-icon" aria-hidden="true">{{ tool.icon }}</span>
+          <div class="admin-tool-text">
+            <div class="admin-tool-name">
+              {{ tool.name }}
+              <span class="admin-badge">{{ tool.slug }}</span>
+              {% if tool.enabled %}
+              <span class="admin-badge ok">启用</span>
+              {% else %}
+              <span class="admin-badge err">已关闭</span>
+              {% endif %}
+            </div>
+            <div class="admin-tool-desc">{{ tool.description }}</div>
+            <div class="admin-tool-meta admin-mono">{{ tool.route }}</div>
+          </div>
+        </div>
+        <div class="admin-tool-switch">
+          <input
+            type="checkbox"
+            name="enabled"
+            value="{{ tool.slug }}"
+            class="admin-switch-input"
+            {% if tool.enabled %}checked{% endif %}
+          />
+          <span class="admin-switch-ui" aria-hidden="true"></span>
+        </div>
+      </label>
+      {% else %}
+      <div class="admin-muted" style="padding:16px 18px">该分类暂无工具</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="admin-panel">
+    <div class="admin-panel-b admin-muted">未注册任何工具</div>
+  </div>
+  {% endfor %}
+
+  <div class="admin-tools-foot">
+    <p class="admin-muted">
+      关闭后：首页与分类页不再显示；直接访问页面或调用转换 API 返回 403。
+      配置保存在归档目录下的 <code>tool_flags.json</code>，重启后仍然生效。
+    </p>
+    <button type="submit" class="admin-btn admin-btn-primary">保存更改</button>
+  </div>
+</form>
+
+<script>
+(function () {
+  var form = document.getElementById('toolsFlagsForm');
+  if (!form) return;
+  var boxes = function () { return form.querySelectorAll('input.admin-switch-input[type="checkbox"]'); };
+  var allBtn = document.getElementById('toolsSelectAll');
+  var noneBtn = document.getElementById('toolsSelectNone');
+  function setAll(on) {
+    boxes().forEach(function (el) {
+      el.checked = on;
+      var row = el.closest('.admin-tool-row');
+      if (row) row.classList.toggle('is-off', !on);
+    });
+  }
+  if (allBtn) allBtn.addEventListener('click', function () { setAll(true); });
+  if (noneBtn) noneBtn.addEventListener('click', function () { setAll(false); });
+  form.addEventListener('change', function (e) {
+    var t = e.target;
+    if (!t || !t.classList.contains('admin-switch-input')) return;
+    var row = t.closest('.admin-tool-row');
+    if (row) row.classList.toggle('is-off', !t.checked);
+  });
+})();
+</script>
+{% endblock %}

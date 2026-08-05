@@ -1,0 +1,332 @@
+{% extends "tools/base.html" %}
+{% set page_title = "图片压缩" %}
+{% set page_description = "图片高观感压缩 — JPEG / PNG / GIF / SVG" %}
+{% set accent = "emerald" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/#col-office") %}
+{% set back_label = "办公工具" %}
+{% set chip = "办公工具 · 图片压缩" %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">🖼️</div>
+        <div>
+          <h1>图片压缩</h1>
+          <p>显著减小图片体积，尽量不影响观感清晰度。支持 JPEG、PNG、GIF、SVG；默认去除 EXIF 等元数据。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">近无损观感</span>
+        <span class="feat">JPEG / PNG</span>
+        <span class="feat">GIF 动图</span>
+        <span class="feat">SVG 精简</span>
+        <span class="feat">去元数据</span>
+      </div>
+
+      {% with
+  accept='image/jpeg,image/png,image/gif,image/svg+xml,.jpg,.jpeg,.png,.gif,.svg',
+  title_html='点击或拖拽 <strong>图片文件</strong> 到此处',
+  hint='JPEG / PNG / GIF / SVG · 单文件 ≤ 50 MB'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
+
+      <div class="preview-wrap" id="previewWrap">
+        <div class="preview-bar">
+          <span id="fileName">—</span>
+          <span class="meta" id="fileMeta">—</span>
+        </div>
+        <div class="preview-stage">
+          <img id="previewImg" alt="预览" />
+        </div>
+      </div>
+
+      <div class="opts">
+        <div class="opts-title">压缩选项</div>
+        <div class="quality-row" id="qualityRow" role="radiogroup" aria-label="压缩强度">
+          <label class="q-card" data-q="high">
+            <input type="radio" name="quality" value="high" />
+            <div class="ql">高质量</div>
+            <div class="qh">几乎无损观感，体积仍会下降</div>
+          </label>
+          <label class="q-card active" data-q="balanced">
+            <input type="radio" name="quality" value="balanced" checked />
+            <div class="ql">均衡（推荐）</div>
+            <div class="qh">体积显著减小，肉眼几乎无感</div>
+          </label>
+          <label class="q-card" data-q="strong">
+            <input type="radio" name="quality" value="strong" />
+            <div class="ql">强压缩</div>
+            <div class="qh">更小体积；超大图限制最长边</div>
+          </label>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="stripMeta" checked />
+          去除 EXIF / 注释等元数据（方向信息会先烘焙进像素）
+        </label>
+        <label class="field">
+          最长边限制（可选，像素）
+          <input type="number" id="maxSide" min="0" max="20000" step="1" placeholder="留空 = 按预设（强压缩默认 2560）" />
+          <span class="hint">仅当图片最长边超过该值时等比缩小；0 表示不缩放。</span>
+        </label>
+      </div>
+
+      <button id="btn" disabled>开始压缩</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div class="stats" id="stats">
+        <div class="stat"><div class="k">原始大小</div><div class="v" id="statOrig">—</div></div>
+        <div class="stat"><div class="k">压缩后</div><div class="v" id="statOut">—</div></div>
+        <div class="stat"><div class="k">节省</div><div class="v good" id="statSaved">—</div></div>
+      </div>
+      <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const LS_KEY = "image_compress_opts_v1";
+    const fileInput = document.getElementById("file");
+    const drop = document.getElementById("drop");
+    const btn = document.getElementById("btn");
+    const status = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const UX = window.ToolkitUX || null;
+    const progress = document.getElementById("progress");
+    const bar = document.getElementById("bar");
+    const stripMeta = document.getElementById("stripMeta");
+    const maxSide = document.getElementById("maxSide");
+    const previewWrap = document.getElementById("previewWrap");
+    const previewImg = document.getElementById("previewImg");
+    const fileName = document.getElementById("fileName");
+    const fileMeta = document.getElementById("fileMeta");
+    const stats = document.getElementById("stats");
+    const statOrig = document.getElementById("statOrig");
+    const statOut = document.getElementById("statOut");
+    const statSaved = document.getElementById("statSaved");
+    const qualityRow = document.getElementById("qualityRow");
+
+    /** @type {File|null} */
+    let selected = null;
+    let previewUrl = null;
+
+    const {
+      fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl,
+    } = window.ToolkitUpload;
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+      if (saved.quality) {
+        const r = qualityRow.querySelector('input[value="' + saved.quality + '"]');
+        if (r) {
+          r.checked = true;
+          qualityRow.querySelectorAll(".q-card").forEach(function (c) {
+            c.classList.toggle("active", c.getAttribute("data-q") === saved.quality);
+          });
+        }
+      }
+      if (typeof saved.stripMeta === "boolean") stripMeta.checked = saved.stripMeta;
+      if (typeof saved.maxSide === "string" || typeof saved.maxSide === "number") {
+        maxSide.value = saved.maxSide === 0 || saved.maxSide === "0" ? "0" : (saved.maxSide || "");
+      }
+    } catch (e) { /* ignore */ }
+
+    function persistOpts() {
+      try {
+        const q = (qualityRow.querySelector("input:checked") || {}).value || "balanced";
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          quality: q,
+          stripMeta: !!stripMeta.checked,
+          maxSide: maxSide.value,
+        }));
+      } catch (e) { /* ignore */ }
+    }
+
+    qualityRow.addEventListener("change", function (e) {
+      const input = e.target;
+      if (!input || input.name !== "quality") return;
+      qualityRow.querySelectorAll(".q-card").forEach(function (c) {
+        c.classList.toggle("active", c.getAttribute("data-q") === input.value);
+      });
+      persistOpts();
+    });
+    stripMeta.addEventListener("change", persistOpts);
+    maxSide.addEventListener("change", persistOpts);
+    maxSide.addEventListener("blur", persistOpts);
+
+    function setProgress(pct) {
+      progress.classList.add("show");
+      bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    }
+    function hideProgress() {
+      progress.classList.remove("show");
+      bar.style.width = "0%";
+    }
+    function setStatus(text, cls) {
+      status.textContent = text || "";
+      status.className = cls || "";
+    }
+    function clearStats() {
+      stats.classList.remove("show");
+      statOrig.textContent = "—";
+      statOut.textContent = "—";
+      statSaved.textContent = "—";
+    }
+    function showStats(orig, out, pct) {
+      statOrig.textContent = fmtSize(orig);
+      statOut.textContent = fmtSize(out);
+      var saved = Math.max(0, orig - out);
+      var p = typeof pct === "number" ? pct : (orig > 0 ? (saved / orig * 100) : 0);
+      statSaved.textContent = fmtSize(saved) + " (" + p.toFixed(1) + "%)";
+      stats.classList.add("show");
+    }
+
+    function acceptFile(file) {
+      if (!file) return false;
+      if (file.size > MAX_BYTES) {
+        setStatus("文件过大（最大 50 MB）", "err");
+        return false;
+      }
+      var name = (file.name || "").toLowerCase();
+      var okExt = /\.(jpe?g|png|gif|svg)$/i.test(name);
+      var okType = /^(image\/(jpeg|png|gif|svg\+xml)|application\/octet-stream)$/i.test(file.type || "");
+      if (!okExt && !okType) {
+        setStatus("仅支持 JPEG、PNG、GIF、SVG", "err");
+        return false;
+      }
+      return true;
+    }
+
+    function setFile(file) {
+      if (!acceptFile(file)) return;
+      selected = file;
+      btn.disabled = false;
+      clearStats();
+      setStatus("");
+      fileName.textContent = file.name;
+      fileMeta.textContent = fmtSize(file.size);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+      // SVG / GIF / raster all work as object URLs in modern browsers.
+      previewUrl = URL.createObjectURL(file);
+      previewImg.src = previewUrl;
+      previewImg.onerror = function () {
+        previewWrap.classList.remove("show");
+      };
+      previewImg.onload = function () {
+        previewWrap.classList.add("show");
+      };
+      previewWrap.classList.add("show");
+    }
+
+    bindDropZone({
+      drop: drop,
+      input: fileInput,
+      paste: true,
+      acceptFile: function (f) {
+        var n = (f.name || "").toLowerCase();
+        var t = (f.type || "").toLowerCase();
+        return (
+          /\.(jpe?g|png|gif|svg)$/i.test(n) ||
+          t === "image/jpeg" ||
+          t === "image/png" ||
+          t === "image/gif" ||
+          t === "image/svg+xml"
+        );
+      },
+      rejectMessage: "仅支持 JPEG、PNG、GIF、SVG",
+      onFiles: function (files) {
+        if (files && files[0]) setFile(files[0]);
+        fileInput.value = "";
+      },
+    });
+
+    btn.addEventListener("click", async function () {
+      if (!selected) return;
+      btn.disabled = true;
+      clearStats();
+      setStatus("正在压缩…", "info");
+      setProgress(8);
+
+      var fd = new FormData();
+      fd.append("file", selected, selected.name);
+      var q = (qualityRow.querySelector("input:checked") || {}).value || "balanced";
+      fd.append("quality", q);
+      fd.append("strip_meta", stripMeta.checked ? "true" : "false");
+      if (maxSide.value !== "" && maxSide.value != null) {
+        fd.append("max_side", String(maxSide.value));
+      }
+
+      try {
+        var xhr = await xhrPost(appUrl("/tools/image-compress/compress"), fd, {
+          processHint: "上传完成，正在压缩…",
+          longWaitSec: 12,
+          onProgress: function (pct) { setProgress(pct); },
+          onStatus: function (text, cls) { setStatus(text, cls || "info"); },
+        });
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var blob = xhr.response;
+          var name = downloadName(
+            xhr.getResponseHeader("Content-Disposition"),
+            selected.name.replace(/\.[^.]+$/, "") + "_compressed"
+          );
+          var orig = parseInt(xhr.getResponseHeader("X-Original-Bytes") || "0", 10);
+          var out = parseInt(xhr.getResponseHeader("X-Compressed-Bytes") || "0", 10);
+          var pct = parseFloat(xhr.getResponseHeader("X-Percent-Saved") || "0");
+          if (!orig) orig = selected.size;
+          if (!out && blob && blob.size) out = blob.size;
+          showStats(orig, out, isNaN(pct) ? undefined : pct);
+          saveBlob(blob, name);
+          var msg = "压缩完成";
+          if (orig && out) {
+            msg += " · 节省 " + fmtSize(Math.max(0, orig - out));
+            if (!isNaN(pct)) msg += "（" + pct.toFixed(1) + "%）";
+          }
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, {
+              kind: "ok",
+              title: "压缩完成",
+              detail: msg,
+              filename: name,
+              downloadBlob: blob,
+              downloadName: name,
+              againLabel: "继续压缩",
+              onAgain: function () {
+                UX.hideResult(resultEl);
+              },
+            });
+          } else {
+            setStatus(msg, "ok");
+          }
+          setProgress(100);
+        } else {
+          var em = await xhrErrorMessage(xhr);
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, { kind: "err", title: "压缩失败", detail: em || "压缩失败" });
+          } else {
+            setStatus(em || "压缩失败", "err");
+          }
+        }
+      } catch (err) {
+        var em2 = (err && err.message) || "网络错误";
+        if (UX) {
+          setStatus("", "");
+          UX.showResult(resultEl, { kind: "err", title: "压缩失败", detail: em2 });
+        } else {
+          setStatus(em2, "err");
+        }
+      } finally {
+        btn.disabled = !selected;
+        setTimeout(hideProgress, 600);
+      }
+    });
+  </script>
+{% endblock %}

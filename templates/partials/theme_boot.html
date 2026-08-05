@@ -1,0 +1,22 @@
+{# Apply theme before paint to avoid flash. Safe if localStorage blocked.
+   Sets both data-theme (for tokens.css) and the light-mode class (for
+   home.css overrides) so every page shares the same theme contract.
+   Priority: explicit user choice (localStorage) > auto by real time
+   (6:00–18:00 = light, otherwise dark). #}
+<script>
+(function () {
+  function timeTheme() {
+    var h = new Date().getHours();
+    return (h >= 6 && h < 18) ? "light" : "dark";
+  }
+  var t = timeTheme();
+  try {
+    var k = "toolkit_theme_v1";
+    var stored = localStorage.getItem(k);
+    if (stored === "light" || stored === "dark") t = stored;
+  } catch (e) {}
+  var el = document.documentElement;
+  el.setAttribute("data-theme", t);
+  el.classList.toggle("light-mode", t === "light");
+})();
+</script>

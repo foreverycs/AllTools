@@ -1,0 +1,632 @@
+{% extends "tools/base.html" %}
+{% set page_title = "发票合并" %}
+{% set page_description = "两张发票合并到一张 A4" %}
+{% set accent = "violet" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/#col-office") %}
+{% set back_label = "办公工具" %}
+{% set chip = "办公工具 · 发票合并" %}
+
+{% block head_styles %}
+<style>
+.tool-page .head-feats{
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin-top: 10px;
+    }
+.tool-page .split{
+      display: grid;
+      grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+      min-height: 560px;
+    }
+@media (max-width: 860px)  {
+.tool-page .split{
+        grid-template-columns: 1fr;
+        min-height: 0;
+      }
+}
+.tool-page .controls{
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 18px 18px 20px;
+      border-right: 1px solid var(--panel-line);
+      background: linear-gradient(180deg, #fafbff 0%, #fff 48%);
+    }
+@media (max-width: 860px)  {
+.tool-page .controls{
+        border-right: 0;
+        border-bottom: 1px solid var(--panel-line);
+      }
+}
+.tool-page .drop{
+      display: block; width: 100%; cursor: pointer;
+      border: 1.5px dashed var(--c-border);
+      border-radius: 14px; padding: 22px 14px;
+      text-align: center;
+      background: #fff;
+      transition: border-color .15s, background .15s, box-shadow .15s;
+    }
+.tool-page .drop:hover, .tool-page .drop.drag{
+      border-color: var(--c);
+      background: var(--c-soft);
+      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.08);
+    }
+.tool-page .drop-icon{
+      width: 40px; height: 40px; margin: 0 auto 10px;
+      border-radius: 12px; display: grid; place-items: center;
+      background: var(--c-soft); border: 1px solid var(--c-border);
+      color: var(--c);
+    }
+.tool-page .drop-icon svg{ width: 18px; height: 18px; }
+.tool-page .drop-title{ font-size: 13px; font-weight: 650; color: var(--ink-2); }
+.tool-page .drop-title strong{ color: var(--c); }
+.tool-page .drop-hint{ margin-top: 5px; font-size: 11.5px; color: var(--muted-2); line-height: 1.45; }
+.tool-page .file-list{
+      margin: 0; padding: 0; list-style: none;
+      display: grid; gap: 6px;
+    }
+.tool-page .file-list:empty{ display: none; }
+.tool-page .file-list li{
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--ink-2);
+      padding: 9px 10px;
+      background: #fff;
+      border: 1px solid var(--panel-line);
+      border-radius: 12px;
+    }
+.tool-page .file-list .fslot{
+      font-size: 10px; font-weight: 700; color: var(--c);
+      background: var(--c-soft); border: 1px solid var(--c-border);
+      padding: 2px 6px; border-radius: 6px; flex-shrink: 0;
+    }
+.tool-page .file-list .fname{
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-weight: 600;
+    }
+.tool-page .file-list .fsize{ color: var(--muted-2); flex-shrink: 0; font-size: 11px; }
+.tool-page .file-list button{
+      border: 0; background: transparent; color: var(--muted-2);
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      padding: 3px 6px; border-radius: 6px; flex-shrink: 0;
+    }
+.tool-page .file-list button:hover{ color: #dc2626; background: #fef2f2; }
+.tool-page .opts{
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 11px 12px;
+      background: #fff;
+      border: 1px solid var(--panel-line);
+      border-radius: 12px;
+    }
+.tool-page .opts .check{
+      display: flex; align-items: flex-start; gap: 9px;
+      font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+      cursor: pointer; line-height: 1.45;
+    }
+.tool-page .opts .check input{
+      width: 15px; height: 15px; margin-top: 1px;
+      accent-color: var(--c); cursor: pointer; flex-shrink: 0;
+    }
+.tool-page .opts .check span{ color: var(--muted); font-weight: 500; }
+.tool-page .opts .check strong{ color: var(--ink-2); font-weight: 650; }
+.tool-page .preview{
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 560px;
+      background: #f1f5f9;
+    }
+@media (max-width: 860px)  {
+.tool-page .preview{ min-height: 480px; }
+}
+.tool-page .preview-bar{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      background: #fff;
+      border-bottom: 1px solid var(--panel-line);
+    }
+.tool-page .preview-meta{
+      display: flex; align-items: center; gap: 8px;
+      min-width: 0;
+    }
+.tool-page .preview-meta .dot{
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #cbd5e1; flex-shrink: 0;
+    }
+.tool-page .preview-meta.ready .dot{
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+    }
+.tool-page .preview-meta .label{
+      font-size: 13px; font-weight: 700; color: var(--ink-2);
+      white-space: nowrap;
+    }
+.tool-page .preview-meta .sub{
+      font-size: 12px; color: var(--muted-2);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+.tool-page .preview-actions{
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+.tool-page .preview-actions button{
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #475569;
+      font: inherit; font-size: 12.5px; font-weight: 650;
+      padding: 7px 12px; border-radius: 10px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, color .15s, box-shadow .15s;
+    }
+.tool-page .preview-actions button svg{ width: 14px; height: 14px; }
+.tool-page .preview-actions button:hover:not(:disabled){
+      border-color: var(--c-border);
+      color: var(--c);
+      background: var(--c-soft);
+    }
+.tool-page .preview-actions button:disabled{
+      opacity: 0.4; cursor: not-allowed;
+    }
+.tool-page .preview-actions button.primary{
+      border: 0; color: #fff;
+      background: linear-gradient(135deg, var(--c), var(--c2));
+      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+    }
+.tool-page .preview-actions button.primary:hover:not(:disabled){
+      color: #fff;
+      background: linear-gradient(135deg, var(--c), var(--c2));
+      box-shadow: 0 6px 16px rgba(124, 58, 237, 0.32);
+    }
+.tool-page .preview-actions button.primary:disabled{
+      background: #e2e8f0; color: #94a3b8;
+      box-shadow: none; opacity: 1;
+    }
+.tool-page .preview-stage{
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      padding: 14px;
+    }
+.tool-page .preview-empty{
+      margin: auto;
+      max-width: 280px;
+      text-align: center;
+      padding: 28px 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+.tool-page .preview-empty .empty-icon{
+      width: 52px; height: 52px; margin: 0 auto 12px;
+      border-radius: 16px;
+      display: grid; place-items: center;
+      background: #fff;
+      border: 1px solid var(--panel-line);
+      color: #a78bfa;
+      box-shadow: var(--shadow-sm);
+    }
+.tool-page .preview-empty .empty-icon svg{ width: 24px; height: 24px; }
+.tool-page .preview-empty strong{
+      display: block;
+      color: var(--ink-2);
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+.tool-page .preview-empty.hidden{ display: none; }
+.tool-page .preview-frame-wrap{
+      flex: 1;
+      min-height: 420px;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+    }
+.tool-page .preview-frame-wrap.hidden{ display: none; }
+.tool-page #previewFrame{
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 420px;
+      border: 0;
+      background: #525659;
+    }
+@media (max-width: 480px)  {
+.tool-page .controls{ padding: 14px; }
+.tool-page .preview-stage{ padding: 10px; }
+.tool-page .preview, .tool-page .split{ min-height: 0; }
+.tool-page .preview{ min-height: 400px; }
+.tool-page #previewFrame, .tool-page .preview-frame-wrap{ min-height: 360px; }
+}
+@media print  {
+.tool-page .split{ display: block; min-height: 0; }
+.tool-page .preview{ background: #fff; min-height: 100vh; }
+.tool-page .preview-stage{ padding: 0; }
+.tool-page .preview-frame-wrap{
+        border: 0; box-shadow: none; border-radius: 0;
+        min-height: 100vh;
+      }
+.tool-page #previewFrame{ min-height: 100vh; height: 100vh; background: #fff; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card" id="previewCard">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">🧾</div>
+        <div>
+          <h1>发票合并</h1>
+          <p>将 1～2 张发票排到一张 A4 纸上，合并后在右侧预览并打印。单张仅占上半页，可加中间分割线。</p>
+          <div class="head-feats">
+            <span class="feat">A4 上下半页</span>
+            <span class="feat">页内预览</span>
+            <span class="feat">一键打印</span>
+            <span class="feat">中间分割线</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="controls">
+          {% with
+  accept='application/pdf,.pdf',
+  multiple=true,
+  title_html='拖拽或选择 <strong>1～2 个 PDF</strong>',
+  hint='每文件第 1 页；单文件 ≤ 50 MB'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
+
+          <ul class="file-list" id="list"></ul>
+
+          <div class="opts">
+            <label class="check">
+              <input type="checkbox" id="divider" checked />
+              <span><strong>中间分割线</strong><br />单张 / 双张均在页面中线绘制</span>
+            </label>
+          </div>
+
+          <button id="btn" disabled>开始合并</button>
+          <div class="progress" id="progress"><i id="bar"></i></div>
+          <div id="status"></div>
+          <div class="tool-result" id="result" hidden></div>
+        </div>
+
+        <div class="preview">
+          <div class="preview-bar">
+            <div class="preview-meta" id="previewMeta">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="label" id="previewLabel">预览</span>
+              <span class="sub" id="previewSub">合并后显示</span>
+            </div>
+            <div class="preview-actions">
+              <button type="button" id="btnPrint" class="primary" disabled title="打印合并结果">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6 9V2h12v7"/>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                  <path d="M6 14h12v8H6z"/>
+                </svg>
+                打印
+              </button>
+              <button type="button" id="btnClearPreview" disabled title="清除预览">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+                </svg>
+                清除
+              </button>
+            </div>
+          </div>
+
+          <div class="preview-stage">
+            <div class="preview-empty" id="previewEmpty">
+              <div class="empty-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <path d="M14 2v6h6M8 13h8M8 17h5"/>
+                </svg>
+              </div>
+              <strong>等待合并结果</strong>
+              上传发票并点击「开始合并」，A4 排版会显示在这里，可直接打印。
+            </div>
+            <div class="preview-frame-wrap hidden" id="previewWrap">
+              <iframe id="previewFrame" title="合并结果预览" type="application/pdf"></iframe>
+            </div>
+          </div>
+        </div>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    var MAX_FILES = 2;
+    var MAX_BYTES = 50 * 1024 * 1024;
+    var fileInput = document.getElementById('file');
+    var drop = document.getElementById('drop');
+    var list = document.getElementById('list');
+    var btn = document.getElementById('btn');
+    var status = document.getElementById('status');
+    var resultEl = document.getElementById('result');
+    var UX = window.ToolkitUX || null;
+    var dividerCheck = document.getElementById('divider');
+    var progress = document.getElementById('progress');
+    var bar = document.getElementById('bar');
+    var previewFrame = document.getElementById('previewFrame');
+    var previewWrap = document.getElementById('previewWrap');
+    var previewEmpty = document.getElementById('previewEmpty');
+    var previewMeta = document.getElementById('previewMeta');
+    var previewLabel = document.getElementById('previewLabel');
+    var previewSub = document.getElementById('previewSub');
+    var btnPrint = document.getElementById('btnPrint');
+    var btnClearPreview = document.getElementById('btnClearPreview');
+    var selected = [];
+    var previewUrl = null;
+    var TU = window.ToolkitUpload;
+    var fmtSize = TU.fmtSize;
+    var xhrPost = TU.xhrPost;
+    var bindDropZone = TU.bindDropZone;
+    var xhrErrorMessage = TU.xhrErrorMessage;
+    var appUrl = TU.appUrl;
+
+    function clearResult() {
+      status.textContent = '';
+      status.className = '';
+      if (UX) UX.hideResult(resultEl);
+    }
+
+    function setProgress(pct) {
+      progress.classList.add('show');
+      bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+    function hideProgress() {
+      progress.classList.remove('show');
+      bar.style.width = '0%';
+    }
+
+    function clearPreview() {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+      previewFrame.removeAttribute('src');
+      previewWrap.classList.add('hidden');
+      previewEmpty.classList.remove('hidden');
+      previewMeta.classList.remove('ready');
+      previewLabel.textContent = '\u9884\u89C8';
+      previewSub.textContent = '\u5408\u5E76\u540E\u663E\u793A';
+      btnPrint.disabled = true;
+      btnClearPreview.disabled = true;
+    }
+
+    function showPreview(blob) {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+      var pdfBlob = blob.type === 'application/pdf'
+        ? blob
+        : new Blob([blob], { type: 'application/pdf' });
+      previewUrl = URL.createObjectURL(pdfBlob);
+      previewFrame.src = previewUrl;
+      previewWrap.classList.remove('hidden');
+      previewEmpty.classList.add('hidden');
+      previewMeta.classList.add('ready');
+      previewLabel.textContent = '\u9884\u89C8\u5C31\u7EEA';
+      previewSub.textContent = '\u53EF\u76F4\u63A5\u6253\u5370';
+      btnPrint.disabled = false;
+      btnClearPreview.disabled = false;
+    }
+
+    function renderList() {
+      list.innerHTML = '';
+      selected.forEach(function(f, i) {
+        var li = document.createElement('li');
+        var slot = document.createElement('span');
+        slot.className = 'fslot';
+        slot.textContent = i === 0 ? '\u4E0A\u534A\u9875' : '\u4E0B\u534A\u9875';
+        var name = document.createElement('span');
+        name.className = 'fname';
+        name.title = f.name;
+        name.textContent = f.name;
+        var size = document.createElement('span');
+        size.className = 'fsize';
+        size.textContent = fmtSize(f.size);
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '\u79FB\u9664';
+        rm.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          selected.splice(i, 1);
+          renderList();
+          status.textContent = '';
+          status.className = '';
+        });
+        li.append(slot, name, size, rm);
+        list.appendChild(li);
+      });
+      btn.disabled = selected.length === 0;
+      if (selected.length === 0) {
+        btn.textContent = '\u8BF7\u4E0A\u4F20 1\uFF5E2 \u4E2A PDF';
+      } else if (selected.length === 1) {
+        btn.textContent = '\u5F00\u59CB\u5408\u5E76\uFF08\u4EC5\u4E0A\u534A\u9875\uFF09';
+      } else {
+        btn.textContent = '\u5F00\u59CB\u5408\u5E76\uFF08\u4E0A\u4E0B\u534A\u9875\uFF09';
+      }
+    }
+
+    function addFiles(fileList) {
+      var incoming = Array.from(fileList || []);
+      var errors = [];
+      for (var i = 0; i < incoming.length; i++) {
+        var f = incoming[i];
+        if (!f.name.toLowerCase().endsWith('.pdf')) {
+          errors.push(f.name + ': \u4EC5\u652F\u6301 PDF');
+          continue;
+        }
+        if (f.size > MAX_BYTES) {
+          errors.push(f.name + ': \u8D85\u8FC7 50 MB');
+          continue;
+        }
+        if (f.size === 0) {
+          errors.push(f.name + ': \u7A7A\u6587\u4EF6');
+          continue;
+        }
+        var dup = selected.some(function(s) { return s.name === f.name && s.size === f.size; });
+        if (dup) continue;
+        if (selected.length >= MAX_FILES) {
+          errors.push('\u6700\u591A ' + MAX_FILES + ' \u4E2A\u6587\u4EF6');
+          break;
+        }
+        selected.push(f);
+      }
+      renderList();
+      if (errors.length) {
+        status.className = 'err';
+        status.textContent = errors.join('\uFF1B');
+      } else {
+        status.textContent = '';
+        status.className = '';
+      }
+      fileInput.value = '';
+    }
+
+    bindDropZone({
+      drop: drop,
+      input: fileInput,
+      paste: false,
+      acceptFile: function (f) {
+        return /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
+      },
+      rejectMessage: '仅支持 PDF 文件',
+      onFiles: addFiles,
+    });
+
+    function printPreview() {
+      if (!previewUrl) return;
+      try {
+        var win = previewFrame.contentWindow;
+        if (win) {
+          win.focus();
+          win.print();
+          return;
+        }
+      } catch (e) { /* ignore */ }
+
+      var w = window.open(previewUrl, '_blank');
+      if (!w) {
+        status.className = 'warn';
+        status.textContent = '\u6D4F\u89C8\u5668\u62E6\u622A\u4E86\u5F39\u7A97\uFF0C\u8BF7\u5141\u8BB8\u5F39\u7A97\u540E\u518D\u70B9\u6253\u5370\u3002';
+        return;
+      }
+      var printed = false;
+      function tryPrint() {
+        if (printed) return;
+        printed = true;
+        try { w.focus(); w.print(); } catch (err) { /* ignore */ }
+      }
+      w.addEventListener('load', function() { setTimeout(tryPrint, 300); });
+      setTimeout(tryPrint, 800);
+    }
+
+    btnPrint.addEventListener('click', printPreview);
+    btnClearPreview.addEventListener('click', function() {
+      clearPreview();
+      status.textContent = '';
+      status.className = '';
+    });
+
+    btn.addEventListener('click', async function() {
+      if (!selected.length) return;
+      if (selected.length > 2) {
+        status.className = 'err';
+        status.textContent = '\u6700\u591A\u4E0A\u4F20 2 \u4E2A PDF';
+        return;
+      }
+      btn.disabled = true;
+      status.className = 'info';
+      status.textContent = '\u51C6\u5907\u4E0A\u4F20\u2026';
+      setProgress(2);
+
+      var fd = new FormData();
+      fd.append('file', selected[0]);
+      if (selected.length === 2) {
+        fd.append('file2', selected[1]);
+      }
+      if (dividerCheck.checked) fd.append('divider', 'true');
+
+      try {
+        var xhr = await xhrPost(appUrl('/tools/pdf-merge/convert'), fd, {
+          onProgress: function(pct) { setProgress(pct); },
+          onStatus: function(text, cls) {
+            status.className = cls || 'info';
+            status.textContent = text;
+          },
+        });
+        if (xhr.status < 200 || xhr.status >= 300) {
+          throw new Error(await xhrErrorMessage(xhr));
+        }
+        showPreview(xhr.response);
+
+        var inPages = xhr.getResponseHeader('X-Input-Pages') || '?';
+        var single = selected.length === 1;
+        // Clear selection so the page is ready for the next job (preview stays).
+        selected = [];
+        fileInput.value = '';
+        renderList();
+
+        var line = single
+          ? '已排在 A4 上半页，可在右侧预览并打印。'
+          : (inPages + ' 张已合并为 1 页 A4，可在右侧预览并打印。');
+        if (UX) {
+          status.textContent = '';
+          status.className = '';
+          UX.showResult(resultEl, {
+            kind: 'ok',
+            title: '合并完成',
+            detail: line,
+            againLabel: '继续合并',
+            onAgain: function () { clearResult(); },
+          });
+        } else {
+          status.className = 'ok';
+          status.textContent = line;
+        }
+
+        if (window.matchMedia('(max-width: 860px)').matches) {
+          document.querySelector('.preview').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } catch (e) {
+        var msg = e.message || String(e);
+        if (UX) {
+          status.textContent = '';
+          status.className = '';
+          UX.showResult(resultEl, {
+            kind: 'err',
+            title: '合并失败',
+            detail: msg,
+            againLabel: '知道了',
+            onAgain: function () { clearResult(); },
+          });
+        } else {
+          status.className = 'err';
+          status.textContent = msg;
+        }
+      } finally {
+        hideProgress();
+        btn.disabled = selected.length === 0;
+      }
+    });
+  </script>
+{% endblock %}

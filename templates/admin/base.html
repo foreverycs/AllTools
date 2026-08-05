@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>{% block title %}管理后台{% endblock %} — 工具集</title>
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/admin.css') }}" />
+  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
+  {# Speculative prefetch: makes sidebar switches feel instant after first paint. #}
+  <link rel="prefetch" href="{{ url_path('/admin') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/uploads') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/express') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/tools') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/categories') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/system') }}" as="document" />
+</head>
+<body class="admin-body">
+  <!-- Drawer + backdrop sit outside .admin-layout so mobile fixed positioning
+       cannot leave residual grid/block tracks (e.g. only the logout foot visible). -->
+  <div class="admin-side-backdrop" id="adminSideBackdrop" hidden></div>
+  <aside class="admin-side" id="adminSide" aria-label="管理后台导航">
+    <div class="admin-side-top">
+      <a class="admin-brand" href="{{ url_path('/admin') }}">
+        <div class="admin-brand-mark">管</div>
+        <div>
+          <div class="admin-brand-name">管理后台</div>
+          <div class="admin-brand-sub">v{{ app_version }}</div>
+        </div>
+      </a>
+      <button type="button" class="admin-side-close" id="adminSideClose" aria-label="收起侧边栏">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <nav class="admin-nav">
+      <a href="{{ url_path('/admin') }}" class="{% if active == 'dashboard' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        仪表盘
+      </a>
+      <a href="{{ url_path('/admin/uploads') }}" class="{% if active == 'uploads' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/>
+        </svg>
+        上传记录
+      </a>
+      <a href="{{ url_path('/admin/express') }}" class="{% if active == 'express' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5a2 2 0 01-2 2h-5"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+        </svg>
+        文件快递
+      </a>
+      <a href="{{ url_path('/admin/tools') }}" class="{% if active == 'tools' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="M9 12l2 2 4-4"/>
+        </svg>
+        功能开关
+      </a>
+      <a href="{{ url_path('/admin/categories') }}" class="{% if active == 'categories' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><path d="M19 3h-4v7h4V3z"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M19 14h-4v7h4v-7z"/>
+        </svg>
+        分类管理
+      </a>
+      <a href="{{ url_path('/admin/system') }}" class="{% if active == 'system' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+        系统状态
+      </a>
+    </nav>
+    <div class="admin-side-foot">
+      <a href="{{ url_path('/') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M11 18l-6-6 6-6"/>
+        </svg>
+        返回前台
+      </a>
+      <form method="post" action="{{ url_path('/admin/logout') }}">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+        <button type="submit">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          退出登录
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="admin-layout">
+    <header class="admin-topbar" id="adminTopbar">
+      <button type="button" class="admin-menu-btn" id="adminMenuBtn" aria-label="打开侧边栏" aria-controls="adminSide" aria-expanded="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <div class="admin-topbar-brand">
+        <span class="admin-topbar-mark">管</span>
+        <div class="admin-topbar-text">
+          <span class="admin-topbar-title">管理后台</span>
+          <span class="admin-topbar-sub">v{{ app_version }}</span>
+        </div>
+      </div>
+    </header>
+    <main class="admin-main" id="adminMain">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    (function () {
+      var body = document.body;
+      var side = document.getElementById('adminSide');
+      var backdrop = document.getElementById('adminSideBackdrop');
+      var openBtn = document.getElementById('adminMenuBtn');
+      var closeBtn = document.getElementById('adminSideClose');
+      var main = document.getElementById('adminMain');
+      if (!side || !backdrop || !openBtn || !main) return;
+
+      var navBusy = false;
+      var root = (window.__ROOT__ || '').replace(/\/$/, '');
+
+      function isMobileNav() {
+        return window.matchMedia('(max-width: 860px)').matches;
+      }
+
+      function setOpen(open) {
+        body.classList.toggle('admin-nav-open', open);
+        openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        side.setAttribute('aria-hidden', open || !isMobileNav() ? 'false' : 'true');
+        if (open) {
+          backdrop.hidden = false;
+          body.style.overflow = 'hidden';
+        } else {
+          backdrop.hidden = true;
+          if (!document.querySelector('.preview-overlay.show')) {
+            body.style.overflow = '';
+          }
+        }
+      }
+
+      function closeSide() { setOpen(false); }
+      function toggleSide() { setOpen(!body.classList.contains('admin-nav-open')); }
+
+      openBtn.addEventListener('click', toggleSide);
+      if (closeBtn) closeBtn.addEventListener('click', closeSide);
+      backdrop.addEventListener('click', closeSide);
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && body.classList.contains('admin-nav-open')) {
+          closeSide();
+        }
+      });
+
+      window.addEventListener('resize', function () {
+        if (!isMobileNav()) closeSide();
+      });
+
+      if (isMobileNav()) {
+        side.setAttribute('aria-hidden', 'true');
+      }
+
+      function isAdminPageUrl(href) {
+        if (!href) return false;
+        try {
+          var u = new URL(href, window.location.href);
+          if (u.origin !== window.location.origin) return false;
+          var path = u.pathname.replace(/\/$/, '') || '/';
+          var prefix = (root || '') + '/admin';
+          if (path === prefix || path.indexOf(prefix + '/') === 0) {
+            // Full page for login / logout / binary downloads
+            if (/\/admin\/(login|logout)(\/|$)/.test(path)) return false;
+            if (/\/(download|preview)(\/|$)/.test(path)) return false;
+            return true;
+          }
+          return false;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function setActiveNav(href) {
+        var path;
+        try {
+          path = new URL(href, window.location.href).pathname.replace(/\/$/, '') || '/';
+        } catch (e) {
+          return;
+        }
+        side.querySelectorAll('a.admin-nav-link, nav a').forEach(function (a) {
+          var ap;
+          try {
+            ap = new URL(a.href, window.location.href).pathname.replace(/\/$/, '') || '/';
+          } catch (e2) {
+            return;
+          }
+          var on = ap === path;
+          a.classList.toggle('active', on);
+        });
+      }
+
+      function runScripts(container) {
+        var scripts = container.querySelectorAll('script');
+        scripts.forEach(function (old) {
+          var s = document.createElement('script');
+          if (old.src) {
+            s.src = old.src;
+          } else {
+            s.textContent = old.textContent;
+          }
+          // Replace so inline scripts execute in page context
+          old.parentNode.replaceChild(s, old);
+        });
+      }
+
+      function softNavigate(href, push) {
+        if (navBusy) return;
+        navBusy = true;
+        body.classList.add('admin-navigating');
+        if (isMobileNav()) closeSide();
+
+        fetch(href, {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'AdminNav', 'Accept': 'text/html' },
+        })
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            var ct = (r.headers.get('content-type') || '');
+            if (ct.indexOf('text/html') < 0) throw new Error('not html');
+            return r.text();
+          })
+          .then(function (html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var nextMain = doc.querySelector('#adminMain, main.admin-main');
+            if (!nextMain) throw new Error('no main');
+            // Tear down page-local overlays from previous view
+            document.querySelectorAll('.preview-overlay').forEach(function (el) {
+              el.remove();
+            });
+            main.innerHTML = nextMain.innerHTML;
+            document.title = doc.title || document.title;
+            setActiveNav(href);
+            runScripts(main);
+            if (push) {
+              history.pushState({ adminSoft: true }, '', href);
+            }
+            // Scroll main pane to top
+            main.scrollTop = 0;
+            window.scrollTo(0, 0);
+          })
+          .catch(function () {
+            // Fallback: full navigation
+            window.location.href = href;
+          })
+          .finally(function () {
+            body.classList.remove('admin-navigating');
+            navBusy = false;
+          });
+      }
+
+      side.querySelectorAll('a[href]').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target === '_blank') {
+            return;
+          }
+          var href = a.getAttribute('href') || '';
+          if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) {
+            return;
+          }
+          // "返回前台" leaves admin shell
+          if (!isAdminPageUrl(a.href)) {
+            body.classList.add('admin-navigating');
+            return;
+          }
+          e.preventDefault();
+          if (a.classList.contains('active') && !a.search) {
+            // Same page: still allow refresh of query-less dashboard etc.
+          }
+          softNavigate(a.href, true);
+        });
+      });
+
+      window.addEventListener('popstate', function () {
+        if (isAdminPageUrl(window.location.href)) {
+          softNavigate(window.location.href, false);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

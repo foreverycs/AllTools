@@ -1,0 +1,663 @@
+{% extends "tools/base.html" %}
+{% set page_title = "正则测试" %}
+{% set page_description = "正则表达式匹配 / 捕获 / 替换测试" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-coding") %}
+{% set back_label = "编码工具" %}
+{% set chip = "编码工具 · 正则测试" %}
+
+{% block head_styles %}
+<style>
+  .rx-grid { display: grid; gap: 18px; }
+
+  .rx-pattern {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .rx-pattern .slash {
+    align-self: center;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--tool-accent);
+    font-family: var(--mono);
+    padding: 0 2px;
+    user-select: none;
+  }
+  .rx-pattern input {
+    flex: 1;
+    min-width: 200px;
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 550;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1.5px solid var(--line);
+    background: var(--surface-solid);
+    color: var(--ink);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .rx-pattern input:focus {
+    outline: none;
+    border-color: var(--tool-accent);
+    box-shadow: 0 0 0 3px var(--tool-focus);
+  }
+  .rx-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 12px;
+  }
+  .rx-flags .fl-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    margin-right: 4px;
+  }
+  .flag-chip {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: var(--muted);
+    padding: 6px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  .flag-chip.active {
+    color: var(--tool-accent-ink);
+    border-color: var(--tool-accent);
+    background: var(--tool-accent-soft);
+  }
+  .flag-chip .fl-tip {
+    font-family: var(--font);
+    font-weight: 500;
+    font-size: 10.5px;
+    margin-left: 2px;
+    opacity: .75;
+  }
+
+  .rx-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rx-pane textarea {
+    width: 100%;
+    min-height: 180px;
+    resize: vertical;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    color: var(--ink);
+    tab-size: 2;
+  }
+  .rx-pane textarea:focus {
+    outline: none;
+    border-color: var(--tool-accent);
+    box-shadow: 0 0 0 3px var(--tool-focus);
+  }
+
+  .rx-result {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface-solid);
+    overflow: hidden;
+  }
+  .rx-result .rx-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .rx-result .rx-result-head .count {
+    color: var(--tool-accent-ink);
+    background: var(--tool-accent-soft);
+    border: 1px solid var(--tool-accent-border);
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+  }
+  .rx-highlight {
+    max-height: 240px;
+    overflow: auto;
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.9;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: var(--chip-bg);
+  }
+  .rx-highlight mark {
+    background: var(--tool-accent-soft);
+    color: var(--tool-accent-ink);
+    border-radius: 4px;
+    padding: 1px 3px;
+    box-shadow: 0 0 0 1px var(--tool-accent-border);
+    font-weight: 700;
+  }
+  .rx-highlight mark.match-0 { background: #fde68a; color: #92400e; box-shadow: 0 0 0 1px #f59e0b; }
+
+  .rx-groups { overflow-x: auto; padding: 6px 4px 8px; }
+  .rx-groups table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .rx-groups th, .rx-groups td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+    font-family: var(--mono);
+  }
+  .rx-groups th {
+    font-size: 11px;
+    font-weight: 750;
+    color: var(--muted-2);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    background: var(--chip-bg);
+  }
+  .rx-groups td.g-index { color: var(--muted); }
+  .rx-groups td.g-name { color: var(--tool-accent-ink); font-weight: 700; }
+  .rx-groups td.g-pos { color: var(--muted-2); }
+  .rx-groups td.g-text { color: var(--ink); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+  .rx-groups .empty {
+    text-align: center;
+    color: var(--muted-2);
+    padding: 20px;
+    font-size: 13px;
+    font-family: var(--font);
+  }
+
+  .rx-empty { padding: 22px; text-align: center; color: var(--muted-2); font-size: 13px; }
+  .rx-no-match { padding: 14px; text-align: center; color: var(--muted-2); font-size: 13px; }
+
+  .rx-gen {
+    border: 1px dashed var(--tool-accent-border);
+    border-radius: 16px;
+    background: var(--tool-accent-soft);
+    padding: 14px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    margin-top: 26px;
+  }
+  .rx-gen .gen-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--tool-accent-ink);
+    margin-bottom: 10px;
+  }
+  .rx-gen .gen-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .rx-gen input[type="text"] {
+    flex: 1;
+    min-width: 180px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 11px 13px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line);
+    background: var(--surface-solid);
+    color: var(--ink);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .rx-gen input[type="text"]:focus {
+    outline: none;
+    border-color: var(--tool-accent);
+    box-shadow: 0 0 0 3px var(--tool-focus);
+  }
+  .rx-gen .gen-hint { font-size: 11.5px; color: var(--muted); margin-top: auto; padding-top: 12px; line-height: 1.5; }
+  .rx-gen .gen-context { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+  .rx-gen .gen-context .ctx-label { font-size: 11px; font-weight: 700; color: var(--muted-2); }
+  .ctx-chip {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 650;
+    font-family: var(--mono);
+    color: var(--ink-2);
+    padding: 6px 11px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  .ctx-chip:hover {
+    color: var(--tool-accent-ink);
+    border-color: var(--tool-accent);
+    background: var(--surface-solid);
+  }
+
+  .rx-anchors { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+  .rx-anchors .an-label { font-size: 11px; font-weight: 700; color: var(--muted-2); margin-right: 4px; }
+  .an-chip {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 650;
+    color: var(--muted);
+    padding: 6px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  .an-chip:hover { color: var(--ink-2); }
+  .an-chip.active {
+    color: var(--tool-accent-ink);
+    border-color: var(--tool-accent);
+    background: var(--tool-accent-soft);
+  }
+
+  .rx-top { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+  .rx-mid {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 16px;
+    align-items: stretch;
+    margin-bottom: 18px;
+  }
+  .rx-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .rx-left .rx-pane { flex: 1; }
+  .rx-left .rx-pane textarea { flex: 1; }
+  .rx-right { display: flex; min-width: 0; }
+  .rx-bottom { display: flex; flex-direction: column; gap: 12px; }
+
+  @media (max-width: 900px) {
+    .rx-mid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 520px) {
+    .rx-pattern .slash { display: none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">⌗</div>
+        <div>
+          <h1>正则测试</h1>
+          <p>编写并测试正则表达式：高亮命中位置、查看捕获分组，或直接预览替换结果。</p>
+        </div>
+      </div>
+
+      <div class="rx-top">
+        <div class="mode-tabs" role="tablist">
+          <button type="button" class="mode-tab active" data-mode="test" role="tab">匹配 Test</button>
+          <button type="button" class="mode-tab" data-mode="replace" role="tab">替换 Replace</button>
+        </div>
+
+        <div>
+          <div class="pane-label">
+            <span>正则表达式</span>
+            <button type="button" class="mini" id="btnClearPattern">清空</button>
+          </div>
+          <div class="rx-pattern" style="margin-top:8px">
+            <span class="slash">/</span>
+            <input type="text" id="pattern" placeholder="例如 \d{4}-\d{2}-\d{2}" autocomplete="off" spellcheck="false" />
+            <span class="slash">/</span>
+          </div>
+          <div class="rx-flags">
+            <span class="fl-label">标志</span>
+            <button type="button" class="flag-chip" data-flag="i">i<span class="fl-tip">忽略大小写</span></button>
+            <button type="button" class="flag-chip" data-flag="m">m<span class="fl-tip">多行</span></button>
+            <button type="button" class="flag-chip" data-flag="s">s<span class="fl-tip">点匹配换行</span></button>
+            <button type="button" class="flag-chip" data-flag="x">x<span class="fl-tip">扩展</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rx-mid">
+        <div class="rx-left">
+          <div class="rx-pane">
+            <div class="pane-label">
+              <span>测试文本</span>
+              <div class="pane-actions">
+                <button type="button" class="mini" id="btnSample">示例</button>
+                <button type="button" class="mini" id="btnClearText">清空</button>
+              </div>
+            </div>
+            <textarea id="text" placeholder="在此粘贴要测试的文本…" spellcheck="false"></textarea>
+          </div>
+        </div>
+
+        <div class="rx-right">
+          <div class="rx-gen">
+            <div class="gen-head">
+              <span>智能生成</span>
+              <button type="button" class="mini" id="btnGen">生成正则</button>
+            </div>
+            <div class="gen-row">
+              <input type="text" id="target" placeholder="粘贴想提取的内容，如 13800138000" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="rx-anchors" id="rxAnchors">
+              <span class="an-label">定位方式</span>
+              <button type="button" class="an-chip active" data-anchor="auto">自动</button>
+              <button type="button" class="an-chip" data-anchor="contains">包含</button>
+              <button type="button" class="an-chip" data-anchor="start">行首</button>
+              <button type="button" class="an-chip" data-anchor="end">行尾</button>
+              <button type="button" class="an-chip" data-anchor="line">整行</button>
+            </div>
+            <div class="gen-context" id="genContext" style="display:none">
+              <span class="ctx-label">可加锚点</span>
+              <button type="button" class="ctx-chip" id="ctxPrefix" style="display:none"></button>
+              <button type="button" class="ctx-chip" id="ctxSuffix" style="display:none"></button>
+            </div>
+            <p class="gen-hint">填入「测试文本」后，在此粘贴你要提取的内容，点击「生成正则」，自动把生成的正则填入上方并高亮验证。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="rx-bottom">
+        <div>
+          <div class="pane-label" style="margin-bottom:8px">
+            <span id="resultLabel">匹配结果</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnCopy">复制</button>
+              <button type="button" class="mini" id="btnClearResult">清空</button>
+            </div>
+          </div>
+          <div class="rx-result" id="resultBox">
+            <div class="rx-empty" id="resultEmpty">结果将显示在这里…</div>
+          </div>
+        </div>
+
+        <div class="rx-pane" id="replacePane" style="display:none">
+          <div class="pane-label">
+            <span>替换为</span>
+          </div>
+          <input type="text" id="replacement" placeholder="替换文本，可用 $1 / \1 引用分组" autocomplete="off" spellcheck="false"
+                 style="font-family:var(--mono);font-size:13px;padding:11px 13px;border-radius:12px;border:1px solid var(--line);background:var(--surface-solid);color:var(--ink)" />
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn" id="btnRun">测试匹配</button>
+          <button type="button" class="btn btn-ghost" id="btnClearAll">全部清空</button>
+        </div>
+
+        <div class="status" id="status"></div>
+        <p class="tips">
+          提示：支持捕获分组（<code>$1</code> / <code>\1</code>）、常用标志
+          <code>i</code> <code>m</code> <code>s</code> <code>x</code>。
+          点击「测试匹配」查看高亮与分组，切换替换模式预览结果。按 Ctrl/Cmd + Enter 快速测试。
+        </p>
+      </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const patternEl = document.getElementById('pattern');
+    const textEl = document.getElementById('text');
+    const replacementEl = document.getElementById('replacement');
+    const flagChips = document.querySelectorAll('.flag-chip');
+    const resultBox = document.getElementById('resultBox');
+    const resultLabel = document.getElementById('resultLabel');
+    const replacePane = document.getElementById('replacePane');
+    const btnRun = document.getElementById('btnRun');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnSample = document.getElementById('btnSample');
+    const btnClearPattern = document.getElementById('btnClearPattern');
+    const btnClearText = document.getElementById('btnClearText');
+    const btnClearResult = document.getElementById('btnClearResult');
+    const btnClearAll = document.getElementById('btnClearAll');
+    const btnGen = document.getElementById('btnGen');
+    const targetEl = document.getElementById('target');
+    const genContext = document.getElementById('genContext');
+    const ctxPrefix = document.getElementById('ctxPrefix');
+    const ctxSuffix = document.getElementById('ctxSuffix');
+    const anchorChips = document.querySelectorAll('.an-chip');
+    const status = document.getElementById('status');
+
+    const TP = window.ToolPage || {};
+    let mode = 'test';
+    let lastReplace = '';
+    let genPrefix = '';
+    let genSuffix = '';
+    const modeTabs = document.querySelectorAll('.mode-tab');
+
+    function activeFlags() {
+      return Array.from(flagChips).filter((c) => c.classList.contains('active'))
+        .map((c) => c.getAttribute('data-flag')).join('');
+    }
+
+    function activeAnchor() {
+      const a = document.querySelector('.an-chip.active');
+      return a ? a.getAttribute('data-anchor') : 'auto';
+    }
+
+    function setAnchor(mode) {
+      anchorChips.forEach((c) => c.classList.toggle('active', c.getAttribute('data-anchor') === mode));
+    }
+
+    function setMode(next) {
+      mode = next;
+      modeTabs.forEach((t) => t.classList.toggle('active', t.getAttribute('data-mode') === mode));
+      replacePane.style.display = mode === 'replace' ? '' : 'none';
+      resultLabel.textContent = mode === 'replace' ? '替换结果' : '匹配结果';
+      btnRun.textContent = mode === 'replace' ? '执行替换' : '测试匹配';
+    }
+
+    modeTabs.forEach((t) => {
+      t.addEventListener('click', () => setMode(t.getAttribute('data-mode')));
+    });
+
+    function esc(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function renderTest(data) {
+      let inner = '';
+      const total = data.match_count;
+      if (total === 0) {
+        inner = '<div class="rx-no-match">未匹配到任何内容</div>';
+      } else {
+        // Highlight matches within the original text.
+        let hl = '';
+        let pos = 0;
+        data.matches.forEach((m, idx) => {
+          const [s, e] = m.span;
+          hl += esc(textEl.value.slice(pos, s));
+          hl += '<mark class="match-' + idx + '">' + esc(m.text) + '</mark>';
+          pos = e;
+        });
+        hl += esc(textEl.value.slice(pos));
+        inner = '<div class="rx-highlight">' + hl + '</div>';
+
+        // Group table for the first match.
+        const first = data.matches[0];
+        if (first.groups && first.groups.length) {
+          const rows = first.groups.map((g) =>
+            '<tr><td class="g-index">' + g.index + '</td>' +
+            '<td class="g-name">' + (g.name ? esc(g.name) : '&mdash;') + '</td>' +
+            '<td class="g-pos">' + g.span[0] + '&ndash;' + g.span[1] + '</td>' +
+            '<td class="g-text">' + (g.text != null ? esc(g.text) : '<em>未参与</em>') + '</td></tr>'
+          ).join('');
+          inner += '<div class="rx-groups"><table><thead><tr>' +
+            '<th>#</th><th>名称</th><th>位置</th><th>内容</th></tr></thead><tbody>' +
+            rows + '</tbody></table></div>';
+        }
+      }
+      resultBox.innerHTML = inner;
+    }
+
+    function renderReplace(data) {
+      lastReplace = data.result;
+      resultBox.innerHTML = '<div class="rx-highlight">' + esc(data.result) + '</div>';
+    }
+
+    function copyResult() {
+      if (mode === 'replace') {
+        TP.copyText(lastReplace, '已复制替换结果');
+        return;
+      }
+      // Test mode: copy all matched texts joined by newline.
+      const marks = resultBox.querySelectorAll('mark');
+      const joined = Array.from(marks).map((m) => m.textContent).join('\n');
+      TP.copyText(joined, '已复制全部命中内容');
+    }
+
+    async function run() {
+      TP.clearStatus(status);
+      btnRun.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('pattern', patternEl.value);
+        fd.append('text', textEl.value);
+        fd.append('flags', activeFlags());
+        const url = mode === 'replace'
+          ? TP.appUrl('/tools/regex/replace')
+          : TP.appUrl('/tools/regex/test');
+        if (mode === 'replace') {
+          fd.append('replacement', replacementEl.value);
+          fd.append('count', '0');
+        } else {
+          fd.append('count', '0');
+        }
+        const data = await TP.runForm(url, fd);
+        if (mode === 'replace') {
+          renderReplace(data);
+          TP.setStatus(status, 'ok', '替换完成：共替换 ' + data.replace_count + ' 处');
+        } else {
+          renderTest(data);
+          TP.setStatus(status, 'ok', '匹配 ' + data.match_count + ' 处'
+            + (data.capture_names.length ? ' · 捕获组 ' + data.capture_names.join(', ') : ''));
+        }
+      } catch (err) {
+        resultBox.innerHTML = '<div class="rx-no-match">' + esc(err.message || String(err)) + '</div>';
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    }
+
+    function showContext(data) {
+      genPrefix = data.prefix || '';
+      genSuffix = data.suffix || '';
+      if (genPrefix || genSuffix) {
+        genContext.style.display = '';
+        ctxPrefix.style.display = genPrefix ? '' : 'none';
+        ctxSuffix.style.display = genSuffix ? '' : 'none';
+        ctxPrefix.textContent = '前缀：' + genPrefix;
+        ctxSuffix.textContent = '后缀：' + genSuffix;
+      } else {
+        genContext.style.display = 'none';
+      }
+    }
+
+    function escRe(s) {
+      return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    async function generate() {
+      TP.clearStatus(status);
+      btnGen.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('text', textEl.value);
+        fd.append('target', targetEl.value);
+        fd.append('flags', activeFlags());
+        fd.append('anchor', activeAnchor());
+        const data = await TP.runForm(TP.appUrl('/tools/regex/generate'), fd);
+        patternEl.value = data.pattern || '';
+        // Apply flags the generator recommends (e.g. `m` for line-start anchors).
+        const suggested = (data.suggest_flags || []);
+        flagChips.forEach((c) => {
+          c.classList.toggle('active', suggested.indexOf(c.getAttribute('data-flag')) >= 0);
+        });
+        showContext(data);
+        setMode('test');
+        TP.setStatus(status, 'ok', '已生成正则，验证中…');
+        await run();
+        TP.setStatus(status, 'ok', '已生成正则，共匹配 ' + (data.target_count) + ' 处示例内容');
+      } catch (err) {
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnGen.disabled = false;
+      }
+    }
+
+    btnGen.addEventListener('click', generate);
+
+    // Clicking a context chip prepends/appends the anchor to the pattern.
+    ctxPrefix.addEventListener('click', () => {
+      if (!genPrefix) return;
+      patternEl.value = '(?:' + escRe(genPrefix) + ')' + patternEl.value;
+      run();
+    });
+    ctxSuffix.addEventListener('click', () => {
+      if (!genSuffix) return;
+      patternEl.value = patternEl.value + '(?:' + escRe(genSuffix) + ')';
+      run();
+    });
+
+    btnRun.addEventListener('click', run);
+    btnCopy.addEventListener('click', copyResult);
+
+    btnClearPattern.addEventListener('click', () => { patternEl.value = ''; patternEl.focus(); });
+    btnClearText.addEventListener('click', () => { textEl.value = ''; });
+    btnClearResult.addEventListener('click', () => {
+      resultBox.innerHTML = '<div class="rx-empty">结果将显示在这里…</div>';
+      TP.clearStatus(status);
+    });
+    btnClearAll.addEventListener('click', () => {
+      patternEl.value = '';
+      textEl.value = '';
+      replacementEl.value = '';
+      targetEl.value = '';
+      genContext.style.display = 'none';
+      setAnchor('auto');
+      flagChips.forEach((c) => c.classList.remove('active'));
+      resultBox.innerHTML = '<div class="rx-empty">结果将显示在这里…</div>';
+      TP.clearStatus(status);
+    });
+
+    flagChips.forEach((c) => {
+      c.addEventListener('click', () => {
+        c.classList.toggle('active');
+        if (patternEl.value.trim() && textEl.value.trim()) run();
+      });
+    });
+
+    anchorChips.forEach((c) => {
+      c.addEventListener('click', () => {
+        setAnchor(c.getAttribute('data-anchor'));
+        if (targetEl.value.trim() && textEl.value.trim()) generate();
+      });
+    });
+
+    btnSample.addEventListener('click', () => {
+      setMode('test');
+      replacementEl.value = '[邮箱]';
+      textEl.value = '联系 support@example.com 或 sales@company.cn，工作时间为周一至周五。';
+      targetEl.value = 'support@example.com';
+      flagChips.forEach((c) => c.classList.remove('active'));
+      generate();
+    });
+
+    TP.setupShortcut(textEl, () => btnRun.click());
+    TP.setupShortcut(patternEl, () => btnRun.click());
+  </script>
+{% endblock %}

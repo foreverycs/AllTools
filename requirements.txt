@@ -1,0 +1,21 @@
+fastapi>=0.110
+jinja2>=3.1
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+pdfplumber>=0.11
+python-docx>=1.1
+Pillow>=10.0
+pypdf>=3.17
+# invoice merge divider (pdf-merge tool)
+reportlab>=4.0
+
+# optional OCR (also needs system Tesseract binary + language packs)
+pytesseract>=0.3.10
+
+# optional Redis job store / rate-limit backend (JOBS_BACKEND=redis, RATE_LIMIT_BACKEND=redis)
+redis>=5.0
+
+# Markdown editor / preview (coding tool)
+markdown>=3.5
+bleach>=6.0
+tinycss2>=1.2

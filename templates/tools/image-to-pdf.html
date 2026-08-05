@@ -1,0 +1,500 @@
+{% extends "tools/base.html" %}
+{% set page_title = "图片转 PDF" %}
+{% set page_description = "多张图片合成一个 PDF — 原图尺寸或 A4 适配" %}
+{% set accent = "emerald" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/#col-office") %}
+{% set back_label = "办公工具" %}
+{% set chip = "办公工具 · 图片转 PDF" %}
+
+{% block head_styles %}
+<style>
+.tool-page .opts{
+  margin-top: 16px; display: grid; gap: 14px;
+  padding: 16px; background: #f8fafc;
+  border: 1px solid #eef2f7; border-radius: 16px;
+}
+.tool-page .format-row{
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.tool-page .format-row-3{
+  grid-template-columns: repeat(3, 1fr);
+}
+@media (max-width: 520px) {
+  .tool-page .format-row{ grid-template-columns: 1fr; }
+  .tool-page .format-row-3{ grid-template-columns: 1fr; }
+}
+.tool-page .orient-block{
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid #ccfbf1;
+  background: linear-gradient(180deg, #f0fdfa 0%, #fff 100%);
+}
+.tool-page .orient-block[hidden]{ display: none !important; }
+.tool-page .f-card{
+  position: relative;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 10px 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+  text-align: center;
+}
+.tool-page .f-card:hover{ border-color: var(--c-border); }
+.tool-page .f-card.active{
+  border-color: var(--c);
+  background: var(--c-soft);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+}
+.tool-page .f-card input{ position: absolute; opacity: 0; pointer-events: none; }
+.tool-page .f-card .fl{
+  font-size: 13px; font-weight: 750; color: var(--ink); margin-bottom: 2px;
+}
+.tool-page .f-card .fh{
+  font-size: 10px; color: var(--muted); line-height: 1.35; font-weight: 500;
+}
+.tool-page .opts label.field{
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; font-weight: 600; color: #475569;
+}
+.tool-page .opts .hint{ color: var(--muted-2); font-size: 11px; font-weight: 500; }
+.tool-page .opts input[type=color], .tool-page .opts input[type=text]{
+  padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 11px;
+  font-size: 13px; font-weight: 500; outline: none; background: #fff;
+  color: var(--ink);
+}
+.tool-page .bg-row{ display: flex; gap: 8px; align-items: center; }
+.tool-page .bg-row input[type=color]{ width: 48px; height: 40px; padding: 4px; cursor: pointer; }
+.tool-page .bg-row input[type=text]{ flex: 1; }
+.tool-page .file-list{
+  list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px;
+}
+.tool-page .file-list:empty{ display: none; }
+.tool-page .file-list li{
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: #f8fafc; border: 1px solid #eef2f7;
+  border-radius: 12px; font-size: 13px;
+}
+.tool-page .file-list .fi{ flex-shrink: 0; }
+.tool-page .file-list .fname{
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600; color: var(--ink);
+}
+.tool-page .file-list .fsize{ color: var(--muted-2); flex-shrink: 0; font-size: 11px; }
+.tool-page .file-list button{
+  border: 0; background: transparent; color: #94a3b8; cursor: pointer;
+  font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 8px;
+}
+.tool-page .file-list button:hover{ color: #dc2626; background: #fef2f2; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">📑</div>
+        <div>
+          <h1>图片转 PDF</h1>
+          <p>将一张或多张图片合成一个 PDF，每张图一页。支持原图像素尺寸或 A4 适配；透明通道会铺底色；动图仅取首帧。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">多图一 PDF</span>
+        <span class="feat">原图 / A4</span>
+        <span class="feat">EXIF 校正</span>
+        <span class="feat">本地处理</span>
+      </div>
+
+      {% with
+  accept='image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff,image/x-icon,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.ico',
+  multiple=true,
+  title_html='点击或拖拽 <strong>图片文件</strong> 到此处',
+  hint='JPEG / PNG / WebP / GIF / BMP / TIFF / ICO · 最多 ' ~ (max_images|default(50)) ~ ' 张 · 每张 ≤ 50 MB',
+  list_id='list'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
+
+      <div class="opts">
+        <div class="opts-title">页面模式</div>
+        <div class="format-row" id="modeRow" role="radiogroup" aria-label="页面模式">
+          <label class="f-card active" data-m="fit">
+            <input type="radio" name="page_mode" value="fit" checked />
+            <div class="fl">原图尺寸</div>
+            <div class="fh">每页与图片像素一致 · 截图推荐</div>
+          </label>
+          <label class="f-card" data-m="a4">
+            <input type="radio" name="page_mode" value="a4" />
+            <div class="fl">A4 适配</div>
+            <div class="fh">等比缩放进 A4 · 可打印留白</div>
+          </label>
+        </div>
+
+        <div class="orient-block" id="orientBlock" hidden>
+          <div class="opts-title" style="margin:0">A4 方向</div>
+          <div class="format-row format-row-3" id="orientRow" role="radiogroup" aria-label="A4 方向">
+            <label class="f-card active" data-o="auto">
+              <input type="radio" name="orientation" value="auto" checked />
+              <div class="fl">自动</div>
+              <div class="fh">按图片宽高比</div>
+            </label>
+            <label class="f-card" data-o="portrait">
+              <input type="radio" name="orientation" value="portrait" />
+              <div class="fl">竖版</div>
+              <div class="fh">210×297 mm</div>
+            </label>
+            <label class="f-card" data-o="landscape">
+              <input type="radio" name="orientation" value="landscape" />
+              <div class="fl">横版</div>
+              <div class="fh">297×210 mm</div>
+            </label>
+          </div>
+        </div>
+
+        <label class="field">
+          透明底色（PNG / WebP 等有透明通道时）
+          <div class="bg-row">
+            <input type="color" id="bgColor" value="#ffffff" title="选择底色" />
+            <input type="text" id="bgText" value="#ffffff" maxlength="20" spellcheck="false" />
+          </div>
+          <span class="hint">A4 模式下页边空白也使用此颜色。</span>
+        </label>
+      </div>
+
+      <button id="btn" disabled>生成 PDF</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div class="stats" id="stats">
+        <div class="stat"><div class="k">原始大小</div><div class="v" id="statOrig">—</div></div>
+        <div class="stat"><div class="k">PDF 大小</div><div class="v" id="statOut">—</div></div>
+        <div class="stat"><div class="k">页数</div><div class="v" id="statPages">—</div></div>
+      </div>
+      <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_FILES = {{ max_images|default(50) }};
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const LS_KEY = "image_to_pdf_opts_v2";
+
+    const fileInput = document.getElementById("file");
+    const drop = document.getElementById("drop");
+    const list = document.getElementById("list");
+    const btn = document.getElementById("btn");
+    const status = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const UX = window.ToolkitUX || null;
+    const progress = document.getElementById("progress");
+    const bar = document.getElementById("bar");
+    const modeRow = document.getElementById("modeRow");
+    const orientBlock = document.getElementById("orientBlock");
+    const orientRow = document.getElementById("orientRow");
+    const bgColor = document.getElementById("bgColor");
+    const bgText = document.getElementById("bgText");
+    const stats = document.getElementById("stats");
+    const statOrig = document.getElementById("statOrig");
+    const statOut = document.getElementById("statOut");
+    const statPages = document.getElementById("statPages");
+
+    /** @type {File[]} */
+    let selected = [];
+
+    const {
+      fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl,
+    } = window.ToolkitUpload;
+
+    function currentMode() {
+      return (modeRow.querySelector("input:checked") || {}).value || "fit";
+    }
+    function currentOrientation() {
+      return (orientRow.querySelector("input:checked") || {}).value || "auto";
+    }
+    function syncOrientUi() {
+      orientBlock.hidden = currentMode() !== "a4";
+    }
+
+    try {
+      var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+      if (saved.page_mode === "fit" || saved.page_mode === "a4") {
+        var r = modeRow.querySelector('input[value="' + saved.page_mode + '"]');
+        if (r) {
+          r.checked = true;
+          modeRow.querySelectorAll(".f-card").forEach(function (c) {
+            c.classList.toggle("active", c.getAttribute("data-m") === saved.page_mode);
+          });
+        }
+      }
+      if (saved.orientation === "auto" || saved.orientation === "portrait" || saved.orientation === "landscape") {
+        var ro = orientRow.querySelector('input[value="' + saved.orientation + '"]');
+        if (ro) {
+          ro.checked = true;
+          orientRow.querySelectorAll(".f-card").forEach(function (c) {
+            c.classList.toggle("active", c.getAttribute("data-o") === saved.orientation);
+          });
+        }
+      }
+      if (typeof saved.background === "string" && saved.background) {
+        bgText.value = saved.background;
+        if (/^#[0-9a-fA-F]{6}$/.test(saved.background)) bgColor.value = saved.background;
+      }
+    } catch (e) { /* ignore */ }
+    syncOrientUi();
+
+    function persistOpts() {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          page_mode: currentMode(),
+          orientation: currentOrientation(),
+          background: bgText.value || "#ffffff",
+        }));
+      } catch (e) { /* ignore */ }
+    }
+
+    modeRow.addEventListener("change", function (e) {
+      var input = e.target;
+      if (!input || input.name !== "page_mode") return;
+      modeRow.querySelectorAll(".f-card").forEach(function (c) {
+        c.classList.toggle("active", c.getAttribute("data-m") === input.value);
+      });
+      syncOrientUi();
+      persistOpts();
+    });
+    orientRow.addEventListener("change", function (e) {
+      var input = e.target;
+      if (!input || input.name !== "orientation") return;
+      orientRow.querySelectorAll(".f-card").forEach(function (c) {
+        c.classList.toggle("active", c.getAttribute("data-o") === input.value);
+      });
+      persistOpts();
+    });
+    bgColor.addEventListener("input", function () {
+      bgText.value = bgColor.value;
+      persistOpts();
+    });
+    bgText.addEventListener("change", function () {
+      var v = (bgText.value || "").trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) bgColor.value = v;
+      persistOpts();
+    });
+
+    function setProgress(pct) {
+      progress.classList.add("show");
+      bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    }
+    function hideProgress() {
+      progress.classList.remove("show");
+      bar.style.width = "0%";
+    }
+    function setStatus(text, cls) {
+      status.textContent = text || "";
+      status.className = cls || "";
+    }
+    function clearStats() {
+      stats.classList.remove("show");
+      statOrig.textContent = "—";
+      statOut.textContent = "—";
+      statPages.textContent = "—";
+    }
+    function showStats(orig, out, pages) {
+      statOrig.textContent = fmtSize(orig);
+      statOut.textContent = fmtSize(out);
+      statPages.textContent = String(pages || "—");
+      stats.classList.add("show");
+    }
+
+    function isImageFile(f) {
+      if (!f) return false;
+      var name = (f.name || "").toLowerCase();
+      var okExt = /\.(jpe?g|png|gif|webp|bmp|tiff?|ico)$/i.test(name);
+      var okType = /^(image\/(jpeg|png|gif|webp|bmp|tiff|x-icon|vnd\.microsoft\.icon)|application\/octet-stream)$/i.test(f.type || "");
+      return okExt || okType;
+    }
+
+    function renderList() {
+      list.innerHTML = "";
+      selected.forEach(function (f, i) {
+        var li = document.createElement("li");
+        var icon = document.createElement("span");
+        icon.className = "fi";
+        icon.textContent = "🖼️";
+        icon.setAttribute("aria-hidden", "true");
+        var name = document.createElement("span");
+        name.className = "fname";
+        name.title = f.name;
+        name.textContent = f.name;
+        var size = document.createElement("span");
+        size.className = "fsize";
+        size.textContent = fmtSize(f.size);
+        var rm = document.createElement("button");
+        rm.type = "button";
+        rm.textContent = "移除";
+        rm.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          selected.splice(i, 1);
+          renderList();
+          setStatus("");
+          if (UX) UX.hideResult(resultEl);
+          clearStats();
+        });
+        li.append(icon, name, size, rm);
+        list.appendChild(li);
+      });
+      btn.disabled = selected.length === 0;
+      btn.textContent = selected.length > 1
+        ? "生成 PDF（" + selected.length + " 页）"
+        : "生成 PDF";
+    }
+
+    function addFiles(fileList) {
+      var incoming = Array.from(fileList || []);
+      var errors = [];
+      for (var j = 0; j < incoming.length; j++) {
+        var f = incoming[j];
+        if (!isImageFile(f)) {
+          errors.push((f.name || "文件") + ": 仅支持常见图片格式");
+          continue;
+        }
+        if (f.size > MAX_BYTES) {
+          errors.push(f.name + ": 超过 50 MB");
+          continue;
+        }
+        if (f.size === 0) {
+          errors.push(f.name + ": 空文件");
+          continue;
+        }
+        var dup = selected.some(function (s) {
+          return s.name === f.name && s.size === f.size;
+        });
+        if (dup) continue;
+        if (selected.length >= MAX_FILES) {
+          errors.push("最多 " + MAX_FILES + " 张图片");
+          break;
+        }
+        selected.push(f);
+      }
+      renderList();
+      if (errors.length) {
+        if (UX) {
+          UX.showResult(resultEl, {
+            kind: "err",
+            title: "文件未全部添加",
+            detail: errors.join("；"),
+          });
+          setStatus("");
+        } else {
+          setStatus(errors.join("；"), "err");
+        }
+      } else {
+        setStatus("");
+        if (UX) UX.hideResult(resultEl);
+      }
+      fileInput.value = "";
+    }
+
+    bindDropZone({
+      drop: drop,
+      input: fileInput,
+      paste: true,
+      acceptFile: function (f) {
+        return isImageFile(f);
+      },
+      rejectMessage: "仅支持常见图片格式（JPEG/PNG/WebP/GIF/BMP/TIFF/ICO）",
+      onFiles: addFiles,
+    });
+
+    btn.addEventListener("click", async function () {
+      if (!selected.length) return;
+      persistOpts();
+      btn.disabled = true;
+      clearStats();
+      if (UX) UX.hideResult(resultEl);
+      setStatus("正在生成 PDF…", "info");
+      setProgress(8);
+
+      var fd = new FormData();
+      selected.forEach(function (f) {
+        fd.append("files", f, f.name);
+      });
+      fd.append("page_mode", currentMode());
+      fd.append("orientation", currentOrientation());
+      fd.append("background", bgText.value || "#ffffff");
+
+      try {
+        var xhr = await xhrPost(appUrl("/tools/image-to-pdf/convert"), fd, {
+          processHint: "上传完成，正在生成 PDF…",
+          longWaitSec: 20,
+          onProgress: function (pct) { setProgress(pct); },
+          onStatus: function (text, cls) { setStatus(text, cls || "info"); },
+        });
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var blob = xhr.response;
+          var fallback =
+            selected.length === 1
+              ? selected[0].name.replace(/\.[^.]+$/, "") + ".pdf"
+              : (selected[0].name.replace(/\.[^.]+$/, "") || "images") + "_images.pdf";
+          var name = downloadName(
+            xhr.getResponseHeader("Content-Disposition"),
+            fallback
+          );
+          var orig = parseInt(xhr.getResponseHeader("X-Original-Bytes") || "0", 10);
+          var out = parseInt(xhr.getResponseHeader("X-Output-Bytes") || "0", 10);
+          var pages = parseInt(xhr.getResponseHeader("X-Page-Count") || "0", 10);
+          if (!orig) {
+            orig = selected.reduce(function (s, f) { return s + (f.size || 0); }, 0);
+          }
+          if (!out && blob && blob.size) out = blob.size;
+          if (!pages) pages = selected.length;
+          showStats(orig, out, pages);
+          saveBlob(blob, name);
+          var msg = "已生成 " + pages + " 页 PDF";
+          if (orig && out) msg += " · " + fmtSize(orig) + " → " + fmtSize(out);
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, {
+              kind: "ok",
+              title: "PDF 已生成",
+              detail: msg,
+              filename: name,
+              downloadBlob: blob,
+              downloadName: name,
+              againLabel: "继续转换",
+              onAgain: function () { UX.hideResult(resultEl); },
+            });
+          } else {
+            setStatus(msg, "ok");
+          }
+          setProgress(100);
+        } else {
+          var em = await xhrErrorMessage(xhr);
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, { kind: "err", title: "生成失败", detail: em || "生成失败" });
+          } else {
+            setStatus(em || "生成失败", "err");
+          }
+        }
+      } catch (err) {
+        var em2 = (err && err.message) || "网络错误";
+        if (UX) {
+          setStatus("", "");
+          UX.showResult(resultEl, { kind: "err", title: "生成失败", detail: em2 });
+        } else {
+          setStatus(em2, "err");
+        }
+      } finally {
+        btn.disabled = selected.length === 0;
+        setTimeout(hideProgress, 400);
+      }
+    });
+</script>
+{% endblock %}

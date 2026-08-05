@@ -1,0 +1,203 @@
+{% extends "admin/base.html" %}
+{% block title %}分类管理{% endblock %}
+{% block content %}
+<div class="admin-header">
+  <div>
+    <h1>分类管理</h1>
+    <p>自定义分类，并把工具归类到对应分类；改动保存后前台首页与导航立即生效</p>
+  </div>
+  <div class="admin-actions">
+    <span class="admin-badge">{{ categories|length }} 个分类</span>
+    <form method="post" action="{{ url_path('/admin/categories/reset') }}" class="inline" onsubmit="return confirm('确定恢复为默认分类吗？工具归类也会重置。');">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+      <button type="submit" class="admin-btn admin-btn-danger">恢复默认</button>
+    </form>
+  </div>
+</div>
+
+{% if flash %}
+<div class="admin-flash ok" role="status">{{ flash }}</div>
+{% endif %}
+
+<!-- ===== Form A: categories ===== -->
+<form method="post" action="{{ url_path('/admin/categories') }}" id="catForm">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+  <div class="admin-panel">
+    <div class="admin-panel-h">
+      <span>分类列表</span>
+      <span class="admin-muted" style="font-weight:600;font-size:12px">拖动上移/下移调整顺序</span>
+    </div>
+    <div class="admin-cats">
+      {% for cat in categories %}
+      <div class="admin-cat-row">
+        <input type="hidden" name="cat_id" value="{{ cat.id }}" />
+        <span class="admin-cat-grip" aria-hidden="true">⠿</span>
+        <div class="admin-field">
+          <label>图标</label>
+          <input type="text" name="cat_icon" value="{{ cat.icon }}" maxlength="4" class="admin-cat-icon" />
+        </div>
+        <div class="admin-field admin-cat-name">
+          <label>名称</label>
+          <input type="text" name="cat_name" value="{{ cat.name }}" required />
+        </div>
+        <div class="admin-field admin-cat-accent">
+          <label>主题色</label>
+          <select name="cat_accent">
+            {% for a in accent_choices %}
+            <option value="{{ a }}" {% if cat.accent == a %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field admin-cat-desc">
+          <label>描述</label>
+          <input type="text" name="cat_desc" value="{{ cat.description }}" />
+        </div>
+        <div class="admin-cat-ops">
+          <button type="button" class="admin-btn admin-cat-move" data-dir="-1" title="上移">↑</button>
+          <button type="button" class="admin-btn admin-cat-move" data-dir="1" title="下移">↓</button>
+        </div>
+        <label class="admin-cat-remove">
+          <input type="checkbox" name="cat_remove" value="{{ cat.id }}" class="admin-cat-remove-input" />
+          <span class="admin-badge">删除</span>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="admin-panel-b">
+      <button type="button" class="admin-btn" id="catAddBtn">＋ 添加分类</button>
+      <button type="submit" class="admin-btn admin-btn-primary" style="float:right">保存分类</button>
+    </div>
+  </div>
+</form>
+
+<template id="catRowTemplate">
+  <div class="admin-cat-row">
+    <input type="hidden" name="cat_id" value="" />
+    <span class="admin-cat-grip" aria-hidden="true">⠿</span>
+    <div class="admin-field">
+      <label>图标</label>
+      <input type="text" name="cat_icon" value="🧩" maxlength="4" class="admin-cat-icon" />
+    </div>
+    <div class="admin-field admin-cat-name">
+      <label>名称</label>
+      <input type="text" name="cat_name" value="" required />
+    </div>
+    <div class="admin-field admin-cat-accent">
+      <label>主题色</label>
+      <select name="cat_accent">
+        {% for a in accent_choices %}
+        <option value="{{ a }}">{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="admin-field admin-cat-desc">
+      <label>描述</label>
+      <input type="text" name="cat_desc" value="" />
+    </div>
+    <div class="admin-cat-ops">
+      <button type="button" class="admin-btn admin-cat-move" data-dir="-1" title="上移">↑</button>
+      <button type="button" class="admin-btn admin-cat-move" data-dir="1" title="下移">↓</button>
+    </div>
+    <label class="admin-cat-remove">
+      <input type="checkbox" name="cat_remove" value="" class="admin-cat-remove-input" />
+      <span class="admin-badge">删除</span>
+    </label>
+  </div>
+</template>
+
+<!-- ===== Form B: tool assignment ===== -->
+<form method="post" action="{{ url_path('/admin/categories/assignments') }}" id="assignForm">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+  <div class="admin-panel">
+    <div class="admin-panel-h">
+      <span>工具归类</span>
+      <span class="admin-muted" style="font-weight:600;font-size:12px">为每个工具选择所属分类</span>
+    </div>
+    <div class="admin-tools-list">
+      {% for tool in tools %}
+      <div class="admin-tool-row">
+        <div class="admin-tool-main">
+          <span class="admin-tool-icon" aria-hidden="true">{{ tool.icon }}</span>
+          <div class="admin-tool-text">
+            <div class="admin-tool-name">
+              {{ tool.name }}
+              <span class="admin-badge">{{ tool.slug }}</span>
+              {% if tool.featured %}<span class="admin-badge warn">特色</span>{% endif %}
+            </div>
+            <div class="admin-tool-desc">{{ tool.description }}</div>
+          </div>
+        </div>
+        <div class="admin-cat-assign">
+          <label class="admin-cat-assign-label">
+            <span class="admin-muted">所属分类</span>
+            <select name="assign_{{ tool.slug }}">
+              <option value="">— 默认 —</option>
+              {% for cat in categories %}
+              <option value="{{ cat.id }}" {% if tool.category == cat.id %}selected{% endif %}>{{ cat.icon }} {{ cat.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="admin-panel-b">
+      <p class="admin-muted">
+        选择“— 默认 —”即使用内置默认归类；下拉框仅列出当前已保存的分类，新增分类后请先“保存分类”再归类。
+      </p>
+      <button type="submit" class="admin-btn admin-btn-primary">保存归类</button>
+    </div>
+  </div>
+</form>
+
+<script>
+(function () {
+  // ---- Category reorder (up/down) ----
+  var list = document.querySelector('.admin-cats');
+  function swap(row, dir) {
+    var rows = Array.prototype.slice.call(list.children);
+    var i = rows.indexOf(row);
+    var j = i + dir;
+    if (i < 0 || j < 0 || j >= rows.length) return;
+    list.insertBefore(rows[i], j < i ? rows[j] : rows[j].nextSibling);
+  }
+  list.addEventListener('click', function (e) {
+    var btn = e.target.closest('.admin-cat-move');
+    if (!btn) return;
+    var row = btn.closest('.admin-cat-row');
+    swap(row, parseInt(btn.getAttribute('data-dir'), 10) || 0);
+  });
+
+  // ---- Add category (clone template) ----
+  var addBtn = document.getElementById('catAddBtn');
+  var tpl = document.getElementById('catRowTemplate');
+  if (addBtn && tpl) {
+    addBtn.addEventListener('click', function () {
+      var node = tpl.content.cloneNode(true);
+      var row = node.querySelector('.admin-cat-row');
+      var cid = 'custom' + Date.now().toString(36);
+      row.querySelector('input[name="cat_id"]').value = cid;
+      row.querySelector('input[name="cat_name"]').value = '';
+      list.appendChild(node);
+      row.querySelector('input[name="cat_name"]').focus();
+    });
+  }
+
+  // ---- Mark rows selected for deletion ----
+  function bindRemove() {
+    document.querySelectorAll('.admin-cat-remove-input').forEach(function (chk) {
+      if (chk._bound) return;
+      chk._bound = true;
+      chk.addEventListener('change', function () {
+        var row = chk.closest('.admin-cat-row');
+        if (row) row.classList.toggle('is-off', chk.checked);
+      });
+    });
+  }
+  bindRemove();
+  // Re-bind for rows added later.
+  var mo = new MutationObserver(bindRemove);
+  if (list) mo.observe(list, { childList: true });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,344 @@
+{% extends "tools/base.html" %}
+{% set page_title = "代码格式化" %}
+{% set page_description = "多语言代码格式化 / 压缩" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-coding") %}
+{% set back_label = "编码工具" %}
+{% set chip = "编码工具 · 格式化" %}
+
+{% block head_styles %}
+<style>
+    /* Tool-specific tweaks only */
+    .tool-page textarea { min-height: 260px; }
+    #btnRun { min-width: 74px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">{ }</div>
+        <div>
+          <h1>代码格式化</h1>
+          <p>通过选项卡切换语言，对 JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML、Java、Go、Rust 等代码进行美化、压缩与基础校验。</p>
+        </div>
+      </div>
+
+      <div class="lang-tabs" role="tablist" aria-label="编程语言" id="langTabs">
+        {% for lang in languages %}
+        <button type="button"
+                class="lang-tab{% if lang.id == 'json' %} active{% endif %}"
+                role="tab"
+                data-lang="{{ lang.id }}"
+                data-modes="{{ lang.modes | join(',') }}"
+                data-options="{{ lang.options | join(',') }}"
+                data-validate="{{ '1' if lang.validate else '0' }}"
+                data-desc="{{ lang.description }}"
+                aria-selected="{{ 'true' if lang.id == 'json' else 'false' }}">{{ lang.label }}</button>
+        {% endfor %}
+      </div>
+      <p class="lang-hint" id="langHint">美化 / 压缩，键排序，中文可保留</p>
+
+      <div class="mode-tabs" role="tablist" aria-label="格式化模式">
+        <button type="button" class="mode-tab active" data-mode="pretty" role="tab">格式化 Pretty</button>
+        <button type="button" class="mode-tab" data-mode="minify" role="tab">压缩 Minify</button>
+      </div>
+
+      <div class="opts">
+        <label class="field" id="indentField">缩进
+          <select id="indent">
+            <option value="2" selected>2 空格</option>
+            <option value="4">4 空格</option>
+            <option value="1">1 空格</option>
+          </select>
+        </label>
+        <div class="opts-checks">
+          <label class="check" id="sortKeysCheck">
+            <input type="checkbox" id="sortKeys" />
+            按键名排序
+          </label>
+          <label class="check" id="ensureAsciiCheck">
+            <input type="checkbox" id="ensureAscii" />
+            ASCII 转义（\uXXXX）
+          </label>
+        </div>
+      </div>
+
+      <div class="panes">
+        <div class="pane">
+          <div class="pane-label">
+            <span id="inputLabel">输入代码</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnSample">示例</button>
+              <button type="button" class="mini" id="btnClearIn">清空</button>
+            </div>
+          </div>
+          <textarea id="input" placeholder="在此粘贴代码…" spellcheck="false"></textarea>
+        </div>
+        <div class="pane">
+          <div class="pane-label">
+            <span>输出</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnCopy">复制</button>
+              <button type="button" class="mini" id="btnClearOut">清空</button>
+            </div>
+          </div>
+          <textarea id="output" readonly placeholder="结果将显示在这里…" spellcheck="false"></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" id="btnRun">格式化</button>
+        <button type="button" class="btn btn-ghost" id="btnValidate">仅校验</button>
+        <button type="button" class="btn btn-ghost" id="btnSwap">结果填回输入</button>
+      </div>
+
+      <div class="meta" id="meta"></div>
+      <div class="status" id="status"></div>
+      <p class="tips">
+        提示：JSON / XML 提供结构解析与错误行列定位；其它语言采用缩进与括号规则整理，适合粘贴调试片段。
+        路径 <code>/tools/code-format</code>（旧 <code>/tools/json</code> 会 308 跳转）。快捷键 Ctrl/Cmd + Enter。
+      </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const root = (window.__ROOT__ || '').replace(/\/$/, '');
+    const api = (path) => root + path;
+    const TP = window.ToolPage || {};
+
+    const modeTabs = document.querySelectorAll('.mode-tab');
+    const langTabs = document.querySelectorAll('.lang-tab');
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const indent = document.getElementById('indent');
+    const indentField = document.getElementById('indentField');
+    const sortKeys = document.getElementById('sortKeys');
+    const ensureAscii = document.getElementById('ensureAscii');
+    const sortKeysCheck = document.getElementById('sortKeysCheck');
+    const ensureAsciiCheck = document.getElementById('ensureAsciiCheck');
+    const btnRun = document.getElementById('btnRun');
+    const btnValidate = document.getElementById('btnValidate');
+    const btnSwap = document.getElementById('btnSwap');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnSample = document.getElementById('btnSample');
+    const btnClearIn = document.getElementById('btnClearIn');
+    const btnClearOut = document.getElementById('btnClearOut');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+    const langHint = document.getElementById('langHint');
+    const chipLabel = document.getElementById('chipLabel');
+    const inputLabel = document.getElementById('inputLabel');
+
+    let mode = 'pretty';
+    let language = 'json';
+    let langLabel = 'JSON';
+    let langModes = ['pretty', 'minify'];
+    let langOptions = ['indent', 'sort_keys', 'ensure_ascii'];
+    let langValidate = true;
+
+    function setStatus(kind, text) {
+      status.className = 'status show ' + kind;
+      status.textContent = text;
+    }
+    function clearStatus() {
+      status.className = 'status';
+      status.textContent = '';
+    }
+
+    function applyModeUI() {
+      modeTabs.forEach((t) => {
+        const m = t.getAttribute('data-mode');
+        const allowed = langModes.indexOf(m) !== -1;
+        t.disabled = !allowed;
+        t.style.display = allowed ? '' : 'none';
+        t.classList.toggle('active', allowed && m === mode);
+      });
+      if (langModes.indexOf(mode) === -1) {
+        mode = langModes[0] || 'pretty';
+        modeTabs.forEach((t) => {
+          t.classList.toggle('active', t.getAttribute('data-mode') === mode);
+        });
+      }
+      if (mode === 'pretty') {
+        btnRun.textContent = '格式化';
+        if (langOptions.indexOf('indent') !== -1) {
+          indentField.classList.remove('is-inactive');
+          indentField.setAttribute('aria-hidden', 'false');
+        } else {
+          indentField.classList.add('is-inactive');
+        }
+      } else {
+        btnRun.textContent = '压缩';
+        indentField.classList.add('is-inactive');
+        indentField.setAttribute('aria-hidden', 'true');
+      }
+      sortKeysCheck.classList.toggle('is-inactive', langOptions.indexOf('sort_keys') === -1);
+      ensureAsciiCheck.classList.toggle('is-inactive', langOptions.indexOf('ensure_ascii') === -1);
+      if (langValidate) {
+        btnValidate.classList.remove('is-hidden');
+        btnValidate.disabled = false;
+      } else {
+        btnValidate.classList.add('is-hidden');
+      }
+      chipLabel.textContent = '编码工具 · ' + langLabel;
+      inputLabel.textContent = '输入 ' + langLabel;
+    }
+
+    function selectLanguage(tab) {
+      langTabs.forEach((t) => {
+        const on = t === tab;
+        t.classList.toggle('active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      language = tab.getAttribute('data-lang');
+      langLabel = tab.textContent.trim();
+      langModes = (tab.getAttribute('data-modes') || 'pretty').split(',').filter(Boolean);
+      langOptions = (tab.getAttribute('data-options') || '').split(',').filter(Boolean);
+      langValidate = tab.getAttribute('data-validate') === '1';
+      langHint.textContent = tab.getAttribute('data-desc') || '';
+      applyModeUI();
+      TP.clearStatus(status);
+      meta.innerHTML = '';
+    }
+
+    langTabs.forEach((tab) => {
+      tab.addEventListener('click', () => selectLanguage(tab));
+    });
+
+    modeTabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        if (tab.disabled) return;
+        mode = tab.getAttribute('data-mode');
+        applyModeUI();
+        TP.clearStatus(status);
+      });
+    });
+
+    async function postForm(url, fields) {
+      const body = new FormData();
+      Object.keys(fields).forEach((k) => body.append(k, fields[k]));
+      const res = await fetch(api(url), { method: 'POST', body });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok) {
+        throw new Error(TP.parseError(res));
+      }
+      return data;
+    }
+
+    const CODE_META_FIELDS = [
+      { key: 'label', label: '语言' },
+      { key: 'mode', label: '模式', transform: (v) => v === 'minify' ? '压缩' : '美化' },
+      { key: 'type', label: '类型' },
+      { key: 'input_chars', label: '输入' },
+      { key: 'output_chars', label: '输出' },
+    ];
+
+    async function runFormat() {
+      const text = input.value;
+      if (!text.trim()) {
+        TP.setStatus(status, 'err', '请输入代码');
+        return;
+      }
+      btnRun.disabled = true;
+      btnValidate.disabled = true;
+      TP.setStatus(status, 'info', '处理中…');
+      try {
+        const data = await postForm('/tools/code-format/format', {
+          text: text,
+          language: language,
+          mode: mode,
+          indent: indent.value,
+          sort_keys: sortKeys.checked ? 'true' : 'false',
+          ensure_ascii: ensureAscii.checked ? 'true' : 'false',
+        });
+        output.value = data.result || '';
+        TP.renderMeta(meta, data, CODE_META_FIELDS);
+        TP.setStatus(status, 'ok', '完成');
+      } catch (err) {
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+        applyModeUI();
+      }
+    }
+
+    async function runValidate() {
+      const text = input.value;
+      if (!text.trim()) {
+        TP.setStatus(status, 'err', '请输入代码');
+        return;
+      }
+      btnRun.disabled = true;
+      btnValidate.disabled = true;
+      TP.setStatus(status, 'info', '校验中…');
+      try {
+        const data = await postForm('/tools/code-format/validate', {
+          text: text,
+          language: language,
+        });
+        if (data.valid) {
+          let msg = '校验通过';
+          if (data.type) msg += ' · 类型 ' + data.type;
+          if (data.note) msg += ' · ' + data.note;
+          TP.setStatus(status, 'ok', msg);
+          TP.renderMeta(meta, data, CODE_META_FIELDS);
+        } else {
+          let msg = data.error || '无效';
+          if (data.line != null) msg += '（第 ' + data.line + ' 行，第 ' + data.column + ' 列）';
+          TP.setStatus(status, 'err', msg);
+        }
+      } catch (err) {
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+        applyModeUI();
+      }
+    }
+
+    btnRun.addEventListener('click', runFormat);
+    btnValidate.addEventListener('click', runValidate);
+
+    btnSample.addEventListener('click', async () => {
+      try {
+        const res = await fetch(api('/tools/code-format/sample?language=' + encodeURIComponent(language)));
+        const data = await res.json();
+        if (!res.ok) throw new Error(TP.parseError(res));
+        input.value = data.sample || '';
+        TP.setStatus(status, 'info', '已填入 ' + langLabel + ' 示例');
+      } catch (err) {
+        TP.setStatus(status, 'err', err.message || String(err));
+      }
+    });
+
+    btnClearIn.addEventListener('click', () => {
+      input.value = '';
+      TP.clearStatus(status);
+    });
+    btnClearOut.addEventListener('click', () => {
+      output.value = '';
+      meta.innerHTML = '';
+    });
+    btnCopy.addEventListener('click', () => {
+      if (!output.value) {
+        TP.setStatus(status, 'err', '没有可复制的内容');
+        return;
+      }
+      TP.copyText(output.value, '已复制到剪贴板');
+    });
+    btnSwap.addEventListener('click', () => {
+      if (!output.value) return;
+      input.value = output.value;
+      TP.setStatus(status, 'info', '已将输出填回输入');
+    });
+
+    TP.setupShortcut(input, () => btnRun.click());
+
+    const active = document.querySelector('.lang-tab.active') || langTabs[0];
+    if (active) selectLanguage(active);
+  </script>
+{% endblock %}

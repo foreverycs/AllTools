@@ -1,0 +1,479 @@
+{% extends "tools/base.html" %}
+{% set page_title = "图片九宫格" %}
+{% set page_description = "一张图切成 N×N 小块，发朋友圈九宫格" %}
+{% set accent = "indigo" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/#col-office") %}
+{% set back_label = "办公工具" %}
+{% set chip = "办公工具 · 图片九宫格" %}
+
+{% block head_styles %}
+<style>
+.tool-page .opts{
+  margin-top: 16px; display: grid; gap: 14px;
+  padding: 16px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 16px;
+}
+.tool-page .preset-row{
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+@media (max-width: 520px){ .tool-page .preset-row{ grid-template-columns: repeat(2, 1fr); } }
+.tool-page .f-card{
+  position: relative; border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 8px 10px; background: var(--surface-solid); cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background .15s; text-align: center;
+}
+.tool-page .f-card:hover{ border-color: var(--c-border); }
+.tool-page .f-card.active{
+  border-color: var(--c); background: var(--c-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent);
+}
+.tool-page .f-card input{ position: absolute; opacity: 0; pointer-events: none; }
+.tool-page .f-card .fl{ font-size: 13px; font-weight: 750; color: var(--ink); }
+.tool-page .f-card .fh{ font-size: 10px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+.tool-page .xy-row{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tool-page label.field{
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.tool-page label.field input, .tool-page label.field select{
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px;
+  font-size: 13px; font-weight: 500; outline: none; background: var(--surface-solid); color: var(--ink);
+}
+.tool-page .hint{ color: var(--muted-2); font-size: 11px; font-weight: 500; }
+.tool-page .split-layout{
+  display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 20px; margin-top: 18px;
+  align-items: start;
+}
+@media (max-width: 920px){ .tool-page .split-layout{ grid-template-columns: 1fr; } }
+.tool-page .split-right{
+  position: sticky; top: 20px; align-self: start;
+}
+@media (max-width: 920px){ .tool-page .split-right{ position: static; } }
+.tool-page .preview-panel{
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 16px; min-height: 300px;
+}
+.tool-page .preview-label{
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 12px;
+}
+.tool-page .preview-label .cnt{ font-size: 11px; color: var(--muted); font-weight: 600; }
+.tool-page .preview-box{
+  display: grid; gap: 8px; max-width: 100%;
+}
+.tool-page .preview-box[hidden]{ display: none; }
+.tool-page .preview-box img{
+  width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
+  border-radius: 10px; border: 1px solid var(--line); box-shadow: var(--shadow-sm);
+  background:
+    repeating-conic-gradient(var(--chip-bg) 0% 25%, var(--surface-solid) 0% 50%) 0 0 / 20px 20px;
+}
+.tool-page .preview-empty{
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; min-height: 200px; color: var(--muted); font-size: 12px; font-weight: 500;
+  text-align: center;
+}
+.tool-page .preview-empty[hidden]{ display: none; }
+.tool-page .preview-empty .big{ font-size: 34px; opacity: .5; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">🔳</div>
+        <div>
+          <h1>图片九宫格</h1>
+          <p>上传一张图片，切成 N×N 小块并打包成 ZIP。3×3 九宫格发朋友圈，按顺序依次发送即可无缝拼回原图。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">3×3 九宫格</span>
+        <span class="feat">自定义行列</span>
+        <span class="feat">PNG / JPEG / WebP</span>
+        <span class="feat">无缝拼接</span>
+      </div>
+
+      <div class="split-layout">
+      <div class="split-left">
+
+      {% with
+  accept='image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff,image/x-icon,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.ico',
+  multiple=false,
+  title_html='点击或拖拽 <strong>一张图片</strong> 到此处',
+  hint='JPEG / PNG / WebP / GIF / BMP / TIFF / ICO · 单张 ≤ 50 MB',
+  list_id='list'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
+
+      <div class="opts">
+        <div class="opts-title">分割预设</div>
+        <div class="preset-row" id="presetRow" role="radiogroup" aria-label="分割预设">
+          <label class="f-card" data-p="2x2">
+            <input type="radio" name="preset" value="2x2" />
+            <div class="fl">2×2 四宫格</div>
+            <div class="fh">4 块</div>
+          </label>
+          <label class="f-card active" data-p="3x3">
+            <input type="radio" name="preset" value="3x3" checked />
+            <div class="fl">3×3 九宫格</div>
+            <div class="fh">9 块 · 推荐</div>
+          </label>
+          <label class="f-card" data-p="4x4">
+            <input type="radio" name="preset" value="4x4" />
+            <div class="fl">4×4 十六宫格</div>
+            <div class="fh">16 块</div>
+          </label>
+          <label class="f-card" data-p="custom">
+            <input type="radio" name="preset" value="custom" />
+            <div class="fl">自定义</div>
+            <div class="fh">手动设置</div>
+          </label>
+        </div>
+
+        <div class="xy-row">
+          <label class="field">
+            行数
+            <input type="number" id="rows" value="3" min="1" max="{{ max_dim|default(10) }}" inputmode="numeric" />
+          </label>
+          <label class="field">
+            列数
+            <input type="number" id="cols" value="3" min="1" max="{{ max_dim|default(10) }}" inputmode="numeric" />
+          </label>
+        </div>
+
+        <label class="field">
+          输出格式
+          <select id="format">
+            <option value="png">PNG（无损 · 保留透明）</option>
+            <option value="jpeg">JPEG（体积更小）</option>
+            <option value="webp">WebP（体积更小）</option>
+          </select>
+          <span class="hint">无损输出建议 PNG；JPEG / WebP 会将透明区域铺成白底。</span>
+        </label>
+      </div>
+
+      <button id="btn" disabled>分割并下载 ZIP</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div class="stats" id="stats">
+        <div class="stat"><div class="k">原始大小</div><div class="v" id="statOrig">—</div></div>
+        <div class="stat"><div class="k">ZIP 大小</div><div class="v" id="statOut">—</div></div>
+        <div class="stat"><div class="k">切块数</div><div class="v" id="statTiles">—</div></div>
+      </div>
+      <div id="status"></div>
+
+      <div class="tool-result" id="result" hidden></div>
+
+      </div>
+
+      <div class="split-right">
+        <div class="preview-panel">
+          <div class="preview-label">
+            <span>拆分预览</span>
+            <span class="cnt" id="previewCount">0 块</span>
+          </div>
+          <div class="preview-box" id="previewGrid" hidden></div>
+          <div class="preview-empty" id="previewEmpty">
+            <span class="big">🔳</span>
+            <span>上传图片后，此处显示实际分块结果</span>
+          </div>
+        </div>
+      </div>
+      </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_DIM = {{ max_dim|default(10) }};
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const LS_KEY = "image_grid_opts_v1";
+
+    const fileInput = document.getElementById("file");
+    const drop = document.getElementById("drop");
+    const list = document.getElementById("list");
+    const btn = document.getElementById("btn");
+    const status = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const UX = window.ToolkitUX || null;
+    const progress = document.getElementById("progress");
+    const bar = document.getElementById("bar");
+    const presetRow = document.getElementById("presetRow");
+    const rowsEl = document.getElementById("rows");
+    const colsEl = document.getElementById("cols");
+    const formatEl = document.getElementById("format");
+    const stats = document.getElementById("stats");
+    const statOrig = document.getElementById("statOrig");
+    const statOut = document.getElementById("statOut");
+    const statTiles = document.getElementById("statTiles");
+    const previewGrid = document.getElementById("previewGrid");
+    const previewCount = document.getElementById("previewCount");
+    const previewEmpty = document.getElementById("previewEmpty");
+
+    let selected = [];
+    let previewTiles = [];
+
+    const { fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl } = window.ToolkitUpload;
+
+    function currentRows() { return clampDim(parseInt(rowsEl.value || "3", 10)); }
+    function currentCols() { return clampDim(parseInt(colsEl.value || "3", 10)); }
+    function currentFormat() { return formatEl.value || "png"; }
+    function clampDim(v) {
+      if (isNaN(v)) v = 3;
+      return Math.max(1, Math.min(MAX_DIM, v));
+    }
+    function setPreset(r, c) {
+      var target = r + "x" + c;
+      presetRow.querySelectorAll(".f-card").forEach(function (card) {
+        card.classList.toggle("active", card.getAttribute("data-p") === target);
+      });
+      var radio = presetRow.querySelector('input[value="' + target + '"]');
+      if (radio) radio.checked = true;
+    }
+
+    try {
+      var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+      if (saved.rows) rowsEl.value = clampDim(parseInt(saved.rows, 10));
+      if (saved.cols) colsEl.value = clampDim(parseInt(saved.cols, 10));
+      if (saved.format === "png" || saved.format === "jpeg" || saved.format === "webp") formatEl.value = saved.format;
+    } catch (e) { /* ignore */ }
+    setPreset(currentRows(), currentCols());
+
+    function persistOpts() {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          rows: currentRows(), cols: currentCols(), format: currentFormat(),
+        }));
+      } catch (e) { /* ignore */ }
+    }
+
+    presetRow.addEventListener("change", function (e) {
+      var input = e.target;
+      if (!input || input.name !== "preset") return;
+      presetRow.querySelectorAll(".f-card").forEach(function (card) {
+        card.classList.toggle("active", card.getAttribute("data-p") === input.value);
+      });
+      if (input.value === "custom") return;
+      var m = /^(\d+)x(\d+)$/.exec(input.value);
+      if (m) { rowsEl.value = m[1]; colsEl.value = m[2]; }
+      persistOpts();
+      drawPreview();
+    });
+    rowsEl.addEventListener("change", function () {
+      rowsEl.value = clampDim(currentRows());
+      if (currentRows() !== 3 || currentCols() !== 3) {
+        presetRow.querySelectorAll(".f-card").forEach(function (card) {
+          card.classList.toggle("active", card.getAttribute("data-p") === "custom");
+        });
+        presetRow.querySelector('input[value="custom"]').checked = true;
+      }
+      persistOpts();
+      drawPreview();
+    });
+    colsEl.addEventListener("change", function () {
+      colsEl.value = clampDim(currentCols());
+      if (currentRows() !== 3 || currentCols() !== 3) {
+        presetRow.querySelectorAll(".f-card").forEach(function (card) {
+          card.classList.toggle("active", card.getAttribute("data-p") === "custom");
+        });
+        presetRow.querySelector('input[value="custom"]').checked = true;
+      }
+      persistOpts();
+      drawPreview();
+    });
+    formatEl.addEventListener("change", persistOpts);
+
+    function setProgress(pct) { progress.classList.add("show"); bar.style.width = Math.max(0, Math.min(100, pct)) + "%"; }
+    function hideProgress() { progress.classList.remove("show"); bar.style.width = "0%"; }
+    function setStatus(text, cls) { status.textContent = text || ""; status.className = cls || ""; }
+    function clearStats() {
+      stats.classList.remove("show");
+      statOrig.textContent = "—"; statOut.textContent = "—"; statTiles.textContent = "—";
+    }
+    function showStats(orig, out, tiles) {
+      statOrig.textContent = fmtSize(orig);
+      statOut.textContent = fmtSize(out);
+      statTiles.textContent = String(tiles || "—");
+      stats.classList.add("show");
+    }
+
+    function isImageFile(f) {
+      if (!f) return false;
+      var name = (f.name || "").toLowerCase();
+      var okExt = /\.(jpe?g|png|gif|webp|bmp|tiff?|ico)$/i.test(name);
+      var okType = /^(image\/(jpeg|png|gif|webp|bmp|tiff|x-icon|vnd\.microsoft\.icon)|application\/octet-stream)$/i.test(f.type || "");
+      return okExt || okType;
+    }
+
+    function clearPreview() {
+      previewTiles.forEach(function (u) { if (u) URL.revokeObjectURL(u); });
+      previewTiles = [];
+      previewGrid.innerHTML = "";
+      previewGrid.hidden = true;
+      previewEmpty.hidden = false;
+      previewCount.textContent = "0 块";
+    }
+
+    function drawPreview() {
+      if (!selected.length) return;
+      var r = currentRows(), c = currentCols();
+      var src = selected[0].previewUrl;
+      var img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth || img.width;
+        var h = img.naturalHeight || img.height;
+        var xs = [];
+        var ys = [];
+        for (var i = 0; i <= c; i++) xs.push(Math.round(i * w / c));
+        for (var j = 0; j <= r; j++) ys.push(Math.round(j * h / r));
+
+        previewTiles.forEach(function (u) { if (u) URL.revokeObjectURL(u); });
+        previewTiles = [];
+        previewGrid.innerHTML = "";
+        previewGrid.style.gridTemplateColumns = "repeat(" + c + ", 1fr)";
+
+        var count = 0;
+        for (var row = 0; row < r; row++) {
+          for (var col = 0; col < c; col++) {
+            var tw = xs[col + 1] - xs[col];
+            var th = ys[row + 1] - ys[row];
+            var canvas = document.createElement("canvas");
+            canvas.width = tw; canvas.height = th;
+            var ctx = canvas.getContext("2d");
+            ctx.drawImage(img, xs[col], ys[row], tw, th, 0, 0, tw, th);
+            var url;
+            try { url = canvas.toDataURL("image/png"); }
+            catch (e) { url = null; }
+            previewTiles.push(url);
+            var el = document.createElement("img");
+            el.alt = (row + 1) + "x" + (col + 1);
+            if (url) el.src = url;
+            previewGrid.appendChild(el);
+            count++;
+          }
+        }
+        previewCount.textContent = String(count) + " 块";
+        previewGrid.hidden = false;
+        previewEmpty.hidden = true;
+      };
+      img.src = src;
+    }
+
+    function renderList() {
+      list.innerHTML = "";
+      selected.forEach(function (f) {
+        var li = document.createElement("li");
+        var icon = document.createElement("span"); icon.className = "fi"; icon.textContent = "🖼️"; icon.setAttribute("aria-hidden", "true");
+        var name = document.createElement("span"); name.className = "fname"; name.title = f.name; name.textContent = f.name;
+        var size = document.createElement("span"); size.className = "fsize"; size.textContent = fmtSize(f.size);
+        var rm = document.createElement("button"); rm.type = "button"; rm.textContent = "移除";
+        rm.addEventListener("click", function (e) {
+          e.preventDefault(); e.stopPropagation();
+          selected = [];
+          renderList(); setStatus(""); clearPreview(); clearStats();
+          if (UX) UX.hideResult(resultEl);
+        });
+        li.append(icon, name, size, rm);
+        list.appendChild(li);
+      });
+      btn.disabled = selected.length === 0;
+      btn.textContent = "分割并下载 ZIP";
+    }
+
+    function addFiles(fileList) {
+      var incoming = Array.from(fileList || []);
+      var errors = [];
+      for (var j = 0; j < incoming.length; j++) {
+        var f = incoming[j];
+        if (!isImageFile(f)) { errors.push((f.name || "文件") + ": 仅支持常见图片格式"); continue; }
+        if (f.size > MAX_BYTES) { errors.push(f.name + ": 超过 50 MB"); continue; }
+        if (f.size === 0) { errors.push(f.name + ": 空文件"); continue; }
+        if (selected.length) { errors.push("每次仅支持一张图片"); break; }
+        selected = [f];
+        f.previewUrl = URL.createObjectURL(f);
+      }
+      renderList();
+      if (selected.length) drawPreview();
+      if (errors.length) {
+        if (UX) { UX.showResult(resultEl, { kind: "err", title: "未添加文件", detail: errors.join("；") }); setStatus(""); }
+        else setStatus(errors.join("；"), "err");
+      } else { setStatus(""); if (UX) UX.hideResult(resultEl); }
+      fileInput.value = "";
+    }
+
+    bindDropZone({
+      drop: drop, input: fileInput, paste: true,
+      acceptFile: function (f) { return isImageFile(f); },
+      rejectMessage: "仅支持常见图片格式（JPEG/PNG/WebP/GIF/BMP/TIFF/ICO）",
+      onFiles: addFiles,
+    });
+
+    btn.addEventListener("click", async function () {
+      if (!selected.length) return;
+      persistOpts();
+      btn.disabled = true;
+      clearStats();
+      if (UX) UX.hideResult(resultEl);
+      setStatus("正在分割…", "info");
+      setProgress(8);
+
+      var fd = new FormData();
+      fd.append("file", selected[0], selected[0].name);
+      fd.append("rows", String(currentRows()));
+      fd.append("cols", String(currentCols()));
+      fd.append("fmt", currentFormat());
+
+      try {
+        var xhr = await xhrPost(appUrl("/tools/image-grid/split"), fd, {
+          processHint: "上传完成，正在分割…",
+          longWaitSec: 20,
+          onProgress: function (pct) { setProgress(pct); },
+          onStatus: function (text, cls) { setStatus(text, cls || "info"); },
+        });
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var blob = xhr.response;
+          var fallback = (selected[0].name.replace(/\.[^.]+$/, "") || "image") +
+            "_" + currentRows() + "x" + currentCols() + ".zip";
+          var name = downloadName(xhr.getResponseHeader("Content-Disposition"), fallback);
+          var orig = parseInt(xhr.getResponseHeader("X-Original-Bytes") || "0", 10);
+          var out = parseInt(xhr.getResponseHeader("X-Output-Bytes") || "0", 10);
+          var tiles = parseInt(xhr.getResponseHeader("X-Tiles") || "0", 10);
+          if (!orig) orig = selected[0].size || 0;
+          if (!out && blob && blob.size) out = blob.size;
+          if (!tiles) tiles = currentRows() * currentCols();
+          showStats(orig, out, tiles);
+          saveBlob(blob, name);
+          var msg = "已切为 " + tiles + " 块，打包 ZIP";
+          if (orig && out) msg += " · " + fmtSize(orig) + " → " + fmtSize(out);
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, {
+              kind: "ok", title: "分割完成", detail: msg,
+              filename: name, downloadBlob: blob, downloadName: name,
+              againLabel: "继续分割",
+              onAgain: function () { UX.hideResult(resultEl); },
+            });
+          } else setStatus(msg, "ok");
+          setProgress(100);
+        } else {
+          var em = await xhrErrorMessage(xhr);
+          if (UX) { setStatus("", ""); UX.showResult(resultEl, { kind: "err", title: "分割失败", detail: em || "分割失败" }); }
+          else setStatus(em || "分割失败", "err");
+        }
+      } catch (err) {
+        var em2 = (err && err.message) || "网络错误";
+        if (UX) { setStatus("", ""); UX.showResult(resultEl, { kind: "err", title: "分割失败", detail: em2 }); }
+        else setStatus(em2, "err");
+      } finally {
+        btn.disabled = selected.length === 0;
+        setTimeout(hideProgress, 400);
+      }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,649 @@
+{% extends "tools/base.html" %}
+{% set page_title = "图片格式转换" %}
+{% set page_description = "图片格式互转 — JPEG / PNG / WebP / GIF 等" %}
+{% set accent = "emerald" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/#col-office") %}
+{% set back_label = "办公工具" %}
+{% set chip = "办公工具 · 图片转换" %}
+
+{% block head_styles %}
+<style>
+.tool-page .preview-bar{
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 10px 12px;
+      border-bottom: 1px solid #eef2f7;
+      font-size: 12px; font-weight: 600; color: #475569;
+    }
+.tool-page .preview-bar .meta{ color: var(--muted-2); font-weight: 500; }
+.tool-page .preview-stage{
+      display: grid; place-items: center;
+      min-height: 160px; max-height: 280px;
+      padding: 12px;
+      background:
+        linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+        linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+        linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+      background-color: #f1f5f9;
+    }
+.tool-page .preview-stage img{
+      max-width: 100%; max-height: 250px;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+    }
+.tool-page .opts{
+      margin-top: 16px; display: grid; gap: 14px;
+      padding: 16px; background: #f8fafc;
+      border: 1px solid #eef2f7; border-radius: 16px;
+    }
+.tool-page .format-row{
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+@media (max-width: 640px)  {
+.tool-page .format-row{ grid-template-columns: repeat(2, 1fr); }
+}
+.tool-page .f-card{
+      position: relative;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px 10px 10px;
+      background: #fff;
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s, background .15s;
+      text-align: center;
+    }
+.tool-page .f-card:hover{ border-color: var(--c-border); }
+.tool-page .f-card.active{
+      border-color: var(--c);
+      background: var(--c-soft);
+      box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+    }
+.tool-page .f-card input{ position: absolute; opacity: 0; pointer-events: none; }
+.tool-page .f-card .fl{
+      font-size: 13px; font-weight: 750; color: var(--ink); margin-bottom: 2px;
+    }
+.tool-page .f-card .fh{
+      font-size: 10px; color: var(--muted); line-height: 1.35; font-weight: 500;
+    }
+.tool-page .opts .check{
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer;
+    }
+.tool-page .opts .check input{
+      width: 16px; height: 16px; accent-color: var(--c); cursor: pointer;
+    }
+.tool-page .opts-row{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+@media (max-width: 520px)  {
+.tool-page .opts-row{ grid-template-columns: 1fr; }
+}
+.tool-page .opts label.field{
+      display: flex; flex-direction: column; gap: 6px;
+      font-size: 12px; font-weight: 600; color: #475569;
+    }
+.tool-page .opts input[type=number], .tool-page .opts input[type=color], .tool-page .opts input[type=text]{
+      padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 11px;
+      font-size: 13px; font-weight: 500; outline: none; background: #fff;
+      color: var(--ink);
+      transition: border-color .15s, box-shadow .15s;
+    }
+.tool-page .opts input[type=number]:focus, .tool-page .opts input[type=text]:focus{
+      border-color: var(--c2);
+      box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.15);
+    }
+.tool-page .opts .hint{ color: var(--muted-2); font-size: 11px; font-weight: 500; }
+.tool-page .lossy-only.hidden{ display: none !important; }
+.tool-page .opts select{
+      padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 11px;
+      font-size: 13px; font-weight: 500; outline: none; background: #fff;
+      color: var(--ink); cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+    }
+.tool-page .opts select:focus{
+      border-color: var(--c2);
+      box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.15);
+    }
+.tool-page .cutout{
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid #ccfbf1;
+      background: linear-gradient(180deg, #f0fdfa 0%, #fff 100%);
+      display: grid;
+      gap: 12px;
+    }
+.tool-page .cutout .check strong{ font-weight: 750; color: var(--c); }
+.tool-page .cutout-body{ display: grid; gap: 12px; }
+.tool-page .cutout-body[hidden]{ display: none !important; }
+.tool-page .cutout-tip{
+      margin: 0;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      line-height: 1.5;
+    }
+.tool-page .cutout-tip strong{ color: var(--c); }
+.tool-page .opts select{
+      padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 11px;
+      font-size: 13px; font-weight: 500; outline: none; background: #fff;
+      color: var(--ink); cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+    }
+.tool-page .opts select:focus{
+      border-color: var(--c2);
+      box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.15);
+    }
+.tool-page .cutout{
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid #ccfbf1;
+      background: linear-gradient(180deg, #f0fdfa 0%, #fff 100%);
+      display: grid;
+      gap: 12px;
+    }
+.tool-page .cutout .check strong{ font-weight: 750; color: var(--c); }
+.tool-page .cutout-body{ display: grid; gap: 12px; }
+.tool-page .cutout-body[hidden]{ display: none !important; }
+.tool-page .cutout-tip{
+      margin: 0;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      line-height: 1.5;
+    }
+.tool-page .cutout-tip strong{ color: var(--c); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">🔄</div>
+        <div>
+          <h1>图片格式转换</h1>
+          <p>在 JPEG、PNG、WebP、GIF、BMP、TIFF、ICO 之间互转。透明通道转 JPEG/BMP 时会铺底色；动图转静态格式仅保留首帧。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">七种格式</span>
+        <span class="feat">保留透明</span>
+        <span class="feat">动图 → WebP/GIF</span>
+        <span class="feat">质量可调</span>
+        <span class="feat">本地处理</span>
+      </div>
+
+      {% with
+  accept='image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff,image/x-icon,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.ico',
+  title_html='点击或拖拽 <strong>图片文件</strong> 到此处',
+  hint='JPEG / PNG / WebP / GIF / BMP / TIFF / ICO · 单文件 ≤ 50 MB'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
+
+      <div class="preview-wrap" id="previewWrap">
+        <div class="preview-bar">
+          <span id="fileName">—</span>
+          <span class="meta" id="fileMeta">—</span>
+        </div>
+        <div class="preview-stage">
+          <img id="previewImg" alt="预览" />
+        </div>
+      </div>
+
+      <div class="opts">
+        <div class="opts-title">目标格式</div>
+        <div class="format-row" id="formatRow" role="radiogroup" aria-label="目标格式">
+          <label class="f-card" data-f="jpeg" data-lossy="1">
+            <input type="radio" name="target" value="jpeg" />
+            <div class="fl">JPEG</div>
+            <div class="fh">照片 · 无透明</div>
+          </label>
+          <label class="f-card active" data-f="png" data-lossy="0">
+            <input type="radio" name="target" value="png" checked />
+            <div class="fl">PNG</div>
+            <div class="fh">无损 · 透明</div>
+          </label>
+          <label class="f-card" data-f="webp" data-lossy="1">
+            <input type="radio" name="target" value="webp" />
+            <div class="fl">WebP</div>
+            <div class="fh">小体积 · 透明</div>
+          </label>
+          <label class="f-card" data-f="gif" data-lossy="1">
+            <input type="radio" name="target" value="gif" />
+            <div class="fl">GIF</div>
+            <div class="fh">动图 · 调色板</div>
+          </label>
+          <label class="f-card" data-f="bmp" data-lossy="0">
+            <input type="radio" name="target" value="bmp" />
+            <div class="fl">BMP</div>
+            <div class="fh">无压缩位图</div>
+          </label>
+          <label class="f-card" data-f="tiff" data-lossy="0">
+            <input type="radio" name="target" value="tiff" />
+            <div class="fl">TIFF</div>
+            <div class="fh">扫描 / 印刷</div>
+          </label>
+          <label class="f-card" data-f="ico" data-lossy="0">
+            <input type="radio" name="target" value="ico" />
+            <div class="fl">ICO</div>
+            <div class="fh">图标 · ≤256</div>
+          </label>
+        </div>
+
+        <div class="opts-row lossy-only" id="qualityBlock">
+          <label class="field">
+            质量（JPEG / WebP）
+            <input type="number" id="quality" min="1" max="100" step="1" value="85" />
+            <span class="hint">1–100，默认 85。PNG / BMP / TIFF / ICO 忽略此项。</span>
+          </label>
+          <label class="field" id="flattenBgField">
+            透明底色（转 JPEG / BMP 时）
+            <div class="bg-row">
+              <input type="color" id="bgColor" value="#ffffff" title="选择底色" />
+              <input type="text" id="bgText" value="#ffffff" maxlength="20" spellcheck="false" />
+            </div>
+            <span class="hint">PNG/WebP 有透明通道时，导出到无透明格式会铺此底色。</span>
+          </label>
+        </div>
+
+        <div class="cutout" id="cutoutBox">
+          <label class="check">
+            <input type="checkbox" id="makeTransparent" />
+            <strong>去底色 → 透明背景</strong>（适合白底/纯色底图标，只保留主体）
+          </label>
+          <div class="cutout-body" id="cutoutBody" hidden>
+            <div class="opts-row">
+              <label class="field">
+                底色来源
+                <select id="chromaMode">
+                  <option value="auto" selected>自动（取四角/边缘）</option>
+                  <option value="manual">指定颜色</option>
+                </select>
+                <span class="hint">图标四周是纯色时用「自动」即可；绿幕/特定色用「指定」。</span>
+              </label>
+              <label class="field" id="chromaManualField" hidden>
+                指定底色
+                <div class="bg-row">
+                  <input type="color" id="chromaColor" value="#ffffff" title="底色" />
+                  <input type="text" id="chromaText" value="#ffffff" maxlength="20" spellcheck="false" />
+                </div>
+              </label>
+            </div>
+            <div class="opts-row">
+              <label class="field">
+                容差（0–100）
+                <input type="number" id="tolerance" min="0" max="100" step="1" value="28" />
+                <span class="hint">JPEG 白边可调到 30–45；抠多了就调小。默认 28。</span>
+              </label>
+              <label class="check" style="align-self:end;margin-bottom:4px;">
+                <input type="checkbox" id="softEdge" checked />
+                柔和边缘（抗锯齿，推荐）
+              </label>
+            </div>
+            <p class="hint cutout-tip">
+              推荐导出 <strong>PNG</strong> 或 <strong>WebP</strong>。选 JPEG/BMP 时会自动改为 PNG 以保留透明。
+              复杂照片背景（人像抠图）效果有限，更适合图标 / Logo / 纯色底。
+            </p>
+          </div>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="stripMeta" checked />
+          去除 EXIF 等元数据（方向信息会先烘焙进像素）
+        </label>
+      </div>
+
+      <button id="btn" disabled>开始转换</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div class="stats" id="stats">
+        <div class="stat"><div class="k">原始大小</div><div class="v" id="statOrig">—</div></div>
+        <div class="stat"><div class="k">转换后</div><div class="v" id="statOut">—</div></div>
+        <div class="stat"><div class="k">格式</div><div class="v" id="statFmt">—</div></div>
+      </div>
+      <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const LS_KEY = "image_convert_opts_v2";
+    const LOSSY = { jpeg: 1, webp: 1, gif: 1, png: 0, bmp: 0, tiff: 0, ico: 0 };
+
+    const fileInput = document.getElementById("file");
+    const drop = document.getElementById("drop");
+    const btn = document.getElementById("btn");
+    const status = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const UX = window.ToolkitUX || null;
+    const progress = document.getElementById("progress");
+    const bar = document.getElementById("bar");
+    const stripMeta = document.getElementById("stripMeta");
+    const quality = document.getElementById("quality");
+    const bgColor = document.getElementById("bgColor");
+    const bgText = document.getElementById("bgText");
+    const previewWrap = document.getElementById("previewWrap");
+    const previewImg = document.getElementById("previewImg");
+    const fileName = document.getElementById("fileName");
+    const fileMeta = document.getElementById("fileMeta");
+    const stats = document.getElementById("stats");
+    const statOrig = document.getElementById("statOrig");
+    const statOut = document.getElementById("statOut");
+    const statFmt = document.getElementById("statFmt");
+    const formatRow = document.getElementById("formatRow");
+    const qualityBlock = document.getElementById("qualityBlock");
+    const makeTransparent = document.getElementById("makeTransparent");
+    const cutoutBody = document.getElementById("cutoutBody");
+    const chromaMode = document.getElementById("chromaMode");
+    const chromaManualField = document.getElementById("chromaManualField");
+    const chromaColor = document.getElementById("chromaColor");
+    const chromaText = document.getElementById("chromaText");
+    const tolerance = document.getElementById("tolerance");
+    const softEdge = document.getElementById("softEdge");
+
+    /** @type {File|null} */
+    let selected = null;
+    let previewUrl = null;
+
+    const {
+      fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl,
+    } = window.ToolkitUpload;
+
+    function currentTarget() {
+      return (formatRow.querySelector("input:checked") || {}).value || "png";
+    }
+
+    function syncCutoutUi() {
+      var on = !!makeTransparent.checked;
+      cutoutBody.hidden = !on;
+      chromaManualField.hidden = chromaMode.value !== "manual";
+    }
+
+    function syncLossyUi() {
+      var t = currentTarget();
+      // Quality is only meaningful for jpeg/webp; still show bg for jpeg/bmp.
+      var showQ = t === "jpeg" || t === "webp";
+      var showBg = t === "jpeg" || t === "bmp" || t === "gif";
+      quality.disabled = !showQ;
+      quality.parentElement.style.opacity = showQ ? "1" : "0.55";
+      bgColor.parentElement.parentElement.style.opacity = showBg ? "1" : "0.55";
+    }
+
+    try {
+      var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+      if (saved.target) {
+        var r = formatRow.querySelector('input[value="' + saved.target + '"]');
+        if (r) {
+          r.checked = true;
+          formatRow.querySelectorAll(".f-card").forEach(function (c) {
+            c.classList.toggle("active", c.getAttribute("data-f") === saved.target);
+          });
+        }
+      }
+      if (typeof saved.quality === "number" || typeof saved.quality === "string") {
+        var qv = parseInt(saved.quality, 10);
+        if (!isNaN(qv) && qv >= 1 && qv <= 100) quality.value = String(qv);
+      }
+      if (typeof saved.stripMeta === "boolean") stripMeta.checked = saved.stripMeta;
+      if (typeof saved.background === "string" && saved.background) {
+        bgText.value = saved.background;
+        if (/^#[0-9a-fA-F]{6}$/.test(saved.background)) bgColor.value = saved.background;
+      }
+      if (typeof saved.makeTransparent === "boolean") makeTransparent.checked = saved.makeTransparent;
+      if (saved.chromaMode === "auto" || saved.chromaMode === "manual") chromaMode.value = saved.chromaMode;
+      if (typeof saved.chromaKey === "string" && saved.chromaKey) {
+        chromaText.value = saved.chromaKey;
+        if (/^#[0-9a-fA-F]{6}$/.test(saved.chromaKey)) chromaColor.value = saved.chromaKey;
+      }
+      if (typeof saved.tolerance === "number" || typeof saved.tolerance === "string") {
+        var tv = parseInt(saved.tolerance, 10);
+        if (!isNaN(tv) && tv >= 0 && tv <= 100) tolerance.value = String(tv);
+      }
+      if (typeof saved.softEdge === "boolean") softEdge.checked = saved.softEdge;
+    } catch (e) { /* ignore */ }
+    syncLossyUi();
+    syncCutoutUi();
+
+    function persistOpts() {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          target: currentTarget(),
+          quality: parseInt(quality.value, 10) || 85,
+          stripMeta: !!stripMeta.checked,
+          background: bgText.value || "#ffffff",
+          makeTransparent: !!makeTransparent.checked,
+          chromaMode: chromaMode.value || "auto",
+          chromaKey: chromaText.value || "#ffffff",
+          tolerance: parseInt(tolerance.value, 10) || 28,
+          softEdge: !!softEdge.checked,
+        }));
+      } catch (e) { /* ignore */ }
+    }
+
+    formatRow.addEventListener("change", function (e) {
+      var input = e.target;
+      if (!input || input.name !== "target") return;
+      formatRow.querySelectorAll(".f-card").forEach(function (c) {
+        c.classList.toggle("active", c.getAttribute("data-f") === input.value);
+      });
+      syncLossyUi();
+      persistOpts();
+    });
+    quality.addEventListener("change", persistOpts);
+    quality.addEventListener("blur", persistOpts);
+    stripMeta.addEventListener("change", persistOpts);
+    makeTransparent.addEventListener("change", function () {
+      syncCutoutUi();
+      persistOpts();
+    });
+    chromaMode.addEventListener("change", function () {
+      syncCutoutUi();
+      persistOpts();
+    });
+    tolerance.addEventListener("change", persistOpts);
+    tolerance.addEventListener("blur", persistOpts);
+    softEdge.addEventListener("change", persistOpts);
+    bgColor.addEventListener("input", function () {
+      bgText.value = bgColor.value;
+      persistOpts();
+    });
+    bgText.addEventListener("change", function () {
+      var v = (bgText.value || "").trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) bgColor.value = v;
+      persistOpts();
+    });
+    chromaColor.addEventListener("input", function () {
+      chromaText.value = chromaColor.value;
+      persistOpts();
+    });
+    chromaText.addEventListener("change", function () {
+      var v = (chromaText.value || "").trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) chromaColor.value = v;
+      persistOpts();
+    });
+
+    function setProgress(pct) {
+      progress.classList.add("show");
+      bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    }
+    function hideProgress() {
+      progress.classList.remove("show");
+      bar.style.width = "0%";
+    }
+    function setStatus(text, cls) {
+      status.textContent = text || "";
+      status.className = cls || "";
+    }
+    function clearStats() {
+      stats.classList.remove("show");
+      statOrig.textContent = "—";
+      statOut.textContent = "—";
+      statFmt.textContent = "—";
+    }
+    function showStats(orig, out, fmt) {
+      statOrig.textContent = fmtSize(orig);
+      statOut.textContent = fmtSize(out);
+      statFmt.textContent = (fmt || "—").toUpperCase();
+      stats.classList.add("show");
+    }
+
+    function acceptFile(file) {
+      if (!file) return false;
+      if (file.size > MAX_BYTES) {
+        setStatus("文件过大（最大 50 MB）", "err");
+        return false;
+      }
+      var name = (file.name || "").toLowerCase();
+      var okExt = /\.(jpe?g|png|gif|webp|bmp|tiff?|ico)$/i.test(name);
+      var okType = /^(image\/(jpeg|png|gif|webp|bmp|tiff|x-icon|vnd\.microsoft\.icon)|application\/octet-stream)$/i.test(file.type || "");
+      if (!okExt && !okType) {
+        setStatus("仅支持 JPEG、PNG、WebP、GIF、BMP、TIFF、ICO", "err");
+        return false;
+      }
+      return true;
+    }
+
+    function setFile(file) {
+      if (!acceptFile(file)) return;
+      selected = file;
+      btn.disabled = false;
+      clearStats();
+      setStatus("");
+      fileName.textContent = file.name;
+      fileMeta.textContent = fmtSize(file.size);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+      previewUrl = URL.createObjectURL(file);
+      previewImg.src = previewUrl;
+      previewImg.onerror = function () {
+        previewWrap.classList.remove("show");
+      };
+      previewImg.onload = function () {
+        previewWrap.classList.add("show");
+      };
+      previewWrap.classList.add("show");
+    }
+
+    bindDropZone({
+      drop: drop,
+      input: fileInput,
+      paste: true,
+      acceptFile: function (f) {
+        return (
+          f &&
+          ((f.type || "").indexOf("image/") === 0 ||
+            /\.(jpe?g|png|gif|webp|bmp|tiff?|ico)$/i.test(f.name || ""))
+        );
+      },
+      rejectMessage: "仅支持常见图片格式（JPEG/PNG/WebP/GIF/BMP/TIFF/ICO）",
+      onFiles: function (files) {
+        if (files && files[0]) setFile(files[0]);
+        fileInput.value = "";
+      },
+    });
+
+    btn.addEventListener("click", async function () {
+      if (!selected) return;
+      btn.disabled = true;
+      clearStats();
+      setStatus("正在转换…", "info");
+      setProgress(8);
+
+      var target = currentTarget();
+      var punch = !!makeTransparent.checked;
+      var fd = new FormData();
+      fd.append("file", selected, selected.name);
+      fd.append("target_format", target);
+      fd.append("quality", String(parseInt(quality.value, 10) || 85));
+      fd.append("strip_meta", stripMeta.checked ? "true" : "false");
+      fd.append("background", bgText.value || "#ffffff");
+      fd.append("make_transparent", punch ? "true" : "false");
+      if (punch) {
+        var key = chromaMode.value === "manual"
+          ? (chromaText.value || "#ffffff")
+          : "auto";
+        fd.append("chroma_key", key);
+        fd.append("tolerance", String(parseInt(tolerance.value, 10) || 28));
+        fd.append("soft_edge", softEdge.checked ? "true" : "false");
+      }
+
+      try {
+        var xhr = await xhrPost(appUrl("/tools/image-convert/convert"), fd, {
+          processHint: punch ? "上传完成，正在去底色…" : "上传完成，正在转换…",
+          longWaitSec: 12,
+          onProgress: function (pct) { setProgress(pct); },
+          onStatus: function (text, cls) { setStatus(text, cls || "info"); },
+        });
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var blob = xhr.response;
+          var name = downloadName(
+            xhr.getResponseHeader("Content-Disposition"),
+            selected.name.replace(/\.[^.]+$/, "") + "." + (target === "jpeg" ? "jpg" : target)
+          );
+          var orig = parseInt(xhr.getResponseHeader("X-Original-Bytes") || "0", 10);
+          var out = parseInt(xhr.getResponseHeader("X-Output-Bytes") || "0", 10);
+          var src = xhr.getResponseHeader("X-Source-Format") || "";
+          var tgt = xhr.getResponseHeader("X-Target-Format") || target;
+          if (!orig) orig = selected.size;
+          if (!out && blob && blob.size) out = blob.size;
+          showStats(orig, out, tgt);
+          saveBlob(blob, name);
+          var msg = punch ? "去底完成" : "转换完成";
+          if (src && tgt) msg += " · " + src.toUpperCase() + " → " + tgt.toUpperCase();
+          if (orig && out) msg += " · " + fmtSize(orig) + " → " + fmtSize(out);
+          if (punch) msg += " · 透明背景";
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, {
+              kind: "ok",
+              title: punch ? "去底完成" : "转换完成",
+              detail: msg,
+              filename: name,
+              downloadBlob: blob,
+              downloadName: name,
+              againLabel: "继续转换",
+              onAgain: function () { UX.hideResult(resultEl); },
+            });
+          } else {
+            setStatus(msg, "ok");
+          }
+          setProgress(100);
+        } else {
+          var em = await xhrErrorMessage(xhr);
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, { kind: "err", title: "转换失败", detail: em || "转换失败" });
+          } else {
+            setStatus(em || "转换失败", "err");
+          }
+        }
+      } catch (err) {
+        var em2 = (err && err.message) || "网络错误";
+        if (UX) {
+          setStatus("", "");
+          UX.showResult(resultEl, { kind: "err", title: "转换失败", detail: em2 });
+        } else {
+          setStatus(em2, "err");
+        }
+      } finally {
+        btn.disabled = !selected;
+        setTimeout(hideProgress, 600);
+      }
+    });
+  </script>
+{% endblock %}

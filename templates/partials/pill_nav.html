@@ -1,0 +1,46 @@
+{# Floating neon pill navigation — shared by homepage and tool pages.
+   Expects: nav_items (list), active_nav ('home' | category id | '')
+   Tool pages: category buttons link back to the homepage anchor (#tools-section)
+   so the homepage's JS filter activates that column.
+#}
+<nav id="pillnav" aria-label="主导航">
+  <a href="{{ url_path('/') }}" class="pn-logo" aria-label="工具集首页" data-tip="工具集">
+    <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/>
+      <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>
+    </svg>
+  </a>
+  <div class="pn-cats" id="pn-cats" role="tablist">
+    <span class="pn-indicator" id="pn-indicator" aria-hidden="true"></span>
+    <button class="pn-cat{% if not active_nav or active_nav == 'home' %} active{% endif %}" data-pn="" data-tip="全部工具" data-href="{{ url_path('/') }}" type="button" role="tab"><i aria-hidden="true">◇</i><span>全部</span></button>
+    {% for item in nav_items %}
+    <button class="pn-cat{% if active_nav == item.id %} active{% endif %}" data-pn="{{ item.id }}" data-tip="{{ item.name }}" data-href="{{ url_path('/#col-' ~ item.id) }}" type="button" role="tab" aria-label="{{ item.name }}"><i aria-hidden="true">{{ item.icon }}</i></button>
+    {% endfor %}
+  </div>
+  <span class="pn-divider" aria-hidden="true"></span>
+  <a href="{{ url_path('/health') }}" class="pn-icon-btn text-btn" data-tip="服务状态"><span class="pn-led" aria-hidden="true"></span>健康</a>
+  <button class="pn-icon-btn pn-mobile-toggle" id="pn-mobile-toggle" data-tip="菜单" type="button" aria-label="打开菜单" aria-expanded="false"><i aria-hidden="true">☰</i></button>
+  <button class="pn-icon-btn" id="homeThemeToggle" data-tip="切换主题" type="button" aria-label="切换浅色/深色"><span class="home-theme-icon" aria-hidden="true"></span></button>
+  <a href="{{ url_path('/admin') }}" class="pn-icon-btn text-btn" data-tip="管理后台">后台</a>
+</nav>
+
+<!-- Mobile menu backdrop + bottom sheet -->
+<div id="ms-backdrop" aria-hidden="true"></div>
+<div id="mobile-sheet" role="dialog" aria-modal="true" aria-label="菜单" aria-hidden="true">
+  <div class="ms-handle" aria-hidden="true"></div>
+  <button id="ms-close" type="button" aria-label="关闭菜单" style="position:absolute;top:16px;right:16px;background:transparent;border:none;color:var(--text-mute);font-size:20px;cursor:pointer;width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;transition:background .25s var(--ease)">✕</button>
+  <div class="ms-head">栏目</div>
+  <div class="ms-grid">
+    <a class="ms-item" data-ms="" href="{{ url_path('/') }}"><i aria-hidden="true">◇</i>全部工具</a>
+    {% for item in nav_items %}
+    <a class="ms-item" data-ms="{{ item.id }}" href="{{ url_path('/#col-' ~ item.id) }}"><i aria-hidden="true">{{ item.icon }}</i>{{ item.name }}</a>
+    {% endfor %}
+  </div>
+  <div class="ms-head">更多</div>
+  <div class="ms-grid">
+    <a class="ms-item" href="{{ url_path('/health') }}"><i aria-hidden="true">●</i>服务状态</a>
+    <a class="ms-item" href="{{ url_path('/api/tools') }}"><i aria-hidden="true">≡</i>工具目录 API</a>
+    <a class="ms-item" href="{{ url_path('/docs') }}"><i aria-hidden="true">?</i>接口文档</a>
+    <a class="ms-item" href="{{ url_path('/admin') }}"><i aria-hidden="true">⚙</i>管理后台</a>
+  </div>
+</div>
