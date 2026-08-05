@@ -62,6 +62,12 @@
     html.light-mode #pillnav .pn-icon-btn:hover{background:linear-gradient(180deg,rgba(99,102,241,.22),rgba(34,211,238,.14));box-shadow:0 0 12px rgba(99,102,241,.22);color:#4f46e5}
     #pillnav .pn-icon-btn i{font-size:17px}
     #pillnav .pn-icon-btn.text-btn{padding:0 12px;width:auto;min-width:44px;display:inline-flex;align-items:center;gap:6px}
+    /* GitHub link — slightly larger, recognizable accent */
+    #pillnav .pn-icon-btn.pn-github{color:#c8d1e0}
+    #pillnav .pn-icon-btn.pn-github:hover{background:linear-gradient(180deg,rgba(148,163,184,.35),rgba(99,102,241,.18));box-shadow:0 0 18px rgba(148,163,184,.3);color:#fff}
+    html.light-mode #pillnav .pn-icon-btn.pn-github{color:#1f2937}
+    html.light-mode #pillnav .pn-icon-btn.pn-github:hover{background:linear-gradient(180deg,rgba(148,163,184,.22),rgba(99,102,241,.14));color:#111827}
+    #pillnav .pn-icon-btn.pn-github svg{display:block}
     /* Pulsing status LED (health) */
     #pillnav .pn-led{position:relative;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.6);animation:pnLed 2.4s ease-in-out infinite}
     #pillnav .pn-icon-btn.text-btn .pn-led{display:inline-block;flex:none}
