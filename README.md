@@ -10,49 +10,60 @@
 
 ---
 
-## 功能一览
+## 功能总览
 
-### 文档处理
+已注册 **17 个工具**，按分类组织。首页可搜索、按分类过滤，工具可独立启用 / 关闭。
+
+### 📕 PDF 处理
 
 | 工具 | 路径 | 说明 |
 |------|------|------|
-| **PDF 转 Word** | `/tools/pdf2word` | 纯文本 / 表格 PDF → 高保真 `.docx`（合并单元格、嵌套样式、图片、可选 OCR、批量 ZIP） |
+| **PDF 转 Word** | `/tools/pdf2word` | 纯文本 / 表格 PDF → 高保真 `.docx`（合并单元格、嵌套样式、图片、可选 OCR、批量 ZIP、异步） |
 | **Word 转 PDF** | `/tools/word2pdf` | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word） |
+| **发票合并** | `/tools/pdf-merge` | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
 
-### 办公工具
+### 🖼️ 图片处理
 
 | 工具 | 路径 | 说明 |
 |------|------|------|
-| **发票合并** | `/tools/pdf-merge` | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
-| **人民币大写** | `/tools/rmb` | 阿拉伯数字金额 → 财务规范中文大写（角分、千分位） |
-| **图片压缩** | `/tools/image-compress` | JPEG / PNG / GIF / SVG 高观感压缩，尽量保持清晰 |
+| **图片压缩** | `/tools/image-compress` | JPEG / PNG / GIF / SVG 高观感压缩，尽量保持清晰，永不返回更大文件 |
 | **图片格式转换** | `/tools/image-convert` | JPEG / PNG / WebP / GIF / BMP / TIFF / ICO 互转（透明铺底、动图保留、质量可调） |
+| **图片转 PDF** | `/tools/image-to-pdf` | 多张图片合成一个 PDF：每图一页，原图像素或 A4 适配，自动校正 EXIF 方向 |
 | **图片九宫格** | `/tools/image-grid` | 一张图切成 N×N 小块打包 ZIP，3×3 九宫格发朋友圈可无缝拼回原图 |
 
-
-### 特色功能 · 首页
-
-| 工具 | 路径 | 说明 |
-|------|------|------|
-| **文件快递** | `/tools/express` | 首页特色入口：上传生成 6 位取件码，对方输入即可下载；不出现在业务栏目模块列表中 |
-
-### 编码工具
+### ✏️ 文本与开发工具
 
 | 工具 | 路径 | 说明 |
 |------|------|------|
 | **Base64 编解码** | `/tools/base64` | 文本 / 文件 Base64（标准 / URL-safe、多字符集、换行折叠） |
+| **中文 Unicode 还原** | `/tools/unicode` | `\uXXXX`、`U+XXXX`、HTML 实体等转义还原为中文，亦可反向编码 |
 | **代码格式化** | `/tools/code-format` | 多语言美化 / 压缩（JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等）；旧路径 `/tools/json` 308 跳转 |
 | **Markdown 编辑** | `/tools/markdown` | 左右分栏编辑与实时 HTML 预览，XSS 过滤，可导出 HTML |
-| **时间戳转换** | `/tools/timestamp` | Unix 时间戳（秒/毫秒）与日期时间互转，本地 / 北京 / UTC 三时区显示，自动识别输入 |
+| **时间戳转换** | `/tools/timestamp` | Unix 时间戳（秒/毫秒）与日期时间互转，本地 / 北京 / UTC 三时区显示 |
+| **正则测试** | `/tools/regex` | 正则匹配 / 捕获 / 替换测试：高亮命中位置、分组信息、常用标志 |
+| **人民币大写** | `/tools/rmb` | 阿拉伯数字金额 → 财务规范中文大写（角分、千分位） |
+| **二维码生成** | `/tools/qrcode` | 网址、文本、Wi-Fi、邮件内容生成自定义二维码 PNG（尺寸 / 容错可调） |
 
-### 平台能力
+### 📦 特色功能（首页）
+
+| 工具 | 路径 | 说明 |
+|------|------|------|
+| **文件快递** | `/tools/express` | 首页特色入口：上传生成 6 位取件码，对方输入即可下载；支持有效期与下载次数，不出现在业务栏目模块列表中 |
+
+> 分类（视频处理、音频处理）已预置，可通过管理后台添加工具并归类到此。
+
+---
+
+## 平台能力
 
 - **异步转换**：PDF ↔ Word 支持「提交 → 轮询 → 下载」，降低反代读超时风险
 - **批量转换**：多文件上传，结果打 ZIP；并发受 `CONVERT_CONCURRENCY` 限制
-- **上传归档**：成功后仅保存**输入文件**到 `file/`（默认保留 5 天），管理后台可查看
+- **上传归档**：成功后仅保存**输入文件**到 `file/`（默认保留 5 天），管理后台可查看 / 预览 / 下载
 - **功能开关**：后台按工具启用 / 关闭；关闭后首页隐藏，页面与 API 返回 403
-- **管理后台**：仪表盘、上传记录、文件快递、功能开关、系统状态；登录限流 + CSRF
+- **分类定制**：后台可增删改分类、重新归类工具，无需改代码
+- **管理后台**：仪表盘、上传记录、文件快递、功能开关、分类管理、系统状态；登录限流 + CSRF
 - **可观测性**：`X-Request-ID`、`/health`、公开接口 IP 限流
+- **SEO / PWA**：可配 `SITE_ORIGIN` 生成 sitemap / robots / canonical / OpenGraph；PWA 可离线缓存
 
 ---
 
@@ -70,7 +81,7 @@
 
 - LibreOffice 无头模式（服务器 / Docker 推荐）
 - Windows 可回退 Microsoft Word COM（需本机 Word + `pywin32` / `docx2pdf`）
-- 非 ASCII 路径暂存、超时随体积缩放、引擎失败自动回退
+- 非 ASCII 路径暂存、超时随体积缩放、引擎失败自动回退；宏 / ActiveX 文档自动禁用宏
 - 无可用引擎时返回 HTTP `503`
 
 ### 图片压缩
@@ -85,6 +96,11 @@
 - PNG/WebP 透明通道导出到 JPEG/BMP 时按所选底色铺平
 - 动图 → GIF/WebP 保留多帧；导出到静态格式仅保留首帧
 - JPEG/WebP 质量 1–100 可调；ICO 超大图自动缩到最长边 256
+
+### 文件快递
+
+- 上传生成 6 位取件码，对方凭码下载；支持有效期与下载次数
+- 过期只阻止用户取件，管理后台长期保留记录与文件（仅管理员手动删除 / 清理才物理删除）
 
 ### Markdown 编辑
 
@@ -140,50 +156,82 @@ uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
 | http://127.0.0.1:8000/ | 首页 |
 | http://127.0.0.1:8000/admin | 管理后台 |
 
+---
 
-### 异步任务存储（单 worker 或 Redis 多 worker）
+## 环境变量
 
-异步任务（`GET /api/jobs/{id}`）默认存在**当前进程内存**中，此时必须 `--workers 1`，多 worker / 多副本会导致提交与轮询打到不同进程 → 任务 404。
-
-若要**多 worker / 多实例**部署，启用 Redis 共享任务存储：
-
-1. 安装 `redis` 包：`pip install redis`
-2. 设置 `JOBS_BACKEND=redis` 和 `REDIS_URL`（如 `redis://localhost:6379/0`）
-3. 设置 `JOB_OUTPUT_DIR` 为**所有实例共享的存储卷**（结果文件需每个 worker 都能访问），例如 `/var/lib/toolkit/jobs`
-4. 启动多个 worker：`uvicorn app:app --workers 4`
-
-启用后 `/health` 会报告 `jobs.single_worker_required: false`。未装 redis 或缺 `REDIS_URL` 时会回退内存并打日志（`backend=redis-fallback`）。
-
-> 注意：Redis 后端共享的是**任务元数据**；任务的实际执行仍发生在提交它的那个 worker 上（同步阻塞该请求的返回仍在提交进程完成），适合"任一 worker 都能查询/下载"的场景。若需分布式任务队列（任务可被任意空闲 worker 执行），可在此之上叠加 RQ/Celery。
-
-#### 多实例时：接口 IP 限流也要换 Redis
-
-默认的**进程内 IP 限流**（`API_RATE_LIMIT`）在多 worker / 多实例下会**各自独立计数**，等于把阈值乘以实例数，形同虚设。多实例部署需一并切换到 Redis 后端：
-
-1. 设置 `RATE_LIMIT_BACKEND=redis`（复用同一个 `REDIS_URL`）
-2. 各实例即共享同一份 per-IP 计数，`/health` 会报告 `api_rate_backend=redis`
-3. 未装 `redis` 包或缺 `REDIS_URL` 时自动回退进程内限流（`api_rate_backend=memory`）并打日志
-
-多实例部署可用现成的 overlay（见下方 [Docker · 多实例](#多实例redis-共享任务存储与限流)）。
+### 安全与后台
 
 | 变量 | 说明 | 默认 |
 |------|------|------|
-| `JOBS_BACKEND` | 任务存储：`memory` / `redis`（多 worker 需装 `redis` 包） | `memory` |
-| `RATE_LIMIT_BACKEND` | 接口 IP 限流：`memory` / `redis`（多实例用 `redis`） | `memory` |
-| `REDIS_URL` | Redis 连接（`JOBS_BACKEND=redis` 或 `RATE_LIMIT_BACKEND=redis` 时） | 空 |
+| `ADMIN_PASSWORD` | 后台登录密码（≥12 位，非弱口令） | **必填** |
+| `ADMIN_SECRET` | 会话签名密钥（≥24 位，与密码独立） | **必填** |
+| `ALLOW_INSECURE_ADMIN` | `1` 允许弱口令 / 缺省（仅本地） | `0` |
+| `ADMIN_SESSION_TTL` | 会话有效期（秒） | `43200`（12h） |
+| `ADMIN_COOKIE_SECURE` | Cookie 仅 HTTPS | `0` |
+
+### 上传与转换
+
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `MAX_UPLOAD_BYTES` | 单文件上传上限（字节） | `52428800`（50MB） |
+| `MAX_BATCH_FILES` | 批量最多文件数 | `20` |
+| `CONVERT_CONCURRENCY` | 全局转换并发上限 | `2` |
+| `UPLOAD_RETENTION_DAYS` | 上传归档保留天数 | `5` |
+| `UPLOAD_FILE_DIR` | 归档目录（默认项目下 `file/`） | 空 |
+| `PDF_PROCESS_POOL_THRESHOLD` | 大于该字节的 PDF 走进程池 | `2097152`（2MB） |
+| `LIBREOFFICE_PATH` | `soffice` 可执行文件路径 | 系统探测 |
+
+### 限流与代理
+
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `API_RATE_LIMIT` | 公开转换/下载每窗口最大请求数（`0` 关闭） | `30` |
+| `API_RATE_WINDOW_SEC` | 限流窗口（秒） | `60` |
+| `RATE_LIMIT_BACKEND` | 接口 IP 限流后端：`memory` / `redis` | `memory` |
+| `ROOT_PATH` | 反代子路径前缀（如 `/toolkit`） | 空 |
+| `TRUSTED_PROXY_HOSTS` | 可信反代 IP/主机（逗号分隔），用于采纳 `X-Forwarded-For` | `127.0.0.1,::1` |
+
+### 异步任务与 Redis
+
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `JOBS_BACKEND` | 任务存储：`memory` / `redis` | `memory` |
+| `REDIS_URL` | Redis 连接（redis 后端时） | 空 |
 | `JOB_OUTPUT_DIR` | 异步任务输出目录（Redis 模式须为共享卷） | 默认 `file/jobs` |
 | `JOB_TTL_SEC` | 完成/失败任务元数据保留秒数 | `3600` |
 
-### 宝塔 / Nginx 反代
+### 文件快递
 
-若 **IP:端口正常、域名访问布局错乱**，多为静态资源未反代到本应用。
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `EXPRESS_MAX_BYTES` | 文件快递单文件上限（字节） | 同 `MAX_UPLOAD_BYTES` |
+| `EXPRESS_DEFAULT_TTL_HOURS` | 取件码默认有效期（小时） | `24` |
+| `EXPRESS_MAX_TTL_HOURS` | 取件码最长有效期（小时） | `168` |
+| `EXPRESS_DIR` | 快递包存储目录（可选） | `file/express/` |
 
-1. F12 → Network，确认 `/static/css/tokens.css` 等为 **200**
-2. 整站 `/` 反代到 `http://127.0.0.1:你的端口`，不要把 `/static` 指到其它站点
-3. 参考 `deploy/nginx-baota.conf.example`：`Host`、`X-Forwarded-*`、`client_max_body_size`、`proxy_read_timeout ≥ 600s`
-4. 仅子路径部署时设置 `ROOT_PATH`（如 `/toolkit`）；域名根目录反代**不要**设置
-5. HTTPS 下 Cookie 需 Secure 时可设 `ADMIN_COOKIE_SECURE=1`
-6. 若反代与 uvicorn 不在同一台机器，设置 `TRUSTED_PROXY_HOSTS` 为反代 IP，否则每 IP 限流会把所有用户视为反代同一 IP（更安全，但会共享限流桶）
+### 其他
+
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `DOTENV_OVERRIDE` | `1` 时 `.env` 覆盖进程环境变量 | `0` |
+| `SITE_ORIGIN` | 公网站点地址（含协议），用于 SEO | 空 |
+| `SEO_INDEXABLE` | 是否允许搜索引擎索引 | `1` |
+| `OG_IMAGE_PATH` | OpenGraph 封面图路径 | `/static/icons/og-cover.png` |
+| `LOG_LEVEL` | 日志级别 | `INFO` |
+
+> 完整可选项见 `.env.example`。
+
+### 密码改了不生效？
+
+1. **改完未重启**进程（uvicorn / Docker / 宝塔必须重启）
+2. **进程环境优先**：Docker `environment:`、宝塔环境变量、systemd 中若已有同名项，默认会忽略 `.env`
+   - 解决：在 `.env` 加 `DOTENV_OVERRIDE=1` 后重启，或改掉进程环境中的旧值
+3. **Docker 未挂载 `.env`**：compose 已支持 `env_file` 与挂载；纯 Docker 请用 `--env-file` 或 `-e`
+4. **文件位置**：必须是项目根目录（与 `app.py` 同级）的 `.env`
+5. 改密码后旧 Cookie 可能仍有效：清 Cookie 或更换 `ADMIN_SECRET`
+
+管理后台 → **系统状态** 可查看 `.env` 路径，以及 `ADMIN_PASSWORD` 是 `set` 还是 `skipped_existing`。
 
 ---
 
@@ -205,22 +253,14 @@ export ADMIN_SECRET='please-use-a-long-random-string-here'
 
 本地开发可直接使用 `.env.example` 中的 `ALLOW_INSECURE_ADMIN=1`。
 
-### 文件快递记录
-
-地址：http://127.0.0.1:8000/admin/express（需登录）
-
-与「上传记录」相互独立：列出取件码包裹，支持按状态/关键词筛选、下载原文件、单条/批量删除。有效期仅限制用户取件；管理端长期保留记录与文件，仅管理员手动删除或「清理过期项」才会物理删除。数据存放在 `file/express/`。
-
-### 功能开关
-
-地址：http://127.0.0.1:8000/admin/tools（需登录）
+### 功能开关（`/admin/tools`）
 
 在后台按工具勾选「启用 / 关闭」，保存后**立即生效**（无需重启进程）。
 
 | 行为 | 说明 |
 |------|------|
 | 默认 | 全部启用（无配置文件时） |
-| 关闭某工具 | 首页、分类页、`GET /api/tools` 不再展示该工具 |
+| 关闭某工具 | 首页、分类页、`GET /api/tools`、sitemap 不再展示该工具 |
 | 直接访问 | 页面或转换 API 返回 **403**（HTML 提示「功能已关闭」） |
 | 持久化 | 写入归档目录下的 `tool_flags.json`（默认 `file/tool_flags.json`） |
 | Docker | 与上传归档共用 `./file` 挂载，重启后状态保留 |
@@ -236,7 +276,6 @@ export ADMIN_SECRET='please-use-a-long-random-string-here'
 
 - 仅接受已注册的工具 `slug`；未知项忽略
 - 也可手写 `{"tools": {"markdown": false}}` 形式，程序会合并解析
-- 仪表盘与系统状态页会显示「前台启用数 / 已关闭列表」
 
 相关接口（均需管理员会话 + CSRF）：
 
@@ -246,84 +285,49 @@ export ADMIN_SECRET='please-use-a-long-random-string-here'
 | `POST` | `/admin/tools` | 批量保存（表单字段 `enabled` 多选） |
 | `POST` | `/admin/tools/{slug}/toggle` | 单个工具开 / 关 |
 
-### 环境变量
+### 分类管理（`/admin/categories`）
 
-| 变量 | 说明 | 默认 |
+可新增 / 重命名 / 排序 / 删除分类，并为每个工具重新指定归属分类（持久化到 `file/tool_catalog.json`，重置可恢复内置默认）。
+
+| 方法 | 路径 | 说明 |
 |------|------|------|
-| `ADMIN_PASSWORD` | 后台登录密码（≥12 位，非常见弱口令） | **必填** |
-| `ADMIN_SECRET` | 会话签名密钥（≥24 位，与密码独立） | **必填** |
-| `ALLOW_INSECURE_ADMIN` | `1` 允许弱口令 / 缺省（仅本地） | `0` |
-| `ADMIN_SESSION_TTL` | 会话有效期（秒） | `43200`（12h） |
-| `ADMIN_COOKIE_SECURE` | Cookie 仅 HTTPS | `0` |
-| `CONVERT_CONCURRENCY` | 全局转换并发上限 | `2` |
-| `MAX_UPLOAD_BYTES` | 单文件上传上限（字节） | `52428800`（50MB） |
-| `MAX_BATCH_FILES` | 批量最多文件数 | `20` |
-| `UPLOAD_RETENTION_DAYS` | 上传归档保留天数 | `5` |
-| `UPLOAD_FILE_DIR` | 归档目录（默认项目下 `file/`） | 空 |
-| `ROOT_PATH` | 反代子路径前缀 | 空 |
-| `TRUSTED_PROXY_HOSTS` | 可信反代 IP/主机（逗号分隔）；默认本机回环 `127.0.0.1,::1`。该来源的 `X-Forwarded-For` 才会被采纳用于限流 IP | `127.0.0.1,::1` |
-| `LOG_LEVEL` | 日志级别 | `INFO` |
-| `PDF_PROCESS_POOL_THRESHOLD` | 大于该字节的 PDF 走进程池 | `2097152`（2MB） |
-| `API_RATE_LIMIT` | 公开转换/下载每窗口最大请求数（`0` 关闭） | `30` |
-| `API_RATE_WINDOW_SEC` | 限流窗口（秒） | `60` |
-| `JOBS_BACKEND` | 任务存储：`memory` / `redis`（多 worker 需装 `redis` 包） | `memory` |
-| `RATE_LIMIT_BACKEND` | 接口 IP 限流后端：`memory` / `redis`（多实例用 `redis`） | `memory` |
-| `REDIS_URL` | Redis 连接（`JOBS_BACKEND=redis` 或 `RATE_LIMIT_BACKEND=redis` 时） | 空 |
-| `JOB_OUTPUT_DIR` | 异步任务输出目录（Redis 模式须为共享卷） | 默认 `file/jobs` |
-| `JOB_TTL_SEC` | 完成/失败任务元数据保留秒数 | `3600` |
-| `DOTENV_OVERRIDE` | `1` 时 `.env` 覆盖进程环境变量 | `0` |
-| `LIBREOFFICE_PATH` | `soffice` 可执行文件路径 | 系统探测 |
-| `EXPRESS_MAX_BYTES` | 文件快递单文件上限（字节） | 同 `MAX_UPLOAD_BYTES` |
-| `EXPRESS_DEFAULT_TTL_HOURS` | 取件码默认有效期（小时） | `24` |
-| `EXPRESS_MAX_TTL_HOURS` | 取件码最长有效期（小时） | `168` |
-| `EXPRESS_DIR` | 快递包存储目录（可选） | `file/express/` |
+| `GET` | `/admin/categories` | 分类管理页面 |
+| `POST` | `/admin/categories` | 保存分类定义（名称 / 图标 / 强调色 / 顺序） |
+| `POST` | `/admin/categories/assignments` | 保存工具 → 分类归属 |
+| `POST` | `/admin/categories/reset` | 恢复内置默认分类 |
 
-### 密码改了不生效？
+### 文件快递记录（`/admin/express`）
 
-1. **改完未重启**进程（uvicorn / Docker / 宝塔必须重启）
-2. **进程环境优先**：Docker `environment:`、宝塔环境变量、systemd 中若已有同名项，默认会忽略 `.env`
-   - 解决：在 `.env` 加 `DOTENV_OVERRIDE=1` 后重启，或改掉进程环境中的旧值
-3. **Docker 未挂载 `.env`**：compose 已支持 `env_file` 与挂载；纯 Docker 请用 `--env-file` 或 `-e`
-4. **文件位置**：必须是项目根目录（与 `app.py` 同级）的 `.env`
-5. 改密码后旧 Cookie 可能仍有效：清 Cookie 或更换 `ADMIN_SECRET`
-
-管理后台 → **系统状态** 可查看 `.env` 路径，以及 `ADMIN_PASSWORD` 是 `set` 还是 `skipped_existing`。
+与「上传记录」相互独立：列出取件码包裹，支持按状态/关键词筛选、下载原文件、单条/批量删除。有效期仅限制用户取件；管理端长期保留记录与文件，仅管理员手动删除或「清理过期项」才会物理删除。数据存放在 `file/express/`。
 
 ---
 
-## 异步转换 API
+## 异步任务与多实例
 
-| 工具 | 提交 | 轮询 | 下载 |
-|------|------|------|------|
-| PDF→Word 单文件 | `POST /tools/pdf2word/convert-async` → 202 | `GET /api/jobs/{id}` | `GET /api/jobs/{id}/download` |
-| PDF→Word 批量 | `POST /tools/pdf2word/convert-batch-async` | 同上 | 同上（ZIP） |
-| Word→PDF 单文件 | `POST /tools/word2pdf/convert-async` → 202 | 同上 | 同上 |
-| Word→PDF 批量 | `POST /tools/word2pdf/convert-batch-async` | 同上 | 同上（ZIP） |
+### 异步任务存储（单 worker 或 Redis 多 worker）
 
-流程：`multipart` 上传 → JSON（`id` / `poll_url` / `download_url`）→ 轮询至 `status=done` → 下载。  
-下载成功后服务端清理临时文件；同步 `/convert` 仍可用作兼容回退。
+异步任务（`GET /api/jobs/{id}`）默认存在**当前进程内存**中，此时必须 `--workers 1`，多 worker / 多副本会导致提交与轮询打到不同进程 → 任务 404。
 
-前端仅在**网络错误或 404/405** 时回退同步；业务错误（坏文件、引擎未就绪、任务 `error`）不会重复请求同步接口。
+若要**多 worker / 多实例**部署，启用 Redis 共享任务存储：
 
-长转换（尤其 OCR）可能需数分钟：优先异步 API；Nginx 建议 `proxy_read_timeout ≥ 600s`。
+1. 安装 `redis` 包：`pip install redis`
+2. 设置 `JOBS_BACKEND=redis` 和 `REDIS_URL`（如 `redis://localhost:6379/0`）
+3. 设置 `JOB_OUTPUT_DIR` 为**所有实例共享的存储卷**（结果文件需每个 worker 都能访问），例如 `/var/lib/toolkit/jobs`
+4. 启动多个 worker：`uvicorn app:app --workers 4`
 
----
+启用后 `/health` 会报告 `jobs.single_worker_required: false`。未装 redis 或缺 `REDIS_URL` 时会回退内存并打日志（`backend=redis-fallback`）。
 
-## 命令行
+> 注意：Redis 后端共享的是**任务元数据**；任务的实际执行仍发生在提交它的那个 worker 上（同步阻塞该请求的返回仍在提交进程完成），适合「任一 worker 都能查询/下载」的场景。若需分布式任务队列（任务可被任意空闲 worker 执行），可在此之上叠加 RQ/Celery。
 
-```bash
-# PDF → Word
-python -m converter input.pdf
-python -m converter input.pdf -o out.docx --pages 1-3,5
-python -m converter input.pdf --no-page-breaks
-python -m converter input.pdf --ocr
-python -m converter --ocr-info
+### 多实例时：接口 IP 限流也要换 Redis
 
-# Word → PDF（需 LibreOffice 或 Windows + Word）
-python -m word2pdf input.docx
-python -m word2pdf input.docx -o out.pdf
-python -m word2pdf --info
-```
+默认的**进程内 IP 限流**（`API_RATE_LIMIT`）在多 worker / 多实例下会**各自独立计数**，等于把阈值乘以实例数，形同虚设。多实例部署需一并切换到 Redis 后端：
+
+1. 设置 `RATE_LIMIT_BACKEND=redis`（复用同一个 `REDIS_URL`）
+2. 各实例即共享同一份 per-IP 计数，`/health` 会报告 `api_rate_backend=redis`
+3. 未装 `redis` 包或缺 `REDIS_URL` 时自动回退进程内限流（`api_rate_backend=memory`）并打日志
+
+多实例部署可用现成的 overlay（见下方 [Docker · 多实例](#docker--多实例redis-共享任务存储与限流)）。
 
 ---
 
@@ -376,7 +380,7 @@ docker compose logs -f toolbox # 观察 reload 日志
 > - 改 **`requirements.txt`（新增依赖）或 `Dockerfile`** 仍需重新构建。
 > - `--reload` 与源码挂载是**开发专用**。生产请去掉 `command` 覆写和 `.:/app` 挂载（或使用下面的多实例 overlay，它已覆盖为非 reload 命令）。
 
-### 多实例（Redis 共享任务存储与限流）
+### Docker · 多实例（Redis 共享任务存储与限流）
 
 内置一个 compose overlay，一键加 Redis 并切换 `JOBS_BACKEND=redis` + `RATE_LIMIT_BACKEND=redis`：
 
@@ -387,6 +391,19 @@ docker compose -f docker-compose.yml -f docker-compose.redis.yml up --scale tool
 
 - Redis 数据持久化在 `./redis-data`；异步任务结果写入共享卷 `./file`（`JOB_OUTPUT_DIR=/app/file/jobs`），任一实例都能轮询 / 下载。
 - overlay 已把 `command` 覆盖为**非 reload** 的 `--workers 1`，并把基础文件的对外端口清空（`ports: []`），因此可安全 `--scale` 到多副本；实例通过 compose 网络上的 Nginx / 负载均衡访问。
+
+---
+
+## 宝塔 / Nginx 反代
+
+若 **IP:端口正常、域名访问布局错乱**，多为静态资源未反代到本应用。
+
+1. F12 → Network，确认 `/static/css/tokens.css` 等为 **200**
+2. 整站 `/` 反代到 `http://127.0.0.1:你的端口`，不要把 `/static` 指到其它站点
+3. 参考 `deploy/nginx-baota.conf.example`：`Host`、`X-Forwarded-*`、`client_max_body_size`、`proxy_read_timeout ≥ 600s`
+4. 仅子路径部署时设置 `ROOT_PATH`（如 `/toolkit`）；域名根目录反代**不要**设置
+5. HTTPS 下 Cookie 需 Secure 时可设 `ADMIN_COOKIE_SECURE=1`
+6. 若反代与 uvicorn 不在同一台机器，设置 `TRUSTED_PROXY_HOSTS` 为反代 IP，否则每 IP 限流会把所有用户视为反代同一 IP（更安全，但会共享限流桶）
 
 ---
 
@@ -404,22 +421,55 @@ docker compose -f docker-compose.yml -f docker-compose.redis.yml up --scale tool
 
 ## 主要 API
 
+> 被管理员关闭的工具：其 `/tools/{slug}/...` 页面与 API 均返回 **403**，不会进入业务逻辑。
+
+### PDF → Word
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/tools/pdf2word` | PDF→Word 页面 |
 | `GET` | `/tools/pdf2word/ocr-status` | OCR 状态 |
-| `POST` | `/tools/pdf2word/convert` | 单 PDF → `.docx` |
-| `POST` | `/tools/pdf2word/convert-batch` | 多 PDF → `.zip` |
-| `POST` | `/tools/pdf2word/convert-async` | 异步单文件 |
-| `POST` | `/tools/pdf2word/convert-batch-async` | 异步批量 |
+| `POST` | `/tools/pdf2word/convert` | 单 PDF → `.docx`（同步） |
+| `POST` | `/tools/pdf2word/convert-batch` | 多 PDF → `.zip`（同步） |
+| `POST` | `/tools/pdf2word/convert-async` | 异步单文件（→ 202） |
+| `POST` | `/tools/pdf2word/convert-batch-async` | 异步批量（→ 202） |
+
+**表单字段**：`file` / `files`（PDF，单/批量）、`page_range`（可选，如 `1-3,5`，1 起始）、`page_breaks`（可选，默认 `true`）、`ocr`（可选，`true` / `1`）。
+
+**响应头**：`X-Pages`、`X-Tables`、`X-Text-Blocks`、`X-Images`、`X-Lines`；可选 `X-Warnings`、`X-Warning-Message`。
+
+### Word → PDF
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | `GET` | `/tools/word2pdf` | Word→PDF 页面 |
 | `GET` | `/tools/word2pdf/status` | 引擎状态 |
-| `POST` | `/tools/word2pdf/convert` | 单 Word → `.pdf` |
-| `POST` | `/tools/word2pdf/convert-batch` | 多 Word → `.zip` |
-| `POST` | `/tools/word2pdf/convert-async` | 异步单文件 |
-| `POST` | `/tools/word2pdf/convert-batch-async` | 异步批量 |
+| `POST` | `/tools/word2pdf/convert` | 单 Word → `.pdf`（同步） |
+| `POST` | `/tools/word2pdf/convert-batch` | 多 Word → `.zip`（同步） |
+| `POST` | `/tools/word2pdf/convert-async` | 异步单文件（→ 202） |
+| `POST` | `/tools/word2pdf/convert-batch-async` | 异步批量（→ 202） |
+
+**表单字段**：`file` / `files`（`.docx` / `.doc`）。
+
+**响应头**：`X-Engine`、`X-Bytes`；无引擎时 `503`。
+
+### 异步任务
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | `GET` | `/api/jobs/{id}` | 任务状态 |
 | `GET` | `/api/jobs/{id}/download` | 任务结果下载 |
+
+**流程**：`multipart` 上传 → JSON（`id` / `poll_url` / `download_url`）→ 轮询至 `status=done` → 下载。下载成功后服务端清理临时文件；同步 `/convert` 仍可用作兼容回退。
+
+前端仅在**网络错误或 404/405** 时回退同步；业务错误（坏文件、引擎未就绪、任务 `error`）不会重复请求同步接口。
+
+长转换（尤其 OCR）可能需数分钟：优先异步 API；Nginx 建议 `proxy_read_timeout ≥ 600s`。
+
+### 其他工具 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | `POST` | `/tools/pdf-merge/merge` | 发票合并 |
 | `POST` | `/tools/image-compress/compress` | 图片压缩（返回文件） |
 | `POST` | `/tools/image-compress/compress-info` | 图片压缩统计 JSON |
@@ -440,8 +490,14 @@ docker compose -f docker-compose.yml -f docker-compose.redis.yml up --scale tool
 | `POST` | `/tools/express/lookup` | 查询取件码元数据（不消耗下载次数） |
 | `POST` | `/tools/express/pickup` | 按取件码下载（表单） |
 | `GET` | `/tools/express/pickup/{code}` | 按取件码下载（路径，可收藏） |
+
+### 管理后台 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | `GET` | `/admin` | 管理后台（需登录） |
 | `GET` | `/admin/uploads` | 通用上传记录（需管理员） |
+| `POST` | `/admin/uploads/batch-delete` | 批量删除上传记录（需管理员 + CSRF） |
 | `GET` | `/admin/express` | 文件快递记录（需管理员） |
 | `POST` | `/admin/express/batch-delete` | 批量删除快递包裹（需管理员 + CSRF） |
 | `POST` | `/admin/express/{id}/delete` | 删除快递包裹（需管理员 + CSRF） |
@@ -450,52 +506,25 @@ docker compose -f docker-compose.yml -f docker-compose.redis.yml up --scale tool
 | `GET` | `/admin/tools` | 功能开关页面（需管理员） |
 | `POST` | `/admin/tools` | 批量保存功能开关（需管理员 + CSRF） |
 | `POST` | `/admin/tools/{slug}/toggle` | 切换单个工具（需管理员 + CSRF） |
-| `GET` | `/api/uploads` | 上传记录（需管理员） |
+| `GET` | `/api/uploads` | 上传记录 JSON（需管理员） |
 
-> 被管理员关闭的工具：其 `/tools/{slug}/...` 页面与 API 均返回 **403**，不会进入业务逻辑。
+---
 
-### PDF → Word 表单字段
+## 命令行
 
-| 字段 | 说明 |
-|------|------|
-| `file` / `files` | PDF（单文件 / 批量） |
-| `page_range` | 可选，如 `1-3,5`（1 起始） |
-| `page_breaks` | 可选，默认 `true` |
-| `ocr` | 可选，`true` / `1` 启用 OCR |
+```bash
+# PDF → Word
+python -m converter input.pdf
+python -m converter input.pdf -o out.docx --pages 1-3,5
+python -m converter input.pdf --no-page-breaks
+python -m converter input.pdf --ocr
+python -m converter --ocr-info
 
-响应头：`X-Pages`、`X-Tables`、`X-Text-Blocks`、`X-Images`、`X-Lines`；可选 `X-Warnings`、`X-Warning-Message`。
-
-### Word → PDF 表单字段
-
-| 字段 | 说明 |
-|------|------|
-| `file` / `files` | `.docx` / `.doc` |
-
-响应头：`X-Engine`、`X-Bytes`；无引擎时 `503`。
-
-### 图片压缩表单字段
-
-| 字段 | 说明 |
-|------|------|
-| `file` | 图片文件 |
-| `quality` | `high` / `balanced` / `strong` |
-| `strip_meta` | 默认 `true` |
-| `max_side` | 可选最长边（像素），`0` = 不缩放 |
-
-响应头：`X-Original-Bytes`、`X-Compressed-Bytes`、`X-Percent-Saved` 等。
-
-
-### 图片格式转换表单字段
-
-| 字段 | 说明 |
-|------|------|
-| ile | 图片文件 |
-| 	arget_format | jpeg / png / webp / gif / mp / 	iff / ico（jpg → jpeg） |
-| quality | 1–100，默认 85（JPEG / WebP） |
-| strip_meta | 默认 	rue |
-| ackground | 透明铺底色，默认 #ffffff |
-
-响应头：X-Original-Bytes、X-Output-Bytes、X-Source-Format、X-Target-Format 等。
+# Word → PDF（需 LibreOffice 或 Windows + Word）
+python -m word2pdf input.docx
+python -m word2pdf input.docx -o out.pdf
+python -m word2pdf --info
+```
 
 ---
 
@@ -510,11 +539,12 @@ pytest tests -q
 
 ## 扩展新工具
 
-1. 在 `tools/` 下新增路由模块（如 `tools/my_tool.py`）
-2. 核心逻辑放在对应包（如 `coding/`、`office/`、`media/`、`converter/`）
-3. 在 `tools/__init__.py` 的 `TOOL_REGISTRY` 增加条目，设置 `category`
-4. 将 router 加入 `TOOL_ROUTERS`；新分类先写 `TOOL_CATEGORIES`
-5. 页面模板放在 `templates/tools/`；共享样式见 `static/css/tokens.css`、`layout.css`
+1. 在 `tools/` 下新增路由模块（如 `tools/my_tool.py`），核心逻辑放在对应包（如 `coding/`、`office/`、`media/`、`converter/`）
+2. 在 `tools/__init__.py` 的 `TOOL_REGISTRY` 增加条目，设置 `category`（如需首页特色展示可加 `"featured": True`）
+3. 将 router 加入 `TOOL_ROUTERS`；新分类先写 `TOOL_CATEGORIES`
+4. 页面模板放在 `templates/tools/`；共享样式见 `static/css/tokens.css`、`layout.css`
+
+注册后，首页 / `/api/tools` / sitemap / 功能开关 / 分类管理将**自动联动**，无需额外改动。
 
 ---
 
@@ -522,22 +552,22 @@ pytest tests -q
 
 ```
 app.py                 # FastAPI 入口
-core/                  # 配置、任务、并发、限流、日志、功能开关
-admin/                 # 管理后台
+core/                  # 配置、任务、并发、限流、日志、功能开关、SEO
+admin/                 # 管理后台（登录、仪表盘、上传/快递记录、功能开关、分类管理）
 tools/                 # 各工具 HTTP 路由与注册表
 converter/             # PDF → Word 算法
 word2pdf/              # Word → PDF 引擎
-coding/                # Base64 / 代码格式化 / Markdown 逻辑
+coding/                # Base64 / 代码格式化 / Markdown / 正则 / 时间戳 / Unicode 逻辑
 office/                # 人民币大写等
-media/                 # 图片压缩 / 格式转换 / 格式转换
+media/                 # 图片压缩 / 格式转换 / 九宫格 / 转 PDF
 storage/               # 上传归档 + 文件快递（SQLite + file/）
 templates/             # Jinja2 页面
-static/                # CSS / JS
+static/                # CSS / JS / PWA / 图标
 deploy/                # Nginx 示例
 tests/                 # pytest
 ```
 
-功能开关状态文件：`file/tool_flags.json`（或 `UPLOAD_FILE_DIR/tool_flags.json`）。
+功能开关状态文件：`file/tool_flags.json`；分类定制文件：`file/tool_catalog.json`（均在 `UPLOAD_FILE_DIR` 或默认 `file/` 下）。
 
 ---
 
@@ -546,5 +576,5 @@ tests/                 # pytest
 - 生产务必设置强 `ADMIN_PASSWORD` 与 `ADMIN_SECRET`，关闭 `ALLOW_INSECURE_ADMIN`
 - 公开转换接口有进程内 IP 限流；生产建议在 Nginx 再加一层限流
 - Markdown 预览默认 XSS 过滤；勿关闭 sanitize 用于不可信输入
-- 上传归档目录 `file/` 含用户原始文件与 `tool_flags.json`，注意备份与访问权限
+- 上传归档目录 `file/` 含用户原始文件、`tool_flags.json` 与 `tool_catalog.json`，注意备份与访问权限
 - 功能开关仅控制前台开放范围，**不能替代**管理员密码与反代鉴权
