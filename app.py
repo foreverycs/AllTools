@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
@@ -91,7 +92,7 @@ def _page_ctx(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from core.concurrency import shutdown_pools
-    from core.jobs import reclaim_expired
+    from core.jobs import reclaim_expired, sweep_orphan_job_dirs
     from storage.history import _do_cleanup
 
     # Project-root .env for local runs (does not override real process env).
@@ -110,11 +111,33 @@ async def lifespan(app: FastAPI):
         await reclaim_expired()
     except Exception:
         pass
+    # After a crash, leftover job work/output dirs are not tracked by any live
+    # job — reclaim them once so they do not accumulate across restarts.
+    try:
+        await sweep_orphan_job_dirs()
+    except Exception:
+        pass
     logger.info(
         "toolkit started version=%s tools=%s",
         __version__,
         len(TOOL_REGISTRY),
     )
+
+    # Periodic housekeeping off the request path: history cleanup is already
+    # rate-limited per write, this guarantees a cadence even without traffic.
+    cleanup_task: Optional[asyncio.Task] = None
+
+    async def _periodic_cleanup() -> None:
+        while True:
+            await asyncio.sleep(600)
+            try:
+                await asyncio.to_thread(_do_cleanup)
+                await reclaim_expired()
+            except Exception:
+                logger.warning("periodic cleanup failed", exc_info=True)
+
+    cleanup_task = asyncio.create_task(_periodic_cleanup())
+
     # Probe LibreOffice / OCR off the request path so admin dashboard is snappy.
     try:
         from admin.routes import schedule_health_warm
@@ -127,6 +150,21 @@ async def lifespan(app: FastAPI):
     finally:
         # Release ProcessPoolExecutor workers if any were started.
         shutdown_pools(wait=False)
+        if cleanup_task is not None:
+            cleanup_task.cancel()
+        # Release cached SQLite connections.
+        try:
+            from storage.express import close_db_connections as close_express
+
+            close_express()
+        except Exception:
+            pass
+        try:
+            from storage.history import close_db_connections as close_history
+
+            close_history()
+        except Exception:
+            pass
         logger.info("toolkit stopped")
 
 

@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.settings import get_settings
+from storage.sqlite_pool import ConnCache
 
 logger = logging.getLogger("toolkit.express")
 
@@ -114,14 +115,21 @@ def _db_path() -> Path:
     return ensure_express_dir() / "express.db"
 
 
+# Reusable SQLite connections keyed by DB path (see storage.sqlite_pool).
+# All DB access is serialized by ``_lock``; callers hold it when calling
+# ``_get_conn``, so the pool needs no extra locking.
+_cache = ConnCache()
+
+
 def _get_conn() -> sqlite3.Connection:
-    path = _db_path()
-    conn = sqlite3.connect(str(path), timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(_SCHEMA)
-    return conn
+    """Return a reusable connection for the current express DB file."""
+    return _cache.get(_db_path(), _SCHEMA)
+
+
+def close_db_connections() -> None:
+    """Close cached connections (app shutdown / tests). Safe when idle."""
+    with _lock:
+        _cache.close_all()
 
 
 def _safe_name(name: str, default: str = "file") -> str:
@@ -225,23 +233,20 @@ def _do_cleanup() -> int:
     removed = 0
     with _lock:
         conn = _get_conn()
-        try:
-            rows = conn.execute(
-                "SELECT * FROM packages WHERE expires_at <= ?",
+        rows = conn.execute(
+            "SELECT * FROM packages WHERE expires_at <= ?",
+            (now_iso,),
+        ).fetchall()
+        for row in rows:
+            _unlink_package_file(str(row["stored_rel"] or ""))
+        removed = len(rows)
+        if removed:
+            conn.execute(
+                "DELETE FROM packages WHERE expires_at <= ?",
                 (now_iso,),
-            ).fetchall()
-            for row in rows:
-                _unlink_package_file(str(row["stored_rel"] or ""))
-            removed = len(rows)
-            if removed:
-                conn.execute(
-                    "DELETE FROM packages WHERE expires_at <= ?",
-                    (now_iso,),
-                )
-                conn.commit()
-                logger.info("express admin cleanup removed=%s", removed)
-        finally:
-            conn.close()
+            )
+            conn.commit()
+            logger.info("express admin cleanup removed=%s", removed)
     return removed
 
 
@@ -301,34 +306,31 @@ def create_package(
 
     with _lock:
         conn = _get_conn()
-        try:
-            code = _generate_code(conn)
-            conn.execute(
-                """
-                INSERT INTO packages (
-                    id, code, original_name, stored_rel, size_bytes, content_type,
-                    created_at, expires_at, max_downloads, download_count, note
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-                """,
-                (
-                    pkg_id,
-                    code,
-                    name,
-                    stored_rel,
-                    size,
-                    (content_type or "")[:120],
-                    created_iso,
-                    expires_iso,
-                    max_dl,
-                    note_s,
-                ),
-            )
-            conn.commit()
-            row = conn.execute(
-                "SELECT * FROM packages WHERE id = ?", (pkg_id,)
-            ).fetchone()
-        finally:
-            conn.close()
+        code = _generate_code(conn)
+        conn.execute(
+            """
+            INSERT INTO packages (
+                id, code, original_name, stored_rel, size_bytes, content_type,
+                created_at, expires_at, max_downloads, download_count, note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+            """,
+            (
+                pkg_id,
+                code,
+                name,
+                stored_rel,
+                size,
+                (content_type or "")[:120],
+                created_iso,
+                expires_iso,
+                max_dl,
+                note_s,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM packages WHERE id = ?", (pkg_id,)
+        ).fetchone()
 
     assert row is not None
     return _row_public(row)
@@ -341,15 +343,12 @@ def get_package_by_code(code: str) -> Optional[Dict[str, Any]]:
         return None
     with _lock:
         conn = _get_conn()
-        try:
-            row = conn.execute(
-                "SELECT * FROM packages WHERE code = ?", (c,)
-            ).fetchone()
-            if row is None:
-                return None
-            info = _row_public(row, include_path=True)
-        finally:
-            conn.close()
+        row = conn.execute(
+            "SELECT * FROM packages WHERE code = ?", (c,)
+        ).fetchone()
+        if row is None:
+            return None
+        info = _row_public(row, include_path=True)
     return info
 
 
@@ -380,45 +379,39 @@ def claim_download(code: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
 
     with _lock:
         conn = _get_conn()
-        try:
-            row = conn.execute(
-                "SELECT * FROM packages WHERE code = ?", (c,)
-            ).fetchone()
-            if row is None:
-                return None, "invalid"
-            info = _row_public(row, include_path=True)
-            if info["expired"]:
-                return info, "expired"
-            if info["exhausted"]:
-                return info, "exhausted"
-            path = resolve_package_file(info)
-            if path is None:
-                return info, "missing"
-            conn.execute(
-                "UPDATE packages SET download_count = download_count + 1 WHERE id = ?",
-                (info["id"],),
-            )
-            conn.commit()
-            row2 = conn.execute(
-                "SELECT * FROM packages WHERE id = ?", (info["id"],)
-            ).fetchone()
-            out = _row_public(row2, include_path=True) if row2 else info
-            out["_abs_path"] = str(path)
-            return out, None
-        finally:
-            conn.close()
+        row = conn.execute(
+            "SELECT * FROM packages WHERE code = ?", (c,)
+        ).fetchone()
+        if row is None:
+            return None, "invalid"
+        info = _row_public(row, include_path=True)
+        if info["expired"]:
+            return info, "expired"
+        if info["exhausted"]:
+            return info, "exhausted"
+        path = resolve_package_file(info)
+        if path is None:
+            return info, "missing"
+        conn.execute(
+            "UPDATE packages SET download_count = download_count + 1 WHERE id = ?",
+            (info["id"],),
+        )
+        conn.commit()
+        row2 = conn.execute(
+            "SELECT * FROM packages WHERE id = ?", (info["id"],)
+        ).fetchone()
+        out = _row_public(row2, include_path=True) if row2 else info
+        out["_abs_path"] = str(path)
+        return out, None
 
 
 def express_stats() -> Dict[str, Any]:
     with _lock:
         conn = _get_conn()
-        try:
-            total = conn.execute("SELECT COUNT(*) FROM packages").fetchone()[0]
-            bytes_sum = conn.execute(
-                "SELECT COALESCE(SUM(size_bytes), 0) FROM packages"
-            ).fetchone()[0]
-        finally:
-            conn.close()
+        total = conn.execute("SELECT COUNT(*) FROM packages").fetchone()[0]
+        bytes_sum = conn.execute(
+            "SELECT COALESCE(SUM(size_bytes), 0) FROM packages"
+        ).fetchone()[0]
     return {
         "package_count": int(total or 0),
         "bytes_stored": int(bytes_sum or 0),
@@ -444,15 +437,12 @@ def get_package_by_id(package_id: str) -> Optional[Dict[str, Any]]:
         return None
     with _lock:
         conn = _get_conn()
-        try:
-            row = conn.execute(
-                "SELECT * FROM packages WHERE id = ?", (pid,)
-            ).fetchone()
-            if row is None:
-                return None
-            return _package_with_file(row)
-        finally:
-            conn.close()
+        row = conn.execute(
+            "SELECT * FROM packages WHERE id = ?", (pid,)
+        ).fetchone()
+        if row is None:
+            return None
+        return _package_with_file(row)
 
 
 def list_packages(
@@ -472,16 +462,13 @@ def list_packages(
     status_f = (status or "").strip().lower()
     with _lock:
         conn = _get_conn()
-        try:
-            # Fetch a wider window when filtering so status/q still see enough rows.
-            fetch_n = limit if not (q_f or status_f) else min(500, max(limit * 5, 200))
-            rows = conn.execute(
-                "SELECT * FROM packages ORDER BY created_at DESC LIMIT ?",
-                (fetch_n,),
-            ).fetchall()
-            items = [_package_with_file(r) for r in rows]
-        finally:
-            conn.close()
+        # Fetch a wider window when filtering so status/q still see enough rows.
+        fetch_n = limit if not (q_f or status_f) else min(500, max(limit * 5, 200))
+        rows = conn.execute(
+            "SELECT * FROM packages ORDER BY created_at DESC LIMIT ?",
+            (fetch_n,),
+        ).fetchall()
+        items = [_package_with_file(r) for r in rows]
 
     if q_f:
         items = [
@@ -525,19 +512,16 @@ def delete_packages(package_ids: List[str]) -> int:
     removed = 0
     with _lock:
         conn = _get_conn()
-        try:
-            for pid in ids:
-                row = conn.execute(
-                    "SELECT * FROM packages WHERE id = ?", (pid,)
-                ).fetchone()
-                if row is None:
-                    continue
-                _unlink_package_file(str(row["stored_rel"] or ""))
-                conn.execute("DELETE FROM packages WHERE id = ?", (pid,))
-                removed += 1
-            if removed:
-                conn.commit()
-                logger.info("express delete packages removed=%s", removed)
-        finally:
-            conn.close()
+        for pid in ids:
+            row = conn.execute(
+                "SELECT * FROM packages WHERE id = ?", (pid,)
+            ).fetchone()
+            if row is None:
+                continue
+            _unlink_package_file(str(row["stored_rel"] or ""))
+            conn.execute("DELETE FROM packages WHERE id = ?", (pid,))
+            removed += 1
+        if removed:
+            conn.commit()
+            logger.info("express delete packages removed=%s", removed)
     return removed

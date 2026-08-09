@@ -12,15 +12,18 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from admin.auth import (
+    COOKIE_NAME as SESSION_COOKIE,
     check_password,
     clear_session_cookie,
     create_session_token,
     is_admin,
     require_admin,
     set_session_cookie,
+    verify_session_token,
 )
 from admin.csrf import (
     FIELD_NAME as CSRF_FIELD,
+    bound_csrf_token,
     get_or_create_csrf_token,
     set_csrf_cookie,
     verify_csrf,
@@ -55,6 +58,11 @@ _health_warming: bool = False
 
 def _tpl(request: Request, name: str, **ctx):
     csrf = get_or_create_csrf_token(request)
+    # While an admin session is active, derive the CSRF value from the session
+    # token so forms are tied to that specific login.
+    session_token = (request.cookies.get(SESSION_COOKIE) or "").strip()
+    if verify_session_token(session_token):
+        csrf = bound_csrf_token(session_token)
     data = {
         "request": request,
         "is_admin": is_admin(request),
@@ -231,8 +239,10 @@ async def login_submit(
 
     clear_failures(key)
     resp = _redirect(_safe_next(next, request))
-    set_session_cookie(resp, create_session_token())
-    set_csrf_cookie(resp, get_or_create_csrf_token(request))
+    session_token = create_session_token()
+    set_session_cookie(resp, session_token)
+    # Rotate the CSRF cookie to the session-bound value after login.
+    set_csrf_cookie(resp, bound_csrf_token(session_token))
     return resp
 
 

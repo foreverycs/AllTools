@@ -474,4 +474,9 @@ def validate_security_settings() -> Settings:
             "ADMIN_PASSWORD set (Docker compose environment, 宝塔 env, systemd, etc.). "
             "Edit that source, or set DOTENV_OVERRIDE=1 and restart."
         )
+    if not s.admin_cookie_secure and s.site_origin.startswith("https"):
+        logger.warning(
+            "ADMIN_COOKIE_SECURE is off but SITE_ORIGIN uses https; set "
+            "ADMIN_COOKIE_SECURE=1 so admin/CSRF cookies are only sent over TLS."
+        )
     return s

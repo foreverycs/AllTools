@@ -8,7 +8,7 @@ PDF ↔ Word 转换、发票合并、编码调试与取件码文件快递
 
 浏览器直达、无需安装客户端、数据不出域、完全免费
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-teal.svg)](https://fastapi.tiangolo.com/)
 
@@ -102,3 +102,27 @@ graph TB
     H --> V[LibreOffice]
     H --> W[Tesseract OCR]
     P --> X[Redis可选]
+
+---
+
+## 💾 数据与备份
+
+所有持久化数据都在 `file/` 目录（Docker 中为挂载卷）：
+
+- **SQLite 数据库**：`file/records.db`（上传历史索引）、`file/express/express.db`（取件码包）
+- **归档输入文件**：`file/YYYY-MM-DD/`（历史上传，按保留期自动清理）、`file/express/YYYY-MM-DD/`
+- **配置**：`file/tool_flags.json`、`file/tool_catalog.json`、`file/donation.json`、`file/donation/qr.png`
+- **异步任务产物**：`file/jobs/`（临时，TTL 后自动清理）
+
+**备份建议**（SQLite 使用 WAL 模式，不要直接拷贝运行中的 db 文件）：
+
+```bash
+# 在线一致性备份（SQLite 自带 .backup 命令）
+sqlite3 file/records.db ".backup 'backup-records.db'"
+sqlite3 file/express/express.db ".backup 'backup-express.db'"
+# 再拷贝归档文件目录
+cp -r file/2026-* backup/
+```
+
+恢复时将备份文件放回原路径并重启即可；`records.db` 与归档目录必须一起备份才能保留「记录 ↔ 文件」对应关系。
+

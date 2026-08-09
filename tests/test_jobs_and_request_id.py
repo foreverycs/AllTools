@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import time
+
 import pytest
 
 from core import jobs as jobs_mod
@@ -117,3 +120,89 @@ async def test_mark_downloaded_clears_files(tmp_path):
     assert not work.exists()
     pub = job_public_dict(got)
     assert pub["has_result"] is False
+
+
+@pytest.mark.asyncio
+async def test_stale_running_job_is_reclaimed():
+    job = await create_job("pdf2word")
+    await update_job(job.id, status=JobStatus.running)
+    # Backdate the liveness heartbeat (update_job always resets it to now).
+    jobs_mod._store._jobs[job.id].updated_at = time.time() - 99999
+    removed = await jobs_mod.reclaim_expired()
+    assert removed >= 1
+    assert await get_job(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_stuck_queued_job_is_reclaimed():
+    job = await create_job("pdf2word")
+    # Backdate the stored updated_at (update_job always resets it to now).
+    jobs_mod._store._jobs[job.id].updated_at = time.time() - 99999
+    removed = await jobs_mod.reclaim_expired()
+    assert removed >= 1
+    assert await get_job(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_fresh_running_job_not_reclaimed():
+    job = await create_job("pdf2word")
+    await update_job(job.id, status=JobStatus.running)
+    removed = await jobs_mod.reclaim_expired()
+    assert removed == 0
+    assert await get_job(job.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_active_progress_keeps_running_job_alive():
+    job = await create_job("pdf2word")
+    await update_job(job.id, status=JobStatus.running)
+    # Simulate a long job that keeps reporting progress: advance the heartbeat
+    # past the stale timeout, then verify a fresh update keeps it alive.
+    jobs_mod._store._jobs[job.id].updated_at = time.time() - 99999
+    await update_job(job.id, progress=0.5, message="still working")
+    removed = await jobs_mod.reclaim_expired()
+    assert removed == 0
+    assert await get_job(job.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_sweep_orphan_job_dirs(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOB_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("JOB_SWEEP_GRACE_SEC", "3600")
+    orphan = tmp_path / "orphan"
+    orphan.mkdir()
+    (orphan / "leak.tmp").write_bytes(b"x")
+    (tmp_path / "loose.bin").write_bytes(b"y")
+
+    live = tmp_path / "live"
+    live.mkdir()
+    job = await create_job(
+        "pdf2word",
+        work_dir=str(live),
+        output_path=str(live / "out.docx"),
+    )
+
+    # Backdate the orphans so they fall outside the grace period deterministically.
+    old = time.time() - 99999
+    os.utime(orphan, (old, old))
+    os.utime(orphan / "leak.tmp", (old, old))
+    os.utime(tmp_path / "loose.bin", (old, old))
+
+    removed = await jobs_mod.sweep_orphan_job_dirs()
+    assert removed == 2
+    assert not orphan.exists()
+    assert not (tmp_path / "loose.bin").exists()
+    assert live.exists()
+    assert await get_job(job.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_sweep_respects_grace_period(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOB_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("JOB_SWEEP_GRACE_SEC", "3600")
+    recent = tmp_path / "recent"
+    recent.mkdir()
+    (recent / "f").write_bytes(b"x")
+    removed = await jobs_mod.sweep_orphan_job_dirs()
+    assert removed == 0
+    assert recent.exists()

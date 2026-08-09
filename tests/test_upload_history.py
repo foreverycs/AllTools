@@ -97,6 +97,18 @@ def test_resolve_blocks_traversal(hist_dir):
     assert h.resolve_stored("..\\secrets") is None
 
 
+def test_archive_failure_counted(hist_dir, tmp_path):
+    h = hist_dir
+    before = h.archive_failure_count()
+    rec = h.archive_conversion(
+        tool="pdf2word",
+        original_name="missing.pdf",
+        input_path=str(tmp_path / "does-not-exist.pdf"),
+    )
+    assert rec is None
+    assert h.archive_failure_count() == before + 1
+
+
 def test_api_uploads_requires_admin(hist_dir, tmp_path, monkeypatch):
     h = hist_dir
     src = _touch(tmp_path / "x.pdf", b"data")

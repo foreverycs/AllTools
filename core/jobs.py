@@ -19,6 +19,7 @@ import shutil
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 logger = logging.getLogger("toolkit.jobs")
@@ -57,6 +58,12 @@ class Job:
 _JOB_TTL_SEC = float(os.environ.get("JOB_TTL_SEC") or "3600")
 # How long after download before reclaim can drop the job entry (seconds).
 _DOWNLOAD_GRACE_SEC = float(os.environ.get("JOB_DOWNLOAD_GRACE_SEC") or "30")
+# A queued/running job whose liveness heartbeat (``updated_at``, refreshed by
+# every progress update) has not advanced past this many seconds is considered
+# stuck (worker crash, OOM, kill) and is reclaimed so its memory/temp files are
+# not leaked. Healthy long-running conversions keep updating progress and so
+# stay below the threshold regardless of elapsed wall-clock time.
+_STALE_JOB_TIMEOUT_SEC = float(os.environ.get("JOB_STALE_TIMEOUT_SEC") or "3600")
 # Track background tasks so they are not GC'd mid-flight.
 _bg_tasks: set[asyncio.Task] = set()
 
@@ -126,11 +133,17 @@ def _cleanup_job_files(job: Job) -> None:
 
 
 def _reclaim_should_drop(job: Job, now: float) -> bool:
-    if job.status not in (JobStatus.done, JobStatus.error):
+    if job.status in (JobStatus.done, JobStatus.error):
+        if job.downloaded_at and (now - job.downloaded_at) >= _DOWNLOAD_GRACE_SEC:
+            return True
+        if job.updated_at < now - _JOB_TTL_SEC:
+            return True
         return False
-    if job.downloaded_at and (now - job.downloaded_at) >= _DOWNLOAD_GRACE_SEC:
-        return True
-    if job.updated_at < now - _JOB_TTL_SEC:
+    # Stuck tasks: a job that never finished (worker crash / OOM / SIGKILL)
+    # must not stay in memory forever. ``updated_at`` is the liveness heartbeat
+    # — progress updates refresh it — so only jobs with no progress for the
+    # timeout are reclaimed; healthy long-running conversions survive.
+    if job.updated_at < now - _STALE_JOB_TIMEOUT_SEC:
         return True
     return False
 
@@ -540,6 +553,68 @@ def job_public_dict(job: Job) -> Dict[str, Any]:
         if safe:
             body["result"] = safe
     return body
+
+
+def _job_ref_paths(job: Job, out: set) -> None:
+    """Collect file paths owned by a job into ``out`` (normalized)."""
+    for p in (job.work_dir, job.output_path):
+        if p:
+            out.add(_norm_path(p))
+
+
+def _norm_path(p: str) -> str:
+    return os.path.normcase(os.path.abspath(p))
+
+
+async def sweep_orphan_job_dirs() -> int:
+    """Remove orphaned entries under ``JOB_OUTPUT_DIR`` at startup.
+
+    Entries still referenced by a live job (in-memory dict or Redis keys) are
+    kept. Entries touched within ``JOB_SWEEP_GRACE_SEC`` (default 600s) are also
+    kept: in multi-instance (Redis) deployments a worker on another instance may
+    be streaming an upload into a work dir before its job record lands in Redis.
+    """
+    grace = float(os.environ.get("JOB_SWEEP_GRACE_SEC") or "600")
+    referenced: set = set()
+    if isinstance(_store, _MemoryJobStore):
+        async with _store._lock:
+            for job in _store._jobs.values():
+                _job_ref_paths(job, referenced)
+    elif isinstance(_store, _RedisJobStore):
+        client = _redis()
+        async for key in client.scan_iter(match=f"{_REDIS_PREFIX}*", count=100):
+            raw = await client.get(key)
+            if not raw:
+                continue
+            try:
+                job = _job_from_dict(json.loads(raw))
+            except (ValueError, TypeError, KeyError):
+                continue
+            _job_ref_paths(job, referenced)
+    root = jobs_output_dir()
+    if not os.path.isdir(root):
+        return 0
+    now = time.time()
+    removed = 0
+    for entry in Path(root).iterdir():
+        if _norm_path(str(entry)) in referenced:
+            continue
+        try:
+            if now - entry.stat().st_mtime < grace:
+                continue
+        except OSError:
+            continue
+        try:
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                os.remove(entry)
+            removed += 1
+        except OSError:
+            logger.warning("orphan sweep failed path=%s", entry, exc_info=True)
+    if removed:
+        logger.info("orphan job dir sweep removed=%s dir=%s", removed, root)
+    return removed
 
 
 def reset_jobs() -> None:

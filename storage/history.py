@@ -21,15 +21,16 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import sqlite3
 import threading
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.settings import get_settings
+from storage.sqlite_pool import ConnCache
 
 logger = logging.getLogger("toolkit.storage")
 
@@ -117,15 +118,25 @@ def _db_path() -> Path:
     return ensure_file_dir() / DB_NAME
 
 
+# Reusable SQLite connections keyed by DB path (see storage.sqlite_pool). All
+# DB access is serialized by ``_lock``, so the pool needs no extra locking.
+_cache = ConnCache()
+
+
 def _get_conn() -> sqlite3.Connection:
-    """Return a connection to the records DB (creates if needed)."""
-    path = _db_path()
-    conn = sqlite3.connect(str(path), timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(_SCHEMA)
-    return conn
+    """Return a reusable connection for the current DB file.
+
+    Callers must hold ``_lock``. Connections are cached by path so repeated
+    calls skip connect/PRAGMA/DDL overhead; the oldest cached connection is
+    closed when the cache is full (e.g. tests rotating tmp dirs).
+    """
+    return _cache.get(_db_path(), _SCHEMA)
+
+
+def close_db_connections() -> None:
+    """Close cached connections (app shutdown / tests). Safe when idle."""
+    with _lock:
+        _cache.close_all()
 
 
 def _migrate_json_if_needed(conn: sqlite3.Connection) -> None:
@@ -242,49 +253,67 @@ def _do_cleanup() -> int:
     removed = 0
     with _lock:
         conn = _get_conn()
-        try:
-            _migrate_json_if_needed(conn)
-            expired = conn.execute(
-                "SELECT * FROM records WHERE created_at < ? OR created_at = ''",
+        _migrate_json_if_needed(conn)
+        expired = conn.execute(
+            "SELECT * FROM records WHERE created_at < ? OR created_at = ''",
+            (cutoff_iso,),
+        ).fetchall()
+        for row in expired:
+            rec = _row_to_dict(row)
+            _remove_record_files(rec)
+        removed = len(expired)
+        if removed:
+            conn.execute(
+                "DELETE FROM records WHERE created_at < ? OR created_at = ''",
                 (cutoff_iso,),
-            ).fetchall()
-            for row in expired:
-                rec = _row_to_dict(row)
-                _remove_record_files(rec)
-            removed = len(expired)
-            if removed:
-                conn.execute(
-                    "DELETE FROM records WHERE created_at < ? OR created_at = ''",
-                    (cutoff_iso,),
-                )
-                conn.commit()
+            )
+            conn.commit()
 
-            for child in list(root.iterdir()):
-                if not child.is_dir():
-                    continue
-                try:
-                    day = datetime.strptime(child.name, "%Y-%m-%d").replace(
-                        tzinfo=timezone.utc
-                    )
-                except ValueError:
-                    continue
-                day_start = cutoff.replace(hour=0, minute=0, second=0, microsecond=0)
-                if day >= day_start:
-                    continue
-                try:
-                    newest = max(
-                        (p.stat().st_mtime for p in child.rglob("*") if p.is_file()),
-                        default=0,
-                    )
-                except OSError:
-                    newest = 0
-                if newest == 0 or datetime.fromtimestamp(
-                    newest, tz=timezone.utc
-                ) < cutoff:
-                    shutil.rmtree(child, ignore_errors=True)
-        finally:
-            conn.close()
+        for child in list(root.iterdir()):
+            if not child.is_dir():
+                continue
+            try:
+                day = datetime.strptime(child.name, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
+            except ValueError:
+                continue
+            day_start = cutoff.replace(hour=0, minute=0, second=0, microsecond=0)
+            if day >= day_start:
+                continue
+            # Fast path: a directory mtime tracks the last file added and
+            # archived files are never modified in place, so an mtime older
+            # than the cutoff means the whole day dir is fully expired.
+            try:
+                dir_mtime = child.stat().st_mtime
+            except OSError:
+                dir_mtime = 0.0
+            if dir_mtime and datetime.fromtimestamp(
+                dir_mtime, tz=timezone.utc
+            ) < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
+                continue
+            # Slow path: something was touched recently; verify newest mtime.
+            try:
+                newest = max(
+                    (p.stat().st_mtime for p in child.rglob("*") if p.is_file()),
+                    default=0,
+                )
+            except OSError:
+                newest = 0
+            if newest == 0 or datetime.fromtimestamp(
+                newest, tz=timezone.utc
+            ) < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
     return removed
+
+
+_archive_failures = 0
+
+
+def archive_failure_count() -> int:
+    """Cumulative failed archive attempts since process start."""
+    return _archive_failures
 
 
 def archive_conversion(
@@ -302,6 +331,7 @@ def archive_conversion(
 
     Never raises to conversion callers — history failures must not break downloads.
     """
+    global _archive_failures
     try:
         return _archive_conversion(
             tool=tool,
@@ -310,10 +340,12 @@ def archive_conversion(
             extra=extra,
         )
     except Exception:
-        logger.warning(
-            "archive_conversion failed tool=%s name=%s",
+        _archive_failures += 1
+        logger.error(
+            "archive_conversion FAILED tool=%s name=%s total_failures=%d",
             tool,
             original_name,
+            _archive_failures,
             exc_info=True,
         )
         return None
@@ -333,7 +365,7 @@ def _archive_conversion(
     now = _now()
     day = now.strftime("%Y-%m-%d")
     stamp = now.strftime("%Y%m%dT%H%M%S")
-    short = uuid.uuid4().hex[:6]
+    short = secrets.token_hex(4)
     uid = f"{stamp}_{short}"
 
     day_dir = ensure_file_dir() / day
@@ -366,22 +398,19 @@ def _archive_conversion(
 
     with _lock:
         conn = _get_conn()
-        try:
-            _migrate_json_if_needed(conn)
-            conn.execute(
-                "INSERT INTO records "
-                "(id, tool, original_name, created_at, input_rel, input_bytes, extra_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    uid, tool, record["original_name"], record["created_at"],
-                    record["input_rel"], record["input_bytes"],
-                    json.dumps(extra_fields, ensure_ascii=False),
-                ),
-            )
-            conn.commit()
-            clear_storage_stats_cache()
-        finally:
-            conn.close()
+        _migrate_json_if_needed(conn)
+        conn.execute(
+            "INSERT INTO records "
+            "(id, tool, original_name, created_at, input_rel, input_bytes, extra_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                uid, tool, record["original_name"], record["created_at"],
+                record["input_rel"], record["input_bytes"],
+                json.dumps(extra_fields, ensure_ascii=False),
+            ),
+        )
+        conn.commit()
+        clear_storage_stats_cache()
 
     try:
         # Unified cleanup: drop expired records/files and empty day dirs.
@@ -404,14 +433,11 @@ def list_records(limit: int = 50) -> List[Dict[str, Any]]:
     limit = max(1, min(int(limit), 200))
     with _lock:
         conn = _get_conn()
-        try:
-            _migrate_json_if_needed(conn)
-            rows = conn.execute(
-                "SELECT * FROM records ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        finally:
-            conn.close()
+        _migrate_json_if_needed(conn)
+        rows = conn.execute(
+            "SELECT * FROM records ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
     out: List[Dict[str, Any]] = []
     for row in rows:
         item = _row_to_dict(row)
@@ -429,11 +455,8 @@ def record_count() -> int:
         pass
     with _lock:
         conn = _get_conn()
-        try:
-            _migrate_json_if_needed(conn)
-            return conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
-        finally:
-            conn.close()
+        _migrate_json_if_needed(conn)
+        return conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
 
 
 def resolve_stored(rel: str) -> Optional[Path]:
@@ -461,13 +484,10 @@ def get_record(record_id: str) -> Optional[Dict[str, Any]]:
     root = file_dir()
     with _lock:
         conn = _get_conn()
-        try:
-            _migrate_json_if_needed(conn)
-            row = conn.execute(
-                "SELECT * FROM records WHERE id = ?", (record_id,)
-            ).fetchone()
-        finally:
-            conn.close()
+        _migrate_json_if_needed(conn)
+        row = conn.execute(
+            "SELECT * FROM records WHERE id = ?", (record_id,)
+        ).fetchone()
     if row is None:
         return None
     item = _row_to_dict(row)
@@ -504,22 +524,19 @@ def delete_records(record_ids: List[str]) -> int:
     removed = 0
     with _lock:
         conn = _get_conn()
-        try:
-            _migrate_json_if_needed(conn)
-            for record_id in ids:
-                row = conn.execute(
-                    "SELECT * FROM records WHERE id = ?", (record_id,)
-                ).fetchone()
-                if row is None:
-                    continue
-                rec = _row_to_dict(row)
-                _remove_record_files(rec)
-                conn.execute("DELETE FROM records WHERE id = ?", (record_id,))
-                removed += 1
-            if removed:
-                conn.commit()
-        finally:
-            conn.close()
+        _migrate_json_if_needed(conn)
+        for record_id in ids:
+            row = conn.execute(
+                "SELECT * FROM records WHERE id = ?", (record_id,)
+            ).fetchone()
+            if row is None:
+                continue
+            rec = _row_to_dict(row)
+            _remove_record_files(rec)
+            conn.execute("DELETE FROM records WHERE id = ?", (record_id,))
+            removed += 1
+        if removed:
+            conn.commit()
     if removed:
         clear_storage_stats_cache()
     return removed
@@ -553,39 +570,36 @@ def storage_stats(*, force: bool = False) -> Dict[str, Any]:
     root = file_dir()
     with _lock:
         conn = _get_conn()
-        try:
-            _migrate_json_if_needed(conn)
-            # Aggregate in SQL — avoid loading every row into Python.
-            row = conn.execute(
-                """
-                SELECT
-                  COUNT(*) AS record_count,
-                  COALESCE(SUM(input_bytes), 0) AS bytes_indexed
-                FROM records
-                """
-            ).fetchone()
-            by_tool_rows = conn.execute(
-                """
-                SELECT tool, COUNT(*) AS n
-                FROM records
-                GROUP BY tool
-                """
-            ).fetchall()
-            latest_row = conn.execute(
-                "SELECT * FROM records ORDER BY created_at DESC LIMIT 1"
-            ).fetchone()
-            # Sample file presence on a bounded set (not full table scan on disk).
-            sample_rows = conn.execute(
-                """
-                SELECT input_rel FROM records
-                WHERE input_rel IS NOT NULL AND input_rel != ''
-                ORDER BY created_at DESC
-                LIMIT 200
-                """
-            ).fetchall()
-            total_count = int(row["record_count"] or 0) if row else 0
-        finally:
-            conn.close()
+        _migrate_json_if_needed(conn)
+        # Aggregate in SQL — avoid loading every row into Python.
+        row = conn.execute(
+            """
+            SELECT
+              COUNT(*) AS record_count,
+              COALESCE(SUM(input_bytes), 0) AS bytes_indexed
+            FROM records
+            """
+        ).fetchone()
+        by_tool_rows = conn.execute(
+            """
+            SELECT tool, COUNT(*) AS n
+            FROM records
+            GROUP BY tool
+            """
+        ).fetchall()
+        latest_row = conn.execute(
+            "SELECT * FROM records ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        # Sample file presence on a bounded set (not full table scan on disk).
+        sample_rows = conn.execute(
+            """
+            SELECT input_rel FROM records
+            WHERE input_rel IS NOT NULL AND input_rel != ''
+            ORDER BY created_at DESC
+            LIMIT 200
+            """
+        ).fetchall()
+        total_count = int(row["record_count"] or 0) if row else 0
 
     by_tool: Dict[str, int] = {}
     for r in by_tool_rows:
@@ -609,18 +623,10 @@ def storage_stats(*, force: bool = False) -> Dict[str, Any]:
         ratio = sample_present / max(sample_total, 1)
         with_file = int(round(total_count * ratio))
 
-    disk_bytes = 0
-    try:
-        # Cap walk depth cost: only top-level date dirs + files (typical layout).
-        if root.is_dir():
-            for p in root.rglob("*"):
-                if p.is_file():
-                    try:
-                        disk_bytes += p.stat().st_size
-                    except OSError:
-                        pass
-    except OSError:
-        pass
+    # bytes_on_disk approximated from the index: archived inputs are written
+    # once and never modified, so the indexed byte sum tracks real usage
+    # without an O(N) disk walk on every dashboard load.
+    disk_bytes = total_bytes
 
     result = {
         "retention_days": retention_days(),

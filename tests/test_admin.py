@@ -113,6 +113,31 @@ def test_admin_login_requires_csrf(admin_client):
     assert "token" in (r.headers.get("location") or "").lower()
 
 
+def test_admin_csrf_bound_to_session(admin_client):
+    from types import SimpleNamespace
+
+    from admin.csrf import bound_csrf_token, verify_csrf
+
+    client, _, _ = admin_client
+    _login(client)
+    dash = client.get("/admin")
+    assert dash.status_code == 200
+    csrf = client.cookies.get("toolkit_csrf")
+    session = client.cookies.get("toolkit_admin")
+    assert csrf and session
+    # Post-login the CSRF cookie is the session-bound derived value.
+    assert csrf == bound_csrf_token(session)
+
+    req = SimpleNamespace(cookies={"toolkit_csrf": csrf, "toolkit_admin": session})
+    assert verify_csrf(req, bound_csrf_token(session)) is True
+    assert verify_csrf(req, "A" * 32) is False
+
+    # Pre-session double-submit still works (login page).
+    req2 = SimpleNamespace(cookies={"toolkit_csrf": "B" * 32, "toolkit_admin": ""})
+    assert verify_csrf(req2, "B" * 32) is True
+    assert verify_csrf(req2, "C" * 32) is False
+
+
 def test_admin_login_rate_limit(admin_client, monkeypatch):
     """After repeated failures the same client is locked out briefly."""
     from urllib.parse import unquote
