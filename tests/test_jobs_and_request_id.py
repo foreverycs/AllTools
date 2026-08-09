@@ -96,6 +96,80 @@ def test_api_request_id_header_and_jobs_404():
     assert health.get("jobs", {}).get("single_worker_required") is True
 
 
+def test_access_log_emits_request_line():
+    import logging
+
+    from fastapi.testclient import TestClient
+    from app import app
+
+    class Recorder(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.records = []
+
+        def emit(self, record):
+            self.records.append((record.levelno, record.getMessage()))
+
+    client = TestClient(app)
+    recorder = Recorder()
+    access_log = logging.getLogger("toolkit.access")
+    access_log.addHandler(recorder)
+    access_log.setLevel(logging.DEBUG)
+    try:
+        assert client.get("/").status_code == 200
+        assert client.get("/health?format=json").status_code == 200
+    finally:
+        access_log.removeHandler(recorder)
+
+    info_lines = [m for lvl, m in recorder.records if lvl == logging.INFO]
+    debug_lines = [m for lvl, m in recorder.records if lvl == logging.DEBUG]
+    assert any("path=/ status=200" in m for m in info_lines)
+    assert any("path=/health status=200" in m for m in debug_lines)
+    assert not any("path=/health" in m for m in info_lines)
+
+
+def test_access_log_streaming_measures_full_body():
+    import asyncio
+    import logging
+
+    from starlette.applications import Starlette
+    from starlette.responses import StreamingResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    from core.middleware import AccessLogMiddleware
+
+    async def stream(request):
+        async def gen():
+            yield b"a"
+            await asyncio.sleep(0.02)
+            yield b"b"
+
+        return StreamingResponse(gen(), media_type="application/octet-stream")
+
+    client = TestClient(AccessLogMiddleware(Starlette(routes=[Route("/stream", stream)])))
+
+    class Recorder(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.records = []
+
+        def emit(self, record):
+            self.records.append((record.levelno, record.getMessage()))
+
+    recorder = Recorder()
+    access_log = logging.getLogger("toolkit.access")
+    access_log.addHandler(recorder)
+    access_log.setLevel(logging.INFO)
+    try:
+        r = client.get("/stream")
+        assert r.content == b"ab"
+    finally:
+        access_log.removeHandler(recorder)
+    msgs = [m for _, m in recorder.records]
+    assert any("path=/stream status=200" in m for m in msgs)
+
+
 @pytest.mark.asyncio
 async def test_mark_downloaded_clears_files(tmp_path):
     work = tmp_path / "jobw"

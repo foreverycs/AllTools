@@ -64,3 +64,41 @@ def test_middleware_returns_429(monkeypatch, tmp_path):
     )
     assert r3.status_code == 429
     assert r3.headers.get("Retry-After")
+
+def test_sliding_window_sweeps_stale_keys():
+    from core.rate_limit_base import _MAX_KEY_IDLE_SEC, SlidingWindow
+
+    w = SlidingWindow()
+    t0 = 1000.0
+    assert w.check("ip-a", limit=10, window_sec=60.0, now=t0)[0] is True
+    assert w.check("ip-b", limit=10, window_sec=60.0, now=t0)[0] is True
+    assert len(w._hits) == 2
+
+    # Force a sweep at a much later time: idle keys are dropped, fresh kept.
+    w._last_sweep = 0.0
+    t1 = t0 + _MAX_KEY_IDLE_SEC + 100
+    assert w.check("ip-b", limit=10, window_sec=60.0, now=t1)[0] is True
+    assert "ip-a" not in w._hits
+    assert "ip-b" in w._hits
+
+
+def test_admin_lockouts_sweep_expired():
+    import time
+
+    from admin import rate_limit as al
+
+    al.reset_all()
+    key = "9.9.9.9"
+    # Register a failure far in the past so its lockout is already expired.
+    old = time.monotonic() - 9999
+    locked, _ = al.register_failure(
+        key, max_failures=1, window_sec=60.0, lockout_sec=0.0, now=old
+    )
+    assert locked is True
+    assert key in al._lockouts
+
+    # A later is_locked call sweeps the already-expired lockout entry.
+    locked2, _ = al.is_locked(key, now=time.monotonic())
+    assert locked2 is False
+    assert key not in al._lockouts
+    al.reset_all()

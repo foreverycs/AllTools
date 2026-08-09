@@ -7,6 +7,8 @@ downstream middleware can attach the id to early responses (403 / 429).
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Optional
 
 from fastapi import Request
@@ -22,6 +24,8 @@ from core.request_id import (
     set_request_id,
 )
 from core.settings import get_settings
+
+access_log = logging.getLogger("toolkit.access")
 
 
 def _tool_path(path: str) -> str:
@@ -48,6 +52,71 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             reset_request_id(token)
         response.headers.setdefault(REQUEST_ID_HEADER, rid)
         return response
+
+
+# Paths that would only spam the access log (static assets, probes, PWA files).
+# The match is applied against the ROOT_PATH-stripped path so reverse-proxy
+# mounts (e.g. "/toolkit/health") are still filtered.
+_NOISY_PATH_PREFIXES = ("/static/", "/health", "/sw.js", "/manifest.webmanifest", "/favicon")
+
+
+class AccessLogMiddleware(BaseHTTPMiddleware):
+    """Structured request log: method, path, status, latency, request id.
+
+    Registered just inside ``RequestIdMiddleware`` so the id context is active
+    and the final response status is known. Static assets and health probes are
+    logged at DEBUG to keep the default log readable. For streaming responses
+    (e.g. job downloads) the line is emitted after the body finishes, so ``ms``
+    reflects the full transfer time rather than time-to-first-byte.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        start = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            ms = (time.perf_counter() - start) * 1000
+            access_log.exception(
+                "access method=%s path=%s status=500 ms=%.1f request_id=%s",
+                request.method,
+                request.url.path,
+                ms,
+                get_request_id() or "-",
+            )
+            raise
+        body_iterator = getattr(response, "body_iterator", None)
+        if body_iterator is not None:
+            # Streaming response: defer the log line until the whole body has
+            # been transferred so slow downloads are visible in the log.
+            async def _wrapped_iterator():
+                try:
+                    async for chunk in body_iterator:
+                        yield chunk
+                finally:
+                    self._emit_log(request, response.status_code, start)
+
+            response.body_iterator = _wrapped_iterator()
+            return response
+        self._emit_log(request, response.status_code, start)
+        return response
+
+    @staticmethod
+    def _emit_log(request: Request, status: int, start: float) -> None:
+        ms = (time.perf_counter() - start) * 1000
+        app_path = _tool_path(request.url.path)
+        if app_path.startswith(_NOISY_PATH_PREFIXES):
+            level = logging.DEBUG
+        else:
+            level = logging.ERROR if status >= 500 else logging.INFO
+        access_log.log(
+            level,
+            "access method=%s path=%s status=%s ms=%.1f request_id=%s",
+            request.method,
+            app_path,
+            status,
+            ms,
+            get_request_id() or "-",
+        )
 
 
 class ToolFlagGateMiddleware(BaseHTTPMiddleware):

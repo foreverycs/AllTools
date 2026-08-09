@@ -12,6 +12,13 @@ import time
 from collections import deque
 from typing import Deque, Dict, Optional, Tuple
 
+# Drop per-key state after this many idle seconds. Without this, a public
+# deployment with many distinct client IPs would accumulate one dict entry per
+# IP forever (each deque is window-bounded, but the key itself never expires).
+_MAX_KEY_IDLE_SEC = 3600.0
+# How often the stale-key sweep runs (cheap; runs while holding the lock).
+_SWEEP_INTERVAL_SEC = 60.0
+
 
 def client_key_from_request(request) -> str:
     """Best-effort client identity for rate limiting.
@@ -32,6 +39,7 @@ class SlidingWindow:
     def __init__(self) -> None:
         self._hits: Dict[str, Deque[float]] = {}
         self._lock = threading.Lock()
+        self._last_sweep = 0.0
 
     def clear(self) -> None:
         with self._lock:
@@ -41,6 +49,21 @@ class SlidingWindow:
         """Remove tracked hits for a key (best-effort)."""
         with self._lock:
             self._hits.pop(key, None)
+
+    def _maybe_sweep(self, t: float) -> None:
+        """Drop keys idle past ``_MAX_KEY_IDLE_SEC`` to bound memory.
+
+        Callers hold ``self._lock``. The newest timestamp in a key's deque is
+        the last time that key was touched, so it is a safe liveness signal
+        regardless of the per-call ``window_sec`` value.
+        """
+        if t - self._last_sweep < _SWEEP_INTERVAL_SEC:
+            return
+        self._last_sweep = t
+        cutoff = t - _MAX_KEY_IDLE_SEC
+        stale = [k for k, q in self._hits.items() if not q or q[-1] < cutoff]
+        for k in stale:
+            del self._hits[k]
 
     def check(
         self,
@@ -58,6 +81,7 @@ class SlidingWindow:
             return True, 0, -1
         t = time.monotonic() if now is None else now
         with self._lock:
+            self._maybe_sweep(t)
             q = self._hits.setdefault(key, deque())
             cutoff = t - window_sec
             while q and q[0] < cutoff:
@@ -87,6 +111,7 @@ class SlidingWindow:
             return False, 0
         t = time.monotonic() if now is None else now
         with self._lock:
+            self._maybe_sweep(t)
             q = self._hits.setdefault(key, deque())
             cutoff = t - window_sec
             while q and q[0] < cutoff:

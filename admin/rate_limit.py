@@ -24,6 +24,25 @@ _lock = threading.Lock()
 _lockouts: Dict[str, float] = {}
 _failures = SlidingWindow()
 
+# Sweep expired lockout entries at most this often (per-process).
+_SWEEP_INTERVAL_SEC = 60.0
+_last_sweep: float = 0.0
+
+
+def _sweep_lockouts(t: float) -> None:
+    """Drop expired lockout entries so the dict cannot grow unbounded.
+
+    Callers hold ``_lock``. Throttled so the common (no-lockout) login attempt
+    is a single timestamp compare instead of a full dict scan.
+    """
+    global _last_sweep
+    if t - _last_sweep < _SWEEP_INTERVAL_SEC:
+        return
+    _last_sweep = t
+    stale = [k for k, until in _lockouts.items() if until <= t]
+    for k in stale:
+        _lockouts.pop(k, None)
+
 
 def is_locked(
     key: str,
@@ -33,6 +52,7 @@ def is_locked(
     """Return ``(locked, retry_after_seconds)``."""
     t = time.monotonic() if now is None else now
     with _lock:
+        _sweep_lockouts(t)
         until = _lockouts.get(key)
         if until is None:
             return False, 0
@@ -60,6 +80,7 @@ def register_failure(
     if exceeded:
         until = t + lock_sec
         with _lock:
+            _sweep_lockouts(t)
             _lockouts[key] = until
         return True, max(1, int(lock_sec))
     return False, 0
@@ -74,6 +95,8 @@ def clear_failures(key: str) -> None:
 
 def reset_all() -> None:
     """Drop all limiter state (tests)."""
+    global _last_sweep
     with _lock:
         _lockouts.clear()
+        _last_sweep = 0.0
     _failures.clear()

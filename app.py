@@ -217,6 +217,7 @@ async def toolkit_error_handler(request: Request, exc: ToolkitError):
 def register_middleware(app: FastAPI) -> None:
     """Register the app's reusable HTTP middlewares (see core.middleware)."""
     from core.middleware import (
+        AccessLogMiddleware,
         PublicRateLimitMiddleware,
         RequestIdMiddleware,
         SecurityHeadersMiddleware,
@@ -226,6 +227,8 @@ def register_middleware(app: FastAPI) -> None:
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(PublicRateLimitMiddleware)
     app.add_middleware(ToolFlagGateMiddleware)
+    # Access log sits just inside RequestId so it sees rid + final status.
+    app.add_middleware(AccessLogMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
 
