@@ -105,6 +105,49 @@ graph TB
 
 ---
 
+## 🧩 插件开发
+
+功能工具支持**插件式扩展**：将一个工具放入 `plugins/<名称>/` 目录并重启，即可自动注册页面、路由、导航、工具开关、sitemap 与健康检查，无需改动主程序代码。
+
+插件目录约定（见 `plugins/text-lines/` 示例）：
+
+```
+plugins/
+  <name>/
+    __init__.py   # 必需：TOOL 清单 + router
+    templates/    # 可选：私有 Jinja2 模板（页面名 tools/<slug>.html）
+    static/       # 可选：私有静态资源，挂载于 /plugins/<slug>/static
+```
+
+`__init__.py` 最小契约：
+
+```python
+from fastapi import APIRouter
+from tools.common import templates, with_nav
+
+PLUGIN_VERSION = "1.0.0"                       # 可选
+TOOL = {                                       # 与内置工具注册表同构
+    "slug": "text-lines",                      # 唯一，^[a-z0-9-]+$
+    "name": "文本行处理",
+    "category": "text",                        # 栏目 id（内置或自定义）
+    "description": "…", "icon": "📋",
+    "route": "/tools/text-lines",
+    "features": [...], "cta": "开始处理", "accent": "cyan",
+}
+router = APIRouter(prefix="/tools/text-lines", tags=["text-lines"])
+```
+
+要点：
+
+- **信任边界**：插件是同进程内任意 Python，拥有与主程序同等权限（数据库、文件、LibreOffice）。只放置你信任的代码；`PLUGINS_DIR` 环境变量可指向受控目录。
+- **错误容忍**：导入失败、清单缺失、slug 冲突的插件会被跳过并记录日志，应用照常启动；状态可在管理后台「系统状态 → 插件」查看。
+- **启用/停用**：插件注册后自动出现在「功能开关」页，无需改代码。
+- **依赖**：插件若需第三方库，将 `requirements.txt` 由运维手动安装；缺依赖时该插件标记不可用而非崩溃。
+- **生效方式**：新插件或插件代码修改需重启应用；开关切换保持热生效。
+- **限流约定**：公开 POST 接口默认不限流。重操作（大文件、外部进程、第三方调用）请沿用内置工具约定——路径包含 `/convert`、`/compress`、`/send` 等标记即可被 `PublicRateLimitMiddleware` 按 IP 限流；同时插件应自带输入大小上限（参考示例的 `MAX_CHARS`）。
+
+---
+
 ## 💾 数据与备份
 
 所有持久化数据都在 `file/` 目录（Docker 中为挂载卷）：

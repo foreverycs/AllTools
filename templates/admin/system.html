@@ -97,6 +97,52 @@
 
 <div class="admin-panel" style="margin-top:16px">
   <div class="admin-panel-h">
+    <span class="admin-panel-h-icon" style="--ic:#7c3aed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+    插件（{{ plugins|length }}）
+  </div>
+  {% if plugins %}
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>名称</th>
+          <th>Slug</th>
+          <th>版本</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in plugins %}
+        <tr>
+          <td>{{ p.name }}</td>
+          <td class="admin-mono">{{ p.slug or '—' }}</td>
+          <td class="admin-mono">{{ p.version or '—' }}</td>
+          <td>
+            {% if p.loaded %}
+            <span class="admin-badge ok">已加载</span>
+            {% else %}
+            <span class="admin-badge err">加载失败</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% if not p.loaded and p.error %}
+        <tr>
+          <td colspan="4" class="admin-mono">{{ p.error }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="admin-panel-b">
+    <p class="admin-muted">未发现插件。将插件放入 <code class="admin-mono">plugins/</code> 目录并重启即可加载。</p>
+  </div>
+  {% endif %}
+</div>
+
+<div class="admin-panel" style="margin-top:16px">
+  <div class="admin-panel-h">
     <span style="display:inline-flex;align-items:center;gap:8px">
       <span class="admin-panel-h-icon" style="--ic:#0284c7"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></span>
       已注册工具

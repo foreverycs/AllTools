@@ -241,6 +241,16 @@ static_dir = os.path.join(BASE_DIR, "static")
 if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+# Plugin static assets, mounted at /plugins/<slug>/static (see core.plugins).
+from core.plugins import get_plugin_static_mounts
+
+for plugin_slug, plugin_static in get_plugin_static_mounts():
+    app.mount(
+        f"/plugins/{plugin_slug}/static",
+        StaticFiles(directory=str(plugin_static)),
+        name=f"plugin-{plugin_slug}",
+    )
+
 # Register all tool routers
 for router in TOOL_ROUTERS:
     app.include_router(router)

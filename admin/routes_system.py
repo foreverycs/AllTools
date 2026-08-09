@@ -26,6 +26,7 @@ async def system_page(request: Request):
     if redir:
         return redir
     from core.tool_flags import flags_status
+    from core.plugins import get_plugin_statuses
 
     # Prefer warm cache; only probe synchronously if still cold after startup warm.
     health = get_cached_health()
@@ -41,6 +42,7 @@ async def system_page(request: Request):
         tools=TOOL_REGISTRY,
         categories=tools_by_category(include_disabled=True),
         tool_flags=flags_status(),
+        plugins=get_plugin_statuses(),
         env_hints={
             **get_settings().admin_security_summary(),
             "UPLOAD_RETENTION_DAYS": str(retention_days()),

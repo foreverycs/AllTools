@@ -305,6 +305,22 @@ TOOL_ROUTERS = (
     express_router,
 )
 
+# ---------------------------------------------------------------------------
+# Plugins (optional): merge discovered plugins into the registry / routers.
+# A broken or conflicting plugin is skipped (see core.plugins) — the app
+# always starts with the builtin tools regardless.
+# ---------------------------------------------------------------------------
+from core.plugins import discover_plugins
+
+_PLUGINS = discover_plugins(reserved_slugs={str(t["slug"]) for t in TOOL_REGISTRY})
+if _PLUGINS.entries:
+    TOOL_REGISTRY = TOOL_REGISTRY + _PLUGINS.entries
+    TOOL_ROUTERS = tuple(TOOL_ROUTERS) + tuple(_PLUGINS.routers)
+    from tools.common import add_template_dir
+
+    for tpl_dir in _PLUGINS.template_dirs:
+        add_template_dir(tpl_dir)
+
 
 def is_featured_tool(tool: Dict[str, Any] | None) -> bool:
     """True when a registry entry is a homepage feature (not a module card)."""

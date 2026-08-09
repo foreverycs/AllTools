@@ -20,6 +20,22 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+
+def add_template_dir(path) -> None:
+    """Add a directory to the shared Jinja2 template loader (for plugins).
+
+    Plugin template folders are appended after the builtin ``templates/``, so
+    builtin names win on collision and plugin pages are found by their slug.
+    Called once per plugin at registry build time.
+    """
+    if not path or not os.path.isdir(str(path)):
+        return
+    from jinja2 import ChoiceLoader, FileSystemLoader
+
+    loader = FileSystemLoader(str(path))
+    current = templates.env.loader
+    templates.env.loader = ChoiceLoader([current, loader]) if current else loader
+
 _SAFE_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 
 # Bump when shipping CSS/JS that must invalidate CDN/browser caches.

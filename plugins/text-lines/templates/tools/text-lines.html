@@ -1,0 +1,111 @@
+{% extends "tools/base.html" %}
+{% set page_title = "文本行处理" %}
+{% set page_description = "多行文本按行去重 / 去空行 / 反转 / 排序" %}
+{% set accent = "cyan" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-text") %}
+{% set back_label = "文本工具" %}
+{% set chip = "文本工具 · 文本行处理" %}
+
+{% block head_styles %}
+<style>
+  .tl-wrap { display: flex; flex-direction: column; gap: 14px; }
+  .tl-wrap textarea {
+    width: 100%;
+    min-height: 180px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1.5px solid var(--line);
+    background: var(--surface-solid);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.7;
+    resize: vertical;
+    tab-size: 2;
+  }
+  .tl-wrap textarea:focus {
+    outline: none;
+    border-color: var(--tool-accent);
+    box-shadow: 0 0 0 4px var(--tool-focus);
+  }
+  .tl-opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+  }
+  .tl-opts .check { font-size: 13.5px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+  #output { background: var(--chip-bg); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="icon" aria-hidden="true">📋</div>
+    <div>
+      <h1>文本行处理</h1>
+      <p>对多行文本按行去重、去除空行、反转行序或排序。</p>
+    </div>
+  </div>
+
+  <div class="tl-wrap">
+    <textarea id="input" placeholder="每行一段文本…" spellcheck="false"></textarea>
+    <div class="tl-opts">
+      <label class="check"><input type="checkbox" id="dedupe" /> 行去重</label>
+      <label class="check"><input type="checkbox" id="stripEmpty" checked /> 去除空行</label>
+      <label class="check"><input type="checkbox" id="reverse" /> 反转行序</label>
+      <label class="check"><input type="checkbox" id="sort" /> 排序</label>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" id="btnRun">处理</button>
+      <button type="button" class="btn btn-ghost" id="btnClear">清空</button>
+    </div>
+    <textarea id="output" placeholder="处理结果…" readonly></textarea>
+    <div class="status" id="status"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const TP = window.ToolPage || {};
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const status = document.getElementById('status');
+    const btnRun = document.getElementById('btnRun');
+    const btnClear = document.getElementById('btnClear');
+
+    const flags = () => ({
+      dedupe: document.getElementById('dedupe').checked ? '1' : '0',
+      strip_empty: document.getElementById('stripEmpty').checked ? '1' : '0',
+      reverse: document.getElementById('reverse').checked ? '1' : '0',
+      sort: document.getElementById('sort').checked ? '1' : '0',
+    });
+
+    btnRun.addEventListener('click', async () => {
+      TP.clearStatus(status);
+      btnRun.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('text', input.value);
+        Object.entries(flags()).forEach(([k, v]) => fd.append(k, v));
+        const data = await TP.runForm(TP.appUrl('/tools/text-lines/process'), fd);
+        output.value = data.result || '';
+        TP.setStatus(status, 'ok', `处理完成：${data.lines} 行`);
+      } catch (err) {
+        TP.setStatus(status, 'err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    });
+
+    btnClear.addEventListener('click', () => {
+      input.value = '';
+      output.value = '';
+      TP.clearStatus(status);
+    });
+</script>
+{% endblock %}
