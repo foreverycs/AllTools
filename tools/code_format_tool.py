@@ -26,7 +26,7 @@ router = APIRouter(prefix="/tools/code-format", tags=["code-format"])
 TOOL_META = {
     "name": "代码格式化",
     "slug": "code-format",
-    "category": "coding",
+    "category": "text",
 }
 
 

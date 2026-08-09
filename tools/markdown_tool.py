@@ -22,7 +22,7 @@ async def tool_page(request: Request):
             "tool": {
                 "name": "Markdown 编辑",
                 "slug": "markdown",
-                "category": "coding",
+                "category": "text",
             },
             "sample": sample_markdown(),
             "max_chars": MAX_INPUT_CHARS,

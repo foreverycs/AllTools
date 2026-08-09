@@ -32,7 +32,7 @@ async def tool_page(request: Request):
             "tool": {
                 "name": "时间戳转换",
                 "slug": "timestamp",
-                "category": "coding",
+                "category": "text",
             }
         }),
     )

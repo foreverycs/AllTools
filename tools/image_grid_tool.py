@@ -46,7 +46,7 @@ async def tool_page(request: Request):
                 "tool": {
                     "name": "图片九宫格",
                     "slug": "image-grid",
-                    "category": "office",
+                    "category": "image",
                 },
                 "formats": supported_formats(),
                 "max_dim": max_dim(),

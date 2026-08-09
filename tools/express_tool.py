@@ -86,7 +86,7 @@ def _tool_ctx(request: Request) -> dict:
         "tool": {
             "name": "文件快递",
             "slug": "express",
-            "category": "office",
+            "category": "text",
         },
         "limits": {
             "max_bytes": max_b,

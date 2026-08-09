@@ -39,7 +39,7 @@ async def tool_page(request: Request):
             "tool": {
                 "name": "图片格式转换",
                 "slug": "image-convert",
-                "category": "office",
+                "category": "image",
             },
             "input_formats": input_formats(),
             "output_formats": output_formats(),

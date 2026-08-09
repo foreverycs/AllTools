@@ -65,6 +65,60 @@ def test_middleware_returns_429(monkeypatch, tmp_path):
     assert r3.status_code == 429
     assert r3.headers.get("Retry-After")
 
+def test_middleware_proxy_headers_before_rate_limit():
+    """ProxyHeaders must rewrite request.client BEFORE PublicRateLimit keys the
+    per-IP bucket (otherwise all users behind a reverse proxy share one bucket).
+    Starlette: the LAST registered middleware is the OUTERMOST.
+    """
+    from app import app
+
+    names = [m.cls.__name__ for m in app.user_middleware]
+    assert names[0] == "RequestIdMiddleware"
+    assert names.index("ProxyHeadersMiddleware") < names.index(
+        "PublicRateLimitMiddleware"
+    )
+
+
+def test_rate_limit_keys_on_forwarded_client_ip(monkeypatch, tmp_path):
+    """Behind a trusted proxy, per-IP limits must key on the real client
+    (X-Forwarded-For), not on the proxy peer address."""
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-pass")
+    monkeypatch.setenv("ADMIN_SECRET", "test-secret-for-unit-tests-only")
+    monkeypatch.setenv("DOTENV_OVERRIDE", "0")
+    monkeypatch.setenv("API_RATE_LIMIT", "2")
+    monkeypatch.setenv("API_RATE_WINDOW_SEC", "60")
+    monkeypatch.setenv("TRUSTED_PROXY_HOSTS", "testclient")
+
+    import importlib
+
+    import core.settings as settings_mod
+    import app as app_mod
+
+    settings_mod.clear_settings_cache()
+    importlib.reload(app_mod)
+    rl.reset_all()
+
+    client = TestClient(app_mod.app)
+
+    def send(ip: str):
+        return client.post(
+            "/tools/pdf2word/convert-async",
+            headers={"X-Forwarded-For": ip},
+            files={"file": ("x.txt", b"nope", "text/plain")},
+        ).status_code
+
+    # Same forwarded IP: first two count, third is throttled.
+    assert [send("1.2.3.4") for _ in range(3)] == [400, 400, 429]
+    # A different forwarded IP gets a fresh bucket.
+    assert send("5.6.7.8") == 400
+
+    # GET express pickup download is rate-limited too (abuse-sensitive).
+    g = [client.get("/tools/express/pickup/000000").status_code for _ in range(3)]
+    assert g == [404, 404, 429]
+    rl.reset_all()
+
+
 def test_sliding_window_sweeps_stale_keys():
     from core.rate_limit_base import _MAX_KEY_IDLE_SEC, SlidingWindow
 

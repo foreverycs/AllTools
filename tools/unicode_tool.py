@@ -28,7 +28,7 @@ async def tool_page(request: Request):
             "tool": {
                 "name": "中文 Unicode 还原",
                 "slug": "unicode",
-                "category": "coding",
+                "category": "text",
             }
         }),
     )

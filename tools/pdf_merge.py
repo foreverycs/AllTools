@@ -41,7 +41,7 @@ async def tool_page(request: Request):
                 "tool": {
                     "slug": "pdf-merge",
                     "name": "发票合并",
-                    "category": "office",
+                    "category": "pdf",
                 }
             }
         ),

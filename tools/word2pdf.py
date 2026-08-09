@@ -41,7 +41,7 @@ async def tool_page(request: Request):
                 "tool": {
                     "slug": "word2pdf",
                     "name": "Word 转 PDF",
-                    "category": "document",
+                    "category": "pdf",
                 },
             }
         ),

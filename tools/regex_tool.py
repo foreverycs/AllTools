@@ -26,7 +26,7 @@ async def tool_page(request: Request):
             "tool": {
                 "name": "正则测试",
                 "slug": "regex",
-                "category": "coding",
+                "category": "text",
             }
         }),
     )

@@ -36,7 +36,7 @@ async def tool_page(request: Request):
             "tool": {
                 "name": "图片压缩",
                 "slug": "image-compress",
-                "category": "office",
+                "category": "image",
             },
             "formats": supported_formats(),
             "qualities": list(_QUALITY_PRESETS),

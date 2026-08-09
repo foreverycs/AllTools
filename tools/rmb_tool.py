@@ -23,7 +23,7 @@ async def tool_page(request: Request):
             "tool": {
                 "name": "人民币大写",
                 "slug": "rmb",
-                "category": "office",
+                "category": "text",
             }
         }),
     )

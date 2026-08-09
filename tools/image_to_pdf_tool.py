@@ -41,7 +41,7 @@ async def tool_page(request: Request):
                 "tool": {
                     "name": "图片转 PDF",
                     "slug": "image-to-pdf",
-                    "category": "office",
+                    "category": "image",
                 },
                 "input_formats": input_formats(),
                 "page_modes": page_modes(),

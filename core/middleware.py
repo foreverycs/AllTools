@@ -186,9 +186,17 @@ class PublicRateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
         is_download = path.rstrip("/").endswith("/download")
+        # GET pickup ({code} bookmarkable express download) is abuse-sensitive:
+        # it reads from disk and increments the package download counter, so it
+        # shares the same per-IP bucket as POST /send and job downloads.
+        is_pickup = "/pickup" in path
         rate_limited = (
             request.method == "POST" and _is_public_convert_path(path)
-        ) or (request.method == "GET" and is_download and _is_public_convert_path(path))
+        ) or (
+            request.method == "GET"
+            and (is_download or is_pickup)
+            and _is_public_convert_path(path)
+        )
         if not rate_limited:
             return await call_next(request)
 

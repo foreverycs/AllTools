@@ -202,24 +202,6 @@ app = FastAPI(
     root_path=_import_root_path(),
 )
 
-# Trust X-Forwarded-* ONLY from configured reverse proxies (Baota/Nginx).
-# Defaults to loopback (single-host proxy); configure TRUSTED_PROXY_HOSTS with
-# the actual proxy IP/host when it runs on another machine. Never use "*" —
-# it lets any remote client spoof its IP and bypass the IP rate limiter.
-try:
-    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
-
-    from core.settings import parse_proxy_hosts
-
-    app.add_middleware(
-        ProxyHeadersMiddleware,
-        trusted_hosts=list(
-            parse_proxy_hosts(os.environ.get("TRUSTED_PROXY_HOSTS"))
-        ),
-    )
-except Exception:
-    pass
-
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
@@ -256,6 +238,26 @@ def register_middleware(app: FastAPI) -> None:
     app.add_middleware(ToolFlagGateMiddleware)
     # Access log sits just inside RequestId so it sees rid + final status.
     app.add_middleware(AccessLogMiddleware)
+    # Trust X-Forwarded-* ONLY from configured reverse proxies (Baota/Nginx).
+    # Defaults to loopback (single-host proxy); configure TRUSTED_PROXY_HOSTS
+    # with the actual proxy IP/host when it runs on another machine. Never use
+    # "*" — it lets any remote client spoof its IP and bypass the IP rate
+    # limiter. Registered here so it runs BEFORE PublicRateLimitMiddleware:
+    # per-IP limits must key on the real client IP (rewritten from
+    # X-Forwarded-*), not on the proxy's direct peer address.
+    try:
+        from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+        from core.settings import parse_proxy_hosts
+
+        app.add_middleware(
+            ProxyHeadersMiddleware,
+            trusted_hosts=list(
+                parse_proxy_hosts(os.environ.get("TRUSTED_PROXY_HOSTS"))
+            ),
+        )
+    except Exception:
+        pass
     app.add_middleware(RequestIdMiddleware)
 
 

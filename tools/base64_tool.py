@@ -26,7 +26,7 @@ async def tool_page(request: Request):
             "tool": {
                 "name": "Base64 编解码",
                 "slug": "base64",
-                "category": "coding",
+                "category": "text",
             }
         }),
     )
