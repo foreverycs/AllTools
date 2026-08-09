@@ -21,20 +21,20 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
-def add_template_dir(path) -> None:
-    """Add a directory to the shared Jinja2 template loader (for plugins).
+def set_plugin_template_dirs(dirs) -> None:
+    """Rebuild the Jinja2 loader with the current plugin template folders.
 
-    Plugin template folders are appended after the builtin ``templates/``, so
-    builtin names win on collision and plugin pages are found by their slug.
-    Called once per plugin at registry build time.
+    Called at startup and on plugin hot reload, so added/removed plugin
+    template dirs take effect without a restart. Builtin ``templates/`` always
+    comes first and wins on name collisions.
     """
-    if not path or not os.path.isdir(str(path)):
-        return
     from jinja2 import ChoiceLoader, FileSystemLoader
 
-    loader = FileSystemLoader(str(path))
-    current = templates.env.loader
-    templates.env.loader = ChoiceLoader([current, loader]) if current else loader
+    loaders = [FileSystemLoader(TEMPLATES_DIR)]
+    for d in dirs or ():
+        if os.path.isdir(str(d)):
+            loaders.append(FileSystemLoader(str(d)))
+    templates.env.loader = ChoiceLoader(loaders)
 
 _SAFE_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 

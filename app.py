@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -138,6 +138,31 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_periodic_cleanup())
 
+    # Optional plugin hot reload on file change (PLUGIN_AUTO_RELOAD=1).
+    # Off by default: route swaps happen in a background thread between requests.
+    plugin_watch_task: Optional[asyncio.Task] = None
+    if (os.environ.get("PLUGIN_AUTO_RELOAD") or "").strip().lower() in (
+        "1",
+        "true",
+        "on",
+        "yes",
+    ):
+        async def _plugin_watcher() -> None:
+            last = _plugin_fingerprint()
+            while True:
+                await asyncio.sleep(3)
+                try:
+                    snap = _plugin_fingerprint()
+                    if snap != last:
+                        last = snap
+                        await asyncio.to_thread(hot_reload_plugins)
+                        logger.info("plugin hot reload applied (files changed)")
+                except Exception:
+                    logger.warning("plugin watcher failed", exc_info=True)
+
+        plugin_watch_task = asyncio.create_task(_plugin_watcher())
+        logger.info("plugin auto-reload watcher enabled")
+
     # Probe LibreOffice / OCR off the request path so admin dashboard is snappy.
     try:
         from admin.routes import schedule_health_warm
@@ -152,6 +177,8 @@ async def lifespan(app: FastAPI):
         shutdown_pools(wait=False)
         if cleanup_task is not None:
             cleanup_task.cancel()
+        if plugin_watch_task is not None:
+            plugin_watch_task.cancel()
         # Release cached SQLite connections.
         try:
             from storage.express import close_db_connections as close_express
@@ -236,24 +263,111 @@ register_middleware(app)
 
 
 
+# ---------------------------------------------------------------------------
+# Plugin runtime: routers / static / templates are installed through a mutable
+# container so hot reload (admin「插件重载」, or PLUGIN_AUTO_RELOAD watcher) can
+# swap plugins without restarting the app.
+# ---------------------------------------------------------------------------
+_installed_plugin_routes: list = []
+_mounted_plugin_static: set = set()
+
+
+def install_plugin_routes(app) -> None:
+    """(Re)install the current plugin routers onto ``app``.
+
+    Previously installed plugin routes are removed by identity, then the fresh
+    set is included under a new container router. Safe to call repeatedly.
+    """
+    global _installed_plugin_routes
+    app.router.routes[:] = [
+        r for r in app.router.routes if r not in _installed_plugin_routes
+    ]
+    from core.plugins import get_plugin_discovery
+
+    routers = get_plugin_discovery().routers
+    if not routers:
+        _installed_plugin_routes = []
+        return
+    container = APIRouter()
+    for r in routers:
+        container.include_router(r)
+    before = len(app.router.routes)
+    app.include_router(container)
+    _installed_plugin_routes = list(app.router.routes[before:])
+    app.openapi_schema = None  # force OpenAPI schema regeneration
+
+
+def mount_plugin_statics(app) -> None:
+    """Mount static dirs for plugins not yet mounted (idempotent)."""
+    global _mounted_plugin_static
+    from core.plugins import get_plugin_static_mounts
+
+    for slug, static_path in get_plugin_static_mounts():
+        key = f"/plugins/{slug}/static"
+        if key in _mounted_plugin_static:
+            continue
+        app.mount(key, StaticFiles(directory=str(static_path)), name=f"plugin-{slug}")
+        _mounted_plugin_static.add(key)
+
+
+def hot_reload_plugins():
+    """Re-discover plugins and swap registry, routes, templates and static.
+
+    Called from the admin「插件重载」button and (optionally) the file watcher.
+    Returns the new PluginDiscovery. Never raises for plugin-level failures.
+    """
+    from tools import refresh_plugins_registry
+
+    disc = refresh_plugins_registry()
+    install_plugin_routes(app)
+    mount_plugin_statics(app)
+    try:
+        from admin._common import bust_health_cache
+
+        bust_health_cache()
+    except Exception:
+        pass
+    return disc
+
+
+def _plugin_fingerprint():
+    """Snapshot of plugin files for the optional auto-reload watcher."""
+    from core.plugins import plugins_dir
+
+    root = plugins_dir()
+    if not root.is_dir():
+        return None
+    parts = []
+    try:
+        for p in root.rglob("*"):
+            if "__pycache__" in p.parts:
+                continue
+            try:
+                st = p.stat()
+                parts.append(
+                    (p.relative_to(root).as_posix(), st.st_mtime_ns, st.st_size)
+                )
+            except OSError:
+                continue
+    except OSError:
+        return None
+    return tuple(sorted(parts))
+
+
 # Static assets (shared CSS, etc.)
 static_dir = os.path.join(BASE_DIR, "static")
 if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Plugin static assets, mounted at /plugins/<slug>/static (see core.plugins).
-from core.plugins import get_plugin_static_mounts
+# Plugin static assets (mounts grow on hot reload; idempotent).
+mount_plugin_statics(app)
 
-for plugin_slug, plugin_static in get_plugin_static_mounts():
-    app.mount(
-        f"/plugins/{plugin_slug}/static",
-        StaticFiles(directory=str(plugin_static)),
-        name=f"plugin-{plugin_slug}",
-    )
-
-# Register all tool routers
+# Register all builtin tool routers (plugins install via the container below).
 for router in TOOL_ROUTERS:
     app.include_router(router)
+
+# Install plugin routers after the builtin ones (startup; reload swaps later).
+install_plugin_routes(app)
 
 # Admin console (password-protected)
 app.include_router(admin_router)

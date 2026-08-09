@@ -28,6 +28,7 @@ import importlib
 import logging
 import os
 import re
+import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,9 +132,36 @@ def _load_plugin(name: str, base: Path) -> Any:
     return importlib.import_module(f"plugins.{name}")
 
 
+def _purge_plugin_modules(names: List[str]) -> None:
+    """Drop previously imported plugin modules so a hot reload re-executes them."""
+    for name in names:
+        prefix = f"plugins.{name}"
+        for modname in [
+            m for m in list(sys.modules) if m == prefix or m.startswith(prefix + ".")
+        ]:
+            del sys.modules[modname]
+    if names:
+        importlib.invalidate_caches()
+
+
+def _purge_bytecode(pkg_dirs) -> None:
+    """Delete ``__pycache__`` for plugin dirs.
+
+    Required for reliable hot reload: an in-place edit that keeps the file
+    size identical (e.g. only a digit changes) can leave a stale ``.pyc`` that
+    Python reuses when the filesystem timestamp tick does not change, so a
+    re-import would serve the old bytecode.
+    """
+    for d in pkg_dirs:
+        pycache = d / "__pycache__"
+        if pycache.is_dir():
+            shutil.rmtree(pycache, ignore_errors=True)
+
+
 def discover_plugins(
     reserved_slugs: Optional[set] = None,
     base: Optional[Path] = None,
+    force: bool = False,
 ) -> PluginDiscovery:
     """Scan ``PLUGINS_DIR`` and load every valid plugin.
 
@@ -141,11 +169,25 @@ def discover_plugins(
     must not shadow; colliding plugins are skipped with a logged error. When
     ``base`` is omitted the real ``PLUGINS_DIR`` is used and the result is
     cached for ``get_plugin_*`` consumers.
+
+    ``force=True`` purges previously imported plugin modules (including their
+    submodules) from ``sys.modules`` first, so edited plugin code is re-executed
+    on the next request — the hot-reload path.
     """
     out = PluginDiscovery()
+    global _discovery  # read in the force-purge path, written when base is None
     reserved = set(reserved_slugs or ())
     used: set = set()
     scan_base = base if base is not None else plugins_dir()
+
+    if force:
+        pkg_dirs = _candidate_dirs(scan_base)
+        prev_names = (
+            [s.name for s in _discovery.statuses] if _discovery is not None else []
+        )
+        purge_names = sorted(set(prev_names) | {p.name for p in pkg_dirs})
+        _purge_plugin_modules(purge_names)
+        _purge_bytecode(pkg_dirs)
 
     for pkg_dir in _candidate_dirs(scan_base):
         name = pkg_dir.name
@@ -214,6 +256,5 @@ def discover_plugins(
             out.static_mounts.append((slug, static_dir))
 
     if base is None:
-        global _discovery
         _discovery = out
     return out

@@ -285,6 +285,8 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
 
 # Routers to mount on the FastAPI app (order does not matter).
 # code_format first; json_legacy only provides 308 redirects for old URLs.
+# NOTE: plugin routers are intentionally NOT merged here — app.py mounts them
+# through a dedicated container so hot reload can swap routes without restart.
 TOOL_ROUTERS = (
     pdf2word_router,
     word2pdf_router,
@@ -304,22 +306,6 @@ TOOL_ROUTERS = (
     image_grid_router,
     express_router,
 )
-
-# ---------------------------------------------------------------------------
-# Plugins (optional): merge discovered plugins into the registry / routers.
-# A broken or conflicting plugin is skipped (see core.plugins) — the app
-# always starts with the builtin tools regardless.
-# ---------------------------------------------------------------------------
-from core.plugins import discover_plugins
-
-_PLUGINS = discover_plugins(reserved_slugs={str(t["slug"]) for t in TOOL_REGISTRY})
-if _PLUGINS.entries:
-    TOOL_REGISTRY = TOOL_REGISTRY + _PLUGINS.entries
-    TOOL_ROUTERS = tuple(TOOL_ROUTERS) + tuple(_PLUGINS.routers)
-    from tools.common import add_template_dir
-
-    for tpl_dir in _PLUGINS.template_dirs:
-        add_template_dir(tpl_dir)
 
 
 def is_featured_tool(tool: Dict[str, Any] | None) -> bool:
@@ -499,6 +485,38 @@ def clear_public_snapshot() -> None:
     global _snap_cache, _snap_key
     _snap_cache = None
     _snap_key = None
+
+
+# ---------------------------------------------------------------------------
+# Plugins (optional): merge discovered plugins into the public registry.
+# Plugin ROUTERS are NOT merged into TOOL_ROUTERS — app.py mounts them through
+# a dedicated container so hot reload can swap routes without a restart.
+# A broken or conflicting plugin is skipped (see core.plugins) — the app
+# always starts with the builtin tools regardless.
+# ---------------------------------------------------------------------------
+from core.plugins import PluginDiscovery, discover_plugins
+
+_BUILTIN_REGISTRY: List[Dict[str, Any]] = TOOL_REGISTRY
+_BUILTIN_SLUGS = {str(t["slug"]) for t in _BUILTIN_REGISTRY}
+
+
+def refresh_plugins_registry() -> PluginDiscovery:
+    """(Re)discover plugins and rebind ``TOOL_REGISTRY`` + public snapshot.
+
+    Used both at startup and by the admin hot-reload endpoint. ``force=True``
+    re-executes changed plugin modules; the builtin registry is untouched.
+    """
+    global TOOL_REGISTRY
+    disc = discover_plugins(reserved_slugs=_BUILTIN_SLUGS, force=True)
+    TOOL_REGISTRY = _BUILTIN_REGISTRY + disc.entries
+    clear_public_snapshot()
+    from tools.common import set_plugin_template_dirs
+
+    set_plugin_template_dirs(disc.template_dirs)
+    return disc
+
+
+_PLUGINS = refresh_plugins_registry()
 
 
 __all__ = [

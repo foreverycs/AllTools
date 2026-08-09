@@ -33,7 +33,7 @@ def plugin_base(tmp_path, monkeypatch):
 
 def _write_plugin(base: Path, name: str, source: str, *, static: bool = False):
     d = base / name
-    d.mkdir()
+    d.mkdir(exist_ok=True)
     (d / "__init__.py").write_text(source, encoding="utf-8")
     if static:
         (d / "static").mkdir()
@@ -164,3 +164,118 @@ def test_plugin_registered_end_to_end():
 
     tools = client.get("/api/tools").json()
     assert any(t["slug"] == "text-lines" for t in tools["tools"])
+
+
+def test_discover_force_reloads_changed_module(plugin_base):
+    _write_plugin(plugin_base, "vplug", GOOD_PLUGIN + '\nPLUGIN_VERSION = "1"\n')
+    out1 = discover_plugins(reserved_slugs=set(), base=plugin_base)
+    assert out1.statuses[0].version == "1"
+
+    # In-place edit that keeps the file size identical (a known .pyc-cache trap
+    # on coarse-timestamp filesystems): force reload must serve the new code.
+    _write_plugin(plugin_base, "vplug", GOOD_PLUGIN + '\nPLUGIN_VERSION = "2"\n')
+    out2 = discover_plugins(reserved_slugs=set(), base=plugin_base, force=True)
+    assert out2.statuses[0].version == "2"
+
+
+def test_install_plugin_routes_swaps_on_reload(monkeypatch):
+    from fastapi import APIRouter, FastAPI
+    from fastapi.responses import JSONResponse
+    from starlette.testclient import TestClient
+
+    import app as app_mod
+    import core.plugins as plugins_mod
+    from core.plugins import PluginDiscovery
+
+    def make_router(slug):
+        r = APIRouter()
+
+        @r.get(f"/{slug}")
+        async def h():
+            return JSONResponse({"slug": slug})
+
+        return r
+
+    disc1 = PluginDiscovery()
+    disc1.routers.append(make_router("one"))
+    monkeypatch.setattr(plugins_mod, "_discovery", disc1)
+
+    mini = FastAPI()
+    saved_routes = app_mod._installed_plugin_routes
+    app_mod._installed_plugin_routes = []
+    try:
+        app_mod.install_plugin_routes(mini)
+        c = TestClient(mini)
+        assert c.get("/one").status_code == 200
+        assert c.get("/two").status_code == 404
+
+        # Swap discovery and re-install: old route gone, new route live.
+        disc2 = PluginDiscovery()
+        disc2.routers.append(make_router("two"))
+        monkeypatch.setattr(plugins_mod, "_discovery", disc2)
+        app_mod.install_plugin_routes(mini)
+        assert c.get("/one").status_code == 404
+        assert c.get("/two").status_code == 200
+    finally:
+        app_mod._installed_plugin_routes = saved_routes
+
+
+HOT_PLUGIN = """\
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
+
+TOOL = {"slug": "hotplug", "name": "热插拔", "category": "text", "description": "d"}
+router = APIRouter(prefix="/tools/hotplug", tags=["hotplug"])
+
+
+@router.get("", response_class=HTMLResponse)
+async def page():
+    return HTMLResponse("<h1>hot</h1>")
+"""
+
+
+def test_hot_reload_plugins_end_to_end(tmp_path, monkeypatch):
+    """Add/remove plugins via hot_reload_plugins without restarting the app."""
+    import shutil
+
+    from fastapi.testclient import TestClient
+
+    import app as app_mod
+    import core.plugins as plugins_mod
+    from tools import get_tool_by_slug
+
+    real_pkg = sys.modules.get("plugins")
+    real_dir = plugins_mod.plugins_dir()
+
+    base = tmp_path / "plugins"
+    base.mkdir()
+    fake = types.ModuleType("plugins")
+    fake.__path__ = [str(base)]
+    monkeypatch.setitem(sys.modules, "plugins", fake)
+    monkeypatch.setenv("PLUGINS_DIR", str(base))
+    _write_plugin(base, "hotplug", HOT_PLUGIN)
+
+    try:
+        disc = app_mod.hot_reload_plugins()
+        assert any(s.slug == "hotplug" and s.loaded for s in disc.statuses)
+        assert get_tool_by_slug("hotplug") is not None
+        assert get_tool_by_slug("text-lines") is None
+
+        client = TestClient(app_mod.app)
+        assert client.get("/tools/hotplug").status_code == 200
+        assert client.get("/tools/text-lines").status_code == 404
+
+        # Remove the plugin directory and reload → route disappears.
+        shutil.rmtree(base / "hotplug")
+        disc2 = app_mod.hot_reload_plugins()
+        assert get_tool_by_slug("hotplug") is None
+        assert client.get("/tools/hotplug").status_code == 404
+    finally:
+        # Restore the bundled plugins so other tests are unaffected.
+        if real_pkg is not None:
+            sys.modules["plugins"] = real_pkg
+        else:
+            sys.modules.pop("plugins", None)
+        monkeypatch.setenv("PLUGINS_DIR", str(real_dir))
+        app_mod.hot_reload_plugins()
+        assert get_tool_by_slug("text-lines") is not None

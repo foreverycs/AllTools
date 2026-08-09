@@ -97,8 +97,14 @@
 
 <div class="admin-panel" style="margin-top:16px">
   <div class="admin-panel-h">
-    <span class="admin-panel-h-icon" style="--ic:#7c3aed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
-    插件（{{ plugins|length }}）
+    <span style="display:inline-flex;align-items:center;gap:8px">
+      <span class="admin-panel-h-icon" style="--ic:#7c3aed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+      插件（{{ plugins|length }}）
+    </span>
+    <form method="post" action="{{ url_path('/admin/plugins/reload') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="admin-btn">热重载插件</button>
+    </form>
   </div>
   {% if plugins %}
   <div class="admin-table-wrap">
