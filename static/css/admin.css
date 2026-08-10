@@ -1263,3 +1263,201 @@ form.inline { display: inline; margin: 0; }
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
+
+/* ============================================
+   Homepage-style polish — indigo → cyan gradients,
+   neon glows, deeper glass (matches home pill-nav)
+   ============================================ */
+
+/* Ambient glows: indigo + cyan like the homepage hero */
+.admin-body::before {
+  background:
+    radial-gradient(circle at 22% 18%, rgba(99, 102, 241, 0.26), transparent 52%),
+    radial-gradient(circle at 78% 28%, rgba(34, 211, 238, 0.14), transparent 44%);
+}
+.admin-body::after {
+  background: radial-gradient(circle at 72% 92%, rgba(168, 85, 247, 0.12), transparent 55%);
+}
+html.light-mode .admin-body::before {
+  background:
+    radial-gradient(circle at 22% 18%, rgba(99, 102, 241, 0.12), transparent 52%),
+    radial-gradient(circle at 78% 28%, rgba(34, 211, 238, 0.08), transparent 44%);
+}
+html.light-mode .admin-body::after {
+  background: radial-gradient(circle at 72% 92%, rgba(168, 85, 247, 0.06), transparent 55%);
+}
+
+/* Sidebar: deep glass with indigo/cyan aurora + neon edge */
+.admin-side {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(99, 102, 241, 0.22), transparent 46%),
+    radial-gradient(circle at 95% 100%, rgba(34, 211, 238, 0.13), transparent 50%),
+    linear-gradient(180deg, rgba(13, 18, 32, 0.92), rgba(8, 11, 22, 0.97));
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow:
+    inset -1px 0 0 rgba(129, 140, 248, 0.16),
+    inset 0 0 0 1px rgba(99, 102, 241, 0.07),
+    0 0 40px rgba(99, 102, 241, 0.08);
+}
+html.light-mode .admin-side {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(99, 102, 241, 0.13), transparent 46%),
+    radial-gradient(circle at 95% 100%, rgba(34, 211, 238, 0.10), transparent 50%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(245, 247, 252, 0.86));
+  box-shadow:
+    inset -1px 0 0 rgba(99, 102, 241, 0.14),
+    0 0 40px rgba(99, 102, 241, 0.06);
+}
+/* Light-mode sidebar text contrast on the frosted white */
+html.light-mode .admin-side { color: #1e293b; }
+html.light-mode .admin-side .admin-brand { color: #0f172a; }
+html.light-mode .admin-side .admin-brand-sub { color: #94a3b8; }
+html.light-mode .admin-side .admin-brand-name {
+  background: linear-gradient(120deg, #0f172a, #4f46e5 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+html.light-mode .admin-nav a { color: #475569; }
+html.light-mode .admin-nav a:hover {
+  color: #1e293b;
+  background: rgba(99, 102, 241, 0.08);
+}
+html.light-mode .admin-side-foot a,
+html.light-mode .admin-side-foot button { color: #64748b; }
+html.light-mode .admin-side-foot a:hover,
+html.light-mode .admin-side-foot button:hover {
+  color: #1e293b;
+  background: rgba(99, 102, 241, 0.08);
+}
+html.light-mode .admin-side-close { color: #64748b; background: rgba(99, 102, 241, 0.08); }
+html.light-mode .admin-side-close:hover { color: #1e293b; background: rgba(99, 102, 241, 0.14); }
+html.light-mode .admin-theme-toggle { color: #64748b; }
+
+/* Brand mark: indigo → cyan gradient + dual glow */
+.admin-brand-mark,
+.admin-topbar-mark {
+  background: linear-gradient(135deg, #6366f1 0%, #22d3ee 100%);
+  box-shadow:
+    0 4px 18px rgba(99, 102, 241, 0.5),
+    0 0 26px rgba(34, 211, 238, 0.25);
+}
+html.light-mode .admin-brand-mark,
+html.light-mode .admin-topbar-mark {
+  box-shadow:
+    0 4px 14px rgba(99, 102, 241, 0.35),
+    0 0 18px rgba(34, 211, 238, 0.18);
+}
+
+/* Nav active: solid indigo→cyan pill + neon ring */
+.admin-nav a.active {
+  background: linear-gradient(135deg, #6366f1, #22d3ee);
+  color: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 2px 12px rgba(99, 102, 241, 0.35),
+    0 0 20px rgba(34, 211, 238, 0.22);
+}
+.admin-nav a.active:hover { color: #fff; }
+.admin-nav a.active::before {
+  background: linear-gradient(180deg, #818cf8, #22d3ee);
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.8);
+}
+
+/* Header title: indigo → cyan text gradient */
+.admin-header h1 {
+  background: linear-gradient(120deg, var(--ink) 30%, #6366f1 66%, #22d3ee 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Primary buttons: indigo → cyan */
+.admin-btn-primary {
+  background: linear-gradient(135deg, #6366f1, #22d3ee);
+  box-shadow:
+    0 2px 12px rgba(99, 102, 241, 0.35),
+    0 0 18px rgba(34, 211, 238, 0.16);
+}
+.admin-btn-primary:hover {
+  box-shadow:
+    0 4px 20px rgba(99, 102, 241, 0.45),
+    0 0 26px rgba(34, 211, 238, 0.22);
+}
+
+/* Toggle switch: indigo → cyan when on */
+.admin-switch-input:checked + .admin-switch-ui {
+  background: linear-gradient(135deg, #6366f1, #22d3ee);
+  box-shadow:
+    0 0 10px rgba(99, 102, 241, 0.45),
+    0 0 16px rgba(34, 211, 238, 0.3);
+}
+
+/* Stat card #1 + all hover: cyan-tinted glow */
+.admin-stat:nth-child(1)::before { background: linear-gradient(90deg, #6366f1, #22d3ee); }
+.admin-stat:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow:
+    0 6px 24px rgba(15, 23, 42, 0.10),
+    0 0 24px rgba(99, 102, 241, 0.10);
+}
+
+/* Panels: faint indigo→cyan top line + neon hover */
+.admin-panel { position: relative; }
+.admin-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0),
+    rgba(99, 102, 241, 0.40) 40%,
+    rgba(34, 211, 238, 0.30) 80%,
+    rgba(34, 211, 238, 0)
+  );
+  opacity: 0.75;
+  pointer-events: none;
+}
+.admin-panel:hover {
+  border-color: rgba(129, 140, 248, 0.35);
+  box-shadow:
+    0 6px 24px rgba(15, 23, 42, 0.08),
+    0 0 26px rgba(99, 102, 241, 0.10);
+}
+
+/* Badges: soft gradient fills */
+.admin-badge {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(34, 211, 238, 0.12));
+}
+.admin-badge.ok {
+  background: linear-gradient(135deg, rgba(5, 150, 105, 0.16), rgba(52, 211, 153, 0.12));
+}
+.admin-badge.warn {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.16), rgba(251, 191, 36, 0.12));
+}
+.admin-badge.err {
+  background: linear-gradient(135deg, rgba(185, 28, 28, 0.16), rgba(248, 113, 113, 0.12));
+}
+
+/* Mobile topbar: stronger glass + cyan-tinted underline */
+.admin-topbar {
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.18);
+}
+
+/* Theme toggle hover: dual glow */
+.admin-theme-toggle:hover {
+  box-shadow:
+    0 0 14px rgba(99, 102, 241, 0.45),
+    0 0 26px rgba(34, 211, 238, 0.20);
+}
+
+/* Nav icons: cyan tint on the active item */
+.admin-nav a.active .admin-nav-icon { color: rgba(255, 255, 255, 0.9); }
