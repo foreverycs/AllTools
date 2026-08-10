@@ -11,13 +11,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from admin._common import (
     _admin_url,
-    _build_health,
     _redirect,
     _tpl,
     admin_post,
     get_cached_health,
 )
 from admin.auth import is_admin, require_admin
+from core.health import get_health_snapshot
 from core.plugins import get_plugin_statuses
 from core.settings import dotenv_status, get_settings
 from storage import (
@@ -25,7 +25,7 @@ from storage import (
     retention_days,
     storage_stats,
 )
-from tools import TOOL_REGISTRY, tools_by_category
+from tools import get_registry, tools_by_category
 
 router = APIRouter(tags=["admin"])
 
@@ -61,7 +61,7 @@ async def system_page(request: Request):
     # Prefer warm cache; only probe synchronously if still cold after startup warm.
     health = get_cached_health()
     if health is None:
-        health = _build_health()
+        health = get_health_snapshot(force=True)
 
     return _tpl(
         request,
@@ -69,7 +69,7 @@ async def system_page(request: Request):
         active="system",
         health=health,
         stats=storage_stats(),
-        tools=TOOL_REGISTRY,
+        tools=get_registry(),
         categories=tools_by_category(include_disabled=True),
         tool_flags=flags_status(),
         plugins=get_plugin_statuses(),
@@ -94,7 +94,7 @@ async def api_stats(request: Request):
     return JSONResponse(
         {
             "storage": storage_stats(),
-            "health": _build_health(),
+            "health": get_health_snapshot(),
             "tool_flags": flags_status(),
         }
     )

@@ -1,13 +1,13 @@
 """Shared helpers for the admin console routers.
 
-Holds the template/redirect helpers, the engine-health cache with its background
-warm thread, the upload-preview conversion helpers, and small utilities used by
-the per-domain route modules under ``admin/routes_*.py``.
+Holds the template/redirect helpers, the upload-preview conversion helpers,
+and small utilities used by the per-domain route modules under
+``admin/routes_*.py``. The engine/OCR health snapshot lives in
+``core.health`` (shared with /health) and is re-exported here.
 """
 
 from __future__ import annotations
 
-import time
 from functools import wraps
 from pathlib import Path
 from typing import Optional, Tuple
@@ -25,17 +25,15 @@ from admin.csrf import (
     verify_csrf,
 )
 from core.errors import ToolkitError
+from core.health import (
+    bust_health_cache,  # noqa: F401 (re-export for admin route modules)
+    get_cached_health,  # noqa: F401 (re-export for admin route modules)
+    schedule_health_warm,  # noqa: F401 (re-export for admin route modules)
+)
 from core.version import __version__
-from tools import TOOL_REGISTRY
 from tools.common import templates
 
 # NOTE: tags list closes with ], then APIRouter call closes with )
-
-# Cached health info — engines don't change at runtime
-_health_cache: dict = {}
-_health_cache_ts: float = 0.0
-_HEALTH_TTL: float = 300.0
-_health_warming: bool = False
 
 
 def _tpl(request: Request, name: str, **ctx):
@@ -109,77 +107,8 @@ def _admin_url(path: str, request: Optional[Request] = None) -> str:
     return url_path(path, request)
 
 
-def get_cached_health() -> Optional[dict]:
-    """Return warm health snapshot without probing engines (may be None)."""
-    if not _health_cache:
-        return None
-    if time.monotonic() - _health_cache_ts >= _HEALTH_TTL:
-        return None
-    return _health_cache
-
-
-def schedule_health_warm() -> None:
-    """Fire-and-forget engine probe so the first admin click is not blocked."""
-    global _health_warming
-    if _health_warming:
-        return
-    if get_cached_health() is not None:
-        return
-    _health_warming = True
-
-    def _run() -> None:
-        global _health_warming
-        try:
-            _build_health(force=True)
-        except Exception:
-            pass
-        finally:
-            _health_warming = False
-
-    import threading
-
-    threading.Thread(target=_run, name="admin-health-warm", daemon=True).start()
-
-
-def _build_health(*, force: bool = False) -> dict:
-    global _health_cache, _health_cache_ts
-    now = time.monotonic()
-    if (
-        not force
-        and _health_cache
-        and now - _health_cache_ts < _HEALTH_TTL
-    ):
-        return _health_cache
-    from word2pdf import engine_info
-    from converter import ocr_info
-
-    from core.tool_flags import flags_status
-    from tools import tools_by_category
-
-    w2p = engine_info(force=force)
-    ocr = ocr_info()
-    flags = flags_status()
-    _health_cache = {
-        "word2pdf": w2p,
-        "ocr": ocr,
-        "tools": flags["enabled_count"],
-        "tools_registered": len(TOOL_REGISTRY),
-        "tools_disabled": len(flags["disabled"]),
-        "categories": len(tools_by_category()),
-    }
-    _health_cache_ts = now
-    return _health_cache
-
-
-def bust_health_cache() -> None:
-    """Invalidate the cached engine-health snapshot (after flag/category edits)."""
-    global _health_cache, _health_cache_ts
-    _health_cache = {}
-    _health_cache_ts = 0.0
-
-
 def _bust_public_and_health() -> None:
-    """Invalidate the public catalog snapshot and admin health caches."""
+    """Invalidate the public catalog snapshot and the shared health cache."""
     from tools import clear_public_snapshot
 
     clear_public_snapshot()

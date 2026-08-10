@@ -24,7 +24,7 @@ from admin.routes_system import router as system_router
 from admin.routes_tools import router as tools_router
 from admin.routes_uploads import router as uploads_router
 from storage import list_records, storage_stats
-from tools import TOOL_REGISTRY, tools_by_category
+from tools import get_registry, tools_by_category
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(auth_router)
@@ -55,7 +55,7 @@ async def dashboard(request: Request):
         health=health,
         health_pending=health is None,
         recent=list_records(limit=8),
-        tools=TOOL_REGISTRY,
+        tools=get_registry(),
         categories=tools_by_category(include_disabled=True),
     )
 

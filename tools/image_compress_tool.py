@@ -220,6 +220,10 @@ async def api_compress_info(
 ):
     """Compress and return JSON stats + base64 preview is intentionally omitted
     (files may be large). Use ``/compress`` to download the result.
+
+    The upload is spooled to disk and read inside ``run_heavy`` (worker thread
+    or process), so large payloads are never read fully into memory on the
+    event loop.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
@@ -229,36 +233,30 @@ async def api_compress_info(
     side = _parse_max_side(max_side)
     check_upload_size_header(file)
 
-    raw = await file.read()
-    limit = None
+    ws = TempWorkspace(prefix="imgc_")
     try:
-        from tools.common import max_upload_bytes
-
-        limit = max_upload_bytes()
-        if len(raw) > limit:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large (max {limit // (1024 * 1024)} MB)",
-            )
-    except HTTPException:
-        raise
-
-    if not raw:
-        raise HTTPException(status_code=400, detail="Empty file")
-
-    try:
+        work = ws.create()
+        in_path = os.path.join(work, "input.bin")
+        await save_upload(file, in_path)
         result = await run_heavy(
-            compress_image,
-            raw,
+            _compress_file,
+            in_path,
             filename=file.filename,
             quality=q,
             strip_meta=strip,
             max_side=side,
+            file_size=os.path.getsize(in_path),
         )
+    except HTTPException:
+        ws.cleanup_now()
+        raise
     except CompressError as exc:
+        ws.cleanup_now()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        ws.cleanup_now()
         raise map_conversion_error(exc, label="Image compression failed") from exc
+    ws.cleanup_now()
 
     # Do not echo binary in JSON.
     body = {k: v for k, v in result.items() if k != "data"}

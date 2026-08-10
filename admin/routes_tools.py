@@ -17,7 +17,7 @@ from core.tool_flags import (
     save_tool_flags,
     set_tool_enabled,
 )
-from tools import TOOL_REGISTRY, tools_by_category
+from tools import get_registry, tools_by_category
 
 router = APIRouter(tags=["admin"])
 
@@ -47,7 +47,7 @@ async def tools_flags_page(request: Request):
         flags=flags,
         flags_meta=flags_status(),
         flash=request.query_params.get("msg"),
-        total=len(TOOL_REGISTRY),
+        total=len(get_registry()),
         enabled_count=sum(1 for v in flags.values() if v),
     )
 
@@ -68,7 +68,7 @@ async def tools_flags_save(
     }
     enabled_map = {
         str(t.get("slug") or ""): str(t.get("slug") or "") in enabled_slugs
-        for t in TOOL_REGISTRY
+        for t in get_registry()
         if t.get("slug")
     }
     save_tool_flags(enabled_map)

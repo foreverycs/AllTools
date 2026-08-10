@@ -26,7 +26,7 @@ from core.tool_catalog import (
     save_assignments,
     save_catalog,
 )
-from tools import TOOL_REGISTRY, get_tool_by_slug
+from tools import get_registry, get_tool_by_slug
 
 router = APIRouter(tags=["admin"])
 
@@ -40,7 +40,7 @@ async def categories_page(request: Request):
 
     cats = get_categories()
     tools = []
-    for t in TOOL_REGISTRY:
+    for t in get_registry():
         slug = str(t.get("slug") or "")
         if not slug:
             continue
@@ -126,7 +126,7 @@ async def categories_assignments_save(
     form = await request.form()
     valid_ids = {c["id"] for c in get_categories()}
     assignments = {}
-    for t in TOOL_REGISTRY:
+    for t in get_registry():
         slug = str(t.get("slug") or "")
         if not slug:
             continue

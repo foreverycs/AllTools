@@ -435,6 +435,17 @@ def get_tool_by_slug(slug: str) -> Dict[str, Any] | None:
     return None
 
 
+def get_registry() -> List[Dict[str, Any]]:
+    """Return the CURRENT registry (builtin tools + loaded plugins).
+
+    Prefer this over ``from tools import TOOL_REGISTRY`` in modules that outlive
+    a plugin hot reload: ``refresh_plugins_registry`` REBINDS the module-level
+    name, so an earlier ``from ... import`` keeps a stale list object. Reading
+    ``tools.TOOL_REGISTRY`` (module attribute) at call time also works.
+    """
+    return TOOL_REGISTRY
+
+
 # Public-catalog snapshot cache, keyed by the disabled-slug set (itself cached
 # by tool_flags.json mtime). Rebuilt only when admin enable/disable changes, so
 # hot paths (homepage / /api/tools / /health) avoid per-request list rebuilds.
@@ -529,6 +540,7 @@ __all__ = [
     "tools_by_category",
     "nav_categories",
     "get_tool_by_slug",
+    "get_registry",
     "public_snapshot",
     "clear_public_snapshot",
     "pdf2word_router",

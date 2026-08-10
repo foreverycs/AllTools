@@ -27,8 +27,8 @@ from storage import (
 from admin import admin_router
 from admin.auth import is_admin
 from tools import (
-    TOOL_REGISTRY,
     TOOL_ROUTERS,
+    get_registry,
     nav_categories,
 )
 from tools.common import build_tools_catalog, content_disposition, templates
@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
     logger.info(
         "toolkit started version=%s tools=%s",
         __version__,
-        len(TOOL_REGISTRY),
+        len(get_registry()),
     )
 
     # Periodic housekeeping off the request path: history cleanup is already
@@ -270,8 +270,13 @@ register_middleware(app)
 # container so hot reload (admin「插件重载」, or PLUGIN_AUTO_RELOAD watcher) can
 # swap plugins without restarting the app.
 # ---------------------------------------------------------------------------
+import threading
+
 _installed_plugin_routes: list = []
 _mounted_plugin_static: set = set()
+# Serialize plugin route swaps: hot reload runs in a background thread while
+# requests match routes concurrently.
+_plugin_route_lock = threading.RLock()
 
 
 def install_plugin_routes(app) -> None:
@@ -279,24 +284,31 @@ def install_plugin_routes(app) -> None:
 
     Previously installed plugin routes are removed by identity, then the fresh
     set is included under a new container router. Safe to call repeatedly.
+
+    The route list is REBUILT as a new list and swapped atomically: Starlette
+    iterates ``router.routes`` while dispatching requests, so an in-place
+    mutation could race with an in-flight request (stale index / mixed routes).
+    Assigning a fresh list object leaves any current reader iterating the old
+    list undisturbed.
     """
     global _installed_plugin_routes
-    app.router.routes[:] = [
-        r for r in app.router.routes if r not in _installed_plugin_routes
-    ]
-    from core.plugins import get_plugin_discovery
+    with _plugin_route_lock:
+        from core.plugins import get_plugin_discovery
 
-    routers = get_plugin_discovery().routers
-    if not routers:
-        _installed_plugin_routes = []
-        return
-    container = APIRouter()
-    for r in routers:
-        container.include_router(r)
-    before = len(app.router.routes)
-    app.include_router(container)
-    _installed_plugin_routes = list(app.router.routes[before:])
-    app.openapi_schema = None  # force OpenAPI schema regeneration
+        base = [
+            r for r in app.router.routes if r not in _installed_plugin_routes
+        ]
+        routers = get_plugin_discovery().routers
+        if routers:
+            container = APIRouter()
+            for r in routers:
+                container.include_router(r)
+            base = base + list(container.routes)
+            _installed_plugin_routes = list(container.routes)
+        else:
+            _installed_plugin_routes = []
+        app.router.routes = base  # single atomic swap
+        app.openapi_schema = None  # force OpenAPI schema regeneration
 
 
 def mount_plugin_statics(app) -> None:
@@ -317,19 +329,23 @@ def hot_reload_plugins():
 
     Called from the admin「插件重载」button and (optionally) the file watcher.
     Returns the new PluginDiscovery. Never raises for plugin-level failures.
+
+    The whole reload holds ``_plugin_route_lock`` so concurrent reloads (admin
+    click + file watcher) cannot interleave registry purges / route swaps.
     """
-    from tools import refresh_plugins_registry
+    with _plugin_route_lock:
+        from tools import refresh_plugins_registry
 
-    disc = refresh_plugins_registry()
-    install_plugin_routes(app)
-    mount_plugin_statics(app)
-    try:
-        from admin._common import bust_health_cache
+        disc = refresh_plugins_registry()
+        install_plugin_routes(app)
+        mount_plugin_statics(app)
+        try:
+            from core.health import bust_health_cache
 
-        bust_health_cache()
-    except Exception:
-        pass
-    return disc
+            bust_health_cache()
+        except Exception:
+            pass
+        return disc
 
 
 def _plugin_fingerprint():
@@ -518,7 +534,12 @@ _HEALTH_DETAIL_TTL: float = 60.0
 
 
 def _health_details(*, force: bool = False) -> dict:
-    """Engine/OCR/storage snapshot; cached so probes stay cheap."""
+    """Engine/OCR/storage snapshot; cached so probes stay cheap.
+
+    The engine/OCR portion is sourced from the shared ``core.health`` snapshot
+    (single cache, also used by the admin console); storage/jobs/rate settings
+    are cheap and kept fresh on the local TTL.
+    """
     global _health_detail_cache, _health_detail_ts
     import time
 
@@ -530,11 +551,10 @@ def _health_details(*, force: bool = False) -> dict:
     ):
         return _health_detail_cache
 
-    from word2pdf import engine_info
-    from converter import ocr_info
+    from core.health import get_health_snapshot
 
-    w2p = engine_info()
-    ocr = ocr_info()
+    w2p = get_health_snapshot()["word2pdf"]
+    ocr = get_health_snapshot()["ocr"]
     from core.jobs import jobs_backend_is_shared, jobs_backend_name
 
     settings = get_settings()
@@ -606,7 +626,7 @@ def _jobs_health_note() -> dict:
 
 def _health_body(detail: bool) -> dict:
     """Monitoring payload shared by the JSON probe and the HTML dashboard."""
-    from tools import public_snapshot
+    from tools import get_registry, public_snapshot
 
     snap = public_snapshot()
     body: dict = {
@@ -616,7 +636,7 @@ def _health_body(detail: bool) -> dict:
         "tools": snap["tool_count"],
         "tools_module": snap["module_count"],
         "tools_featured": snap["featured_count"],
-        "tools_registered": len(TOOL_REGISTRY),
+        "tools_registered": len(get_registry()),
         # Ops hint: async convert jobs are process-local (or Redis-shared).
         "jobs": _jobs_health_note(),
     }
