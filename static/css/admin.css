@@ -1463,6 +1463,62 @@ html.light-mode .admin-topbar-mark {
 .admin-nav a.active .admin-nav-icon { color: rgba(255, 255, 255, 0.9); }
 
 /* ============================================
+   Night mode: homepage-style starry deep space
+   (matches home.css .bg-grid night layer)
+   ============================================ */
+html:not(.light-mode) .admin-body {
+  background-color: #05060d;
+  background-image:
+    radial-gradient(ellipse 70% 55% at 18% -8%, rgba(99, 102, 241, 0.16), transparent 55%),
+    radial-gradient(ellipse 55% 50% at 86% 4%, rgba(56, 189, 248, 0.10), transparent 52%),
+    radial-gradient(ellipse 50% 45% at 70% 110%, rgba(139, 92, 246, 0.14), transparent 55%),
+    radial-gradient(1px 1px at 12% 22%, #fff, transparent),
+    radial-gradient(1px 1px at 28% 64%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 41% 12%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 56% 78%, rgba(199, 210, 254, 0.9), transparent),
+    radial-gradient(1px 1px at 69% 37%, #fff, transparent),
+    radial-gradient(1px 1px at 82% 58%, rgba(255, 255, 255, 0.75), transparent),
+    radial-gradient(1px 1px at 94% 18%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 8% 88%, rgba(186, 230, 253, 0.85), transparent),
+    radial-gradient(1px 1px at 34% 48%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 62% 92%, #fff, transparent),
+    radial-gradient(1px 1px at 76% 14%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 48% 38%, #fff, transparent),
+    radial-gradient(1px 1px at 88% 73%, rgba(199, 210, 254, 0.8), transparent),
+    radial-gradient(1px 1px at 22% 8%, #fff, transparent),
+    radial-gradient(1px 1px at 53% 54%, rgba(255, 255, 255, 0.7), transparent),
+    linear-gradient(160deg, #0a0d1f 0%, #07091a 40%, #05060d 75%, #03040a 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+/* Twinkle layer replaces the ::after ambient glow at night */
+html:not(.light-mode) .admin-body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 18% 30%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 64% 22%, rgba(186, 230, 253, 0.9), transparent),
+    radial-gradient(1.5px 1.5px at 45% 82%, #fff, transparent),
+    radial-gradient(1px 1px at 79% 66%, rgba(199, 210, 254, 0.9), transparent),
+    radial-gradient(1px 1px at 31% 72%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 91% 41%, #fff, transparent);
+  background-repeat: no-repeat;
+  opacity: 0.35;
+  animation: adminStarTwinkle 6s ease-in-out infinite alternate;
+}
+@keyframes adminStarTwinkle {
+  0% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.6; }
+  100% { opacity: 0.3; transform: scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html:not(.light-mode) .admin-body::after { animation: none; }
+}
+
+/* ============================================
    Tool management: category picker (custom dropdown)
    ============================================ */
 .cat-picker { position: relative; display: inline-block; }
