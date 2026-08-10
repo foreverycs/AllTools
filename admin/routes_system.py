@@ -3,22 +3,13 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
-from urllib.parse import quote
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from admin._common import (
-    _admin_url,
-    _redirect,
-    _tpl,
-    admin_post,
-    get_cached_health,
-)
+from admin._common import _tpl, get_cached_health
 from admin.auth import is_admin, require_admin
 from core.health import get_health_snapshot
-from core.plugins import get_plugin_statuses
 from core.settings import dotenv_status, get_settings
 from storage import (
     file_dir,
@@ -28,31 +19,6 @@ from storage import (
 from tools import get_registry, tools_by_category
 
 router = APIRouter(tags=["admin"])
-
-
-@router.post("/plugins/reload")
-@admin_post
-async def plugins_reload(
-    request: Request,
-    csrf_token: Optional[str] = Form(None),
-):
-    """Hot reload plugins: re-scan plugins/, swap routes/registry/templates."""
-    from app import hot_reload_plugins
-
-    try:
-        disc = hot_reload_plugins()
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"插件重载失败: {exc}"
-        ) from exc
-    loaded = sum(1 for s in disc.statuses if s.loaded)
-    failed = len(disc.statuses) - loaded
-    from core.plugins import plugins_dir
-
-    msg = (
-        f"插件已重载：{loaded} 个加载，{failed} 个失败（目录：{plugins_dir()}）"
-    )
-    return _redirect(_admin_url("/admin/system", request) + "?msg=" + quote(msg))
 
 
 @router.get("/system", response_class=HTMLResponse)
@@ -76,7 +42,6 @@ async def system_page(request: Request):
         tools=get_registry(),
         categories=tools_by_category(include_disabled=True),
         tool_flags=flags_status(),
-        plugins=get_plugin_statuses(),
         env_hints={
             **get_settings().admin_security_summary(),
             "PLUGINS_DIR": os.environ.get("PLUGINS_DIR") or "(默认 项目根/plugins)",

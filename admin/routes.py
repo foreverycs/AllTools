@@ -20,6 +20,7 @@ from admin.routes_auth import router as auth_router
 from admin.routes_catalog import router as catalog_router
 from admin.routes_donation import router as donation_router
 from admin.routes_express import router as express_router
+from admin.routes_plugins import router as plugins_router
 from admin.routes_system import router as system_router
 from admin.routes_tools import router as tools_router
 from admin.routes_uploads import router as uploads_router
@@ -34,6 +35,7 @@ router.include_router(express_router)
 router.include_router(tools_router)
 router.include_router(catalog_router)
 router.include_router(donation_router)
+router.include_router(plugins_router)
 
 
 @router.get("", response_class=HTMLResponse)

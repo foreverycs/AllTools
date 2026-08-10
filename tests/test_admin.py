@@ -520,3 +520,34 @@ def test_storage_delete_and_stats(hist_only):
     assert h.delete_record(rec["id"]) is True
     assert h.get_record(rec["id"]) is None
     assert h.delete_record("no-such") is False
+
+
+def test_admin_plugins_page_and_reload(admin_client):
+    """Plugin management is a standalone page; system page has no plugin block."""
+    from urllib.parse import unquote
+
+    client, _, _ = admin_client
+    _login(client)
+
+    page = client.get("/admin/plugins")
+    assert page.status_code == 200
+    assert "插件管理" in page.text
+    assert "热重载插件" in page.text
+    assert "text-lines" in page.text  # bundled example plugin is listed
+
+    tok = client.cookies.get("toolkit_csrf")
+    r = client.post(
+        "/admin/plugins/reload",
+        data={"csrf_token": tok},
+        follow_redirects=False,
+    )
+    assert r.status_code in (303, 307, 302)
+    assert "/admin/plugins" in r.headers.get("location", "")
+    msg = unquote(r.headers.get("location", "").split("msg=")[-1])
+    assert "已重载" in msg and "目录" in msg
+
+    # The system page no longer embeds the plugin section.
+    sys_page = client.get("/admin/system")
+    assert sys_page.status_code == 200
+    assert "热重载插件" not in sys_page.text
+    assert "/admin/plugins" in sys_page.text  # sidebar entry present
