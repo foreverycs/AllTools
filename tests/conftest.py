@@ -15,3 +15,7 @@ os.environ["ADMIN_PASSWORD"] = "test-pass"
 os.environ["ADMIN_SECRET"] = "test-secret-for-unit-tests-only"
 # Prefer process env over .env during tests (see core.settings.load_dotenv).
 os.environ["DOTENV_OVERRIDE"] = "0"
+# Disable the public per-IP API rate limit so the whole suite does not trip a
+# shared bucket (30 req/min default vs. hundreds of /convert calls). Rate-limit
+# tests set their own API_RATE_LIMIT explicitly.
+os.environ["API_RATE_LIMIT"] = "0"

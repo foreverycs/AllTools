@@ -47,7 +47,11 @@ async def plugins_reload(
         ) from exc
     loaded = sum(1 for s in disc.statuses if s.loaded)
     failed = len(disc.statuses) - loaded
-    msg = f"插件已重载：{loaded} 个加载，{failed} 个失败"
+    from core.plugins import plugins_dir
+
+    msg = (
+        f"插件已重载：{loaded} 个加载，{failed} 个失败（目录：{plugins_dir()}）"
+    )
     return _redirect(_admin_url("/admin/system", request) + "?msg=" + quote(msg))
 
 
@@ -75,6 +79,7 @@ async def system_page(request: Request):
         plugins=get_plugin_statuses(),
         env_hints={
             **get_settings().admin_security_summary(),
+            "PLUGINS_DIR": os.environ.get("PLUGINS_DIR") or "(默认 项目根/plugins)",
             "UPLOAD_RETENTION_DAYS": str(retention_days()),
             "UPLOAD_FILE_DIR": str(file_dir()),
             "LIBREOFFICE_PATH": os.environ.get("LIBREOFFICE_PATH") or "(auto)",

@@ -78,6 +78,9 @@ services:
     volumes:
       # Shared storage for upload history + async job output (all instances).
       - ./file:/app/file
+      # Plugin dir: host edits are visible in-container so the admin
+      # 「插件重载」 can pick up new/updated plugins without a rebuild.
+      - ./plugins:/app/plugins
       # Mount host .env so edits apply after container restart.
       - ./.env:/app/.env:ro
     mem_limit: 1g

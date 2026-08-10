@@ -1,0 +1,334 @@
+{% extends "tools/base.html" %}
+{% set page_title = "HTML 转 Markdown" %}
+{% set page_description = "HTML 片段 / 网页源码转干净的 Markdown" %}
+{% set accent = "cyan" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-text") %}
+{% set back_label = "文本工具" %}
+{% set chip = "文本工具 · HTML 转 Markdown" %}
+
+{% block head_styles %}
+<style>
+  .tool-page .panes { min-height: 440px; }
+  .tool-page .pane { min-height: 0; }
+  /* Both output views stay the same size as the input textarea. */
+  .tool-page #input, .tool-page #preview, .tool-page #output {
+    height: 400px; min-height: 400px; font-size: 13px;
+  }
+  .tool-page .actions.is-inline { margin: 0 0 0 auto; }
+
+  /* URL fetch row. */
+  .tool-page .url-row { display: flex; gap: 10px; margin-bottom: 14px; }
+  .tool-page .url-row input {
+    flex: 1; min-width: 0;
+    font: inherit; font-size: 13px;
+    padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface-solid); color: var(--ink);
+  }
+  .tool-page .url-row input:focus {
+    outline: 2px solid var(--tool-focus); outline-offset: 1px;
+  }
+  .tool-page .url-row .btn { padding: 9px 18px; font-size: 13px; }
+
+  /* Sample chips (pill style, one row below the panes). */
+  .tool-page .samples {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    margin-top: 12px;
+  }
+  .tool-page .samples .samples-label {
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    margin-right: 2px;
+  }
+  .tool-page .sample-chip {
+    font: inherit; font-size: 12px; font-weight: 600;
+    padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--chip-bg); color: var(--muted);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .tool-page .sample-chip:hover {
+    background: var(--surface-solid);
+    border-color: var(--tool-accent-border);
+    color: var(--tool-accent-ink);
+  }
+
+  .view-switch { display: inline-flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--chip-bg); }
+  .view-switch .mini { background: transparent; border: 0; border-radius: 8px; padding: 4px 10px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+  .view-switch .mini.active { background: var(--tool-accent); color: #fff; font-weight: 600; }
+
+  /* Rendered Markdown preview typography (theme-aware). */
+  #preview {
+    flex: 1; min-height: 380px; overflow: auto;
+    border: 1.5px solid var(--line); border-radius: 14px;
+    background: var(--surface-solid); padding: 16px 18px;
+    font-size: 14.5px; line-height: 1.65; color: var(--ink);
+    word-wrap: break-word;
+  }
+  #preview > :first-child { margin-top: 0; }
+  #preview h1, #preview h2, #preview h3, #preview h4 {
+    line-height: 1.25; margin: 1.25em 0 0.5em; font-weight: 750;
+  }
+  #preview h1 { font-size: 1.55rem; border-bottom: 1px solid var(--line); padding-bottom: 0.3em; }
+  #preview h2 { font-size: 1.25rem; border-bottom: 1px solid var(--line-soft, var(--line)); padding-bottom: 0.25em; }
+  #preview h3 { font-size: 1.1rem; }
+  #preview p, #preview ul, #preview ol, #preview blockquote,
+  #preview table, #preview pre { margin: 0.7em 0; }
+  #preview a { color: var(--tool-accent); }
+  #preview code {
+    font-family: var(--mono); font-size: 0.9em;
+    background: var(--chip-bg); padding: 0.12em 0.35em; border-radius: 4px;
+  }
+  #preview pre {
+    background: #0f172a; color: #e2e8f0;
+    padding: 12px 14px; border-radius: 10px; overflow: auto;
+  }
+  #preview pre code { background: transparent; padding: 0; color: inherit; }
+  #preview blockquote {
+    margin-left: 0; padding: 0.2em 0 0.2em 0.9em;
+    border-left: 4px solid var(--tool-accent); color: var(--ink-2);
+  }
+  #preview table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  #preview th, #preview td {
+    border: 1px solid var(--line); padding: 0.4em 0.65em; text-align: left;
+  }
+  #preview th { background: var(--chip-bg); }
+  #preview img { max-width: 100%; height: auto; }
+  #preview hr { border: 0; border-top: 1px solid var(--line); margin: 1.25em 0; }
+  #preview li { margin: 0.2em 0; }
+  #preview .md-empty { color: var(--ink-2); font-size: 13px; text-align: center; padding: 48px 8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="icon" aria-hidden="true">📃</div>
+    <div>
+      <h1>HTML 转 Markdown</h1>
+      <p>把 HTML 片段或网页源码转成干净的 Markdown：标题、列表、表格、代码块、图片与链接。</p>
+    </div>
+  </div>
+
+  <div class="opts">
+    <label class="check">
+      <input type="checkbox" id="tables" checked />
+      转换表格（GFM）
+    </label>
+    <label class="field" id="baseUrlField" style="max-width: 340px;">相对链接基准地址
+      <input type="text" id="baseUrl" placeholder="如 https://example.com/docs/" spellcheck="false" />
+    </label>
+    <div class="actions is-inline">
+      <button type="button" class="btn" id="btnRun">转换</button>
+    </div>
+  </div>
+
+  <div class="url-row">
+    <input type="text" id="urlInput" placeholder="粘贴网页链接抓取内容，如 https://www.cnblogs.com/zzaz/p/22367216" spellcheck="false" />
+    <button type="button" class="btn btn-ghost" id="btnFetch">抓取网页</button>
+  </div>
+
+  <div class="panes">
+    <div class="pane">
+      <div class="pane-label">
+        <span>HTML 源码</span>
+        <div class="pane-actions">
+          <button type="button" class="mini" id="btnSample">示例</button>
+          <button type="button" class="mini" id="btnClearIn">清空</button>
+        </div>
+      </div>
+      <textarea id="input" placeholder="粘贴 HTML 片段…" spellcheck="false"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">
+        <span>Markdown 结果</span>
+        <div class="view-switch" role="group" aria-label="视图切换">
+          <button type="button" class="mini active" id="viewPreview">预览</button>
+          <button type="button" class="mini" id="viewSource">源码</button>
+        </div>
+        <div class="pane-actions">
+          <button type="button" class="mini" id="btnCopy">复制</button>
+          <button type="button" class="mini" id="btnClearOut">清空</button>
+        </div>
+      </div>
+      <div id="preview"><div class="md-empty">转换后将在这里显示渲染效果</div></div>
+      <textarea id="output" readonly hidden placeholder="Markdown 源码将显示在这里…" spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div class="samples" id="samples">
+    <span class="samples-label">示例：</span>
+    <button type="button" class="sample-chip" data-sample="article">文章片段</button>
+    <button type="button" class="sample-chip" data-sample="list">嵌套列表</button>
+    <button type="button" class="sample-chip" data-sample="table">表格</button>
+    <button type="button" class="sample-chip" data-sample="code">代码块</button>
+  </div>
+
+  <div class="meta" id="meta"></div>
+  <div class="status" id="status"></div>
+  <p class="tips">
+    支持 <code>&lt;h1&gt;~&lt;h6&gt;</code>、<code>&lt;p&gt;</code>、嵌套列表、
+    <code>&lt;pre&gt;&lt;code&gt;</code>（自动识别语言类名）、GFM 表格、
+    <code>&lt;blockquote&gt;</code>、图片与链接；<code>&lt;script&gt;</code>/<code>&lt;style&gt;</code> 内容会被忽略。
+    按 Ctrl/Cmd + Enter 快速转换。
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const preview = document.getElementById('preview');
+    const btnRun = document.getElementById('btnRun');
+    const btnFetch = document.getElementById('btnFetch');
+    const urlInput = document.getElementById('urlInput');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnSample = document.getElementById('btnSample');
+    const btnClearIn = document.getElementById('btnClearIn');
+    const btnClearOut = document.getElementById('btnClearOut');
+    const btnViewPreview = document.getElementById('viewPreview');
+    const btnViewSource = document.getElementById('viewSource');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+    const samples = document.getElementById('samples');
+
+    const TP = window.ToolPage || {};
+
+    const SAMPLES = {
+        article: '<h1>产品发布说明</h1>\n'
+            + '<p>我们很高兴发布 <strong>v2.0</strong>，带来以下改进：</p>\n'
+            + '<ul><li>更快的转换速度</li><li>更好的 <em>表格</em> 支持</li></ul>\n'
+            + '<p>更多信息见 <a href="https://example.com/release">发布日志</a>。</p>\n'
+            + '<blockquote>提示：升级前请先备份数据。</blockquote>',
+        list: '<ul>\n'
+            + '  <li>一级项 A</li>\n'
+            + '  <li>一级项 B\n'
+            + '    <ol>\n'
+            + '      <li>嵌套 1</li>\n'
+            + '      <li>嵌套 2</li>\n'
+            + '    </ol>\n'
+            + '  </li>\n'
+            + '  <li>一级项 C</li>\n'
+            + '</ul>',
+        table: '<table>\n'
+            + '  <tr><th>工具</th><th>类型</th><th>状态</th></tr>\n'
+            + '  <tr><td>HTML 转 Markdown</td><td>插件</td><td>可用</td></tr>\n'
+            + '  <tr><td>文件快递</td><td>特色</td><td>可用</td></tr>\n'
+            + '</table>',
+        code: '<p>使用示例：</p>\n'
+            + '<pre><code class="language-python">def greet(name: str) -> str:\n'
+            + '    return f"Hello, {name}!"\n\nprint(greet("world"))</code></pre>',
+    };
+
+    const META_FIELDS = [
+        { key: 'page_title', label: '来源标题' },
+        { key: 'page_url', label: '来源链接' },
+        { key: 'input_chars', label: '输入字符' },
+        { key: 'output_chars', label: '输出字符' },
+        { key: 'blocks.headings', label: '标题' },
+        { key: 'blocks.lists', label: '列表' },
+        { key: 'blocks.list_items', label: '列表项' },
+        { key: 'blocks.tables', label: '表格' },
+        { key: 'blocks.code_blocks', label: '代码块' },
+        { key: 'blocks.images', label: '图片' },
+        { key: 'blocks.links', label: '链接' },
+        { key: 'blocks.quotes', label: '引用' },
+    ];
+
+    function pathOf(obj, key) {
+        return key.split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
+    }
+
+    function setView(mode) {
+        const isPreview = mode === 'preview';
+        preview.hidden = !isPreview;
+        output.hidden = isPreview;
+        btnViewPreview.classList.toggle('active', isPreview);
+        btnViewSource.classList.toggle('active', !isPreview);
+    }
+
+    function clearOutput() {
+        preview.innerHTML = '<div class="md-empty">转换后将在这里显示渲染效果</div>';
+        output.value = '';
+        meta.innerHTML = '';
+        setView('preview');
+    }
+
+    function showResult(data) {
+        output.value = data.result || '';
+        if (data.rendered != null && data.rendered !== '') {
+            preview.innerHTML = data.rendered;
+            setView('preview');
+        } else {
+            preview.innerHTML = '<div class="md-empty">内容过大，仅展示源码</div>';
+            setView('source');
+        }
+        TP.renderMeta(meta, data, META_FIELDS);
+    }
+
+    async function fetchUrl() {
+        const u = urlInput.value.trim();
+        if (!u) {
+            TP.setStatus(status, 'err', '请先输入网页链接');
+            return;
+        }
+        TP.clearStatus(status);
+        btnFetch.disabled = true;
+        try {
+            const fd = new FormData();
+            fd.append('url', u);
+            const data = await TP.runForm(TP.appUrl('/tools/html2md/convert-url'), fd);
+            input.value = data.page_html || '';
+            document.getElementById('baseUrl').value = data.page_url || '';
+            showResult(data);
+            TP.setStatus(
+                status,
+                'ok',
+                data.page_title ? `已抓取：${data.page_title}` : '抓取完成'
+            );
+        } catch (err) {
+            TP.setStatus(status, 'err', err.message || String(err));
+        } finally {
+            btnFetch.disabled = false;
+        }
+    }
+
+    async function run() {
+        TP.clearStatus(status);
+        btnRun.disabled = true;
+        try {
+            const fd = new FormData();
+            fd.append('html', input.value);
+            fd.append('tables', document.getElementById('tables').checked ? '1' : '0');
+            fd.append('base_url', document.getElementById('baseUrl').value.trim());
+            const data = await TP.runForm(TP.appUrl('/tools/html2md/convert'), fd);
+            showResult(data);
+            TP.setStatus(status, 'ok', '转换完成');
+        } catch (err) {
+            TP.setStatus(status, 'err', err.message || String(err));
+        } finally {
+            btnRun.disabled = false;
+        }
+    }
+
+    btnRun.addEventListener('click', run);
+    btnFetch.addEventListener('click', fetchUrl);
+    urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchUrl(); });
+    btnViewPreview.addEventListener('click', () => setView('preview'));
+    btnViewSource.addEventListener('click', () => setView('source'));
+    btnCopy.addEventListener('click', () => TP.copyText(output.value, '已复制 Markdown 源码'));
+    btnClearIn.addEventListener('click', () => { input.value = ''; });
+    btnClearOut.addEventListener('click', clearOutput);
+    btnSample.addEventListener('click', () => { input.value = SAMPLES.article; run(); });
+    samples.addEventListener('click', (e) => {
+        const chip = e.target.closest('.sample-chip');
+        if (!chip) return;
+        input.value = SAMPLES[chip.getAttribute('data-sample')] || '';
+        run();
+    });
+    TP.setupShortcut(input, () => btnRun.click());
+</script>
+{% endblock %}
