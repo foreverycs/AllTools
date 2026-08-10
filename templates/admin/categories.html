@@ -4,11 +4,11 @@
 <div class="admin-header">
   <div>
     <h1>分类管理</h1>
-    <p>自定义分类，并把工具归类到对应分类；改动保存后前台首页与导航立即生效</p>
+    <p>自定义分类；工具的归类请在「工具管理」中设置</p>
   </div>
   <div class="admin-actions">
     <span class="admin-badge">{{ categories|length }} 个分类</span>
-    <form method="post" action="{{ url_path('/admin/categories/reset') }}" class="inline" onsubmit="return confirm('确定恢复为默认分类吗？工具归类也会重置。');">
+    <form method="post" action="{{ url_path('/admin/categories/reset') }}" class="inline" onsubmit="return confirm('确定恢复为默认分类吗？工具的归类分配也会重置。');">
       <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
       <button type="submit" class="admin-btn admin-btn-danger">恢复默认</button>
     </form>
@@ -104,51 +104,6 @@
     </label>
   </div>
 </template>
-
-<!-- ===== Form B: tool assignment ===== -->
-<form method="post" action="{{ url_path('/admin/categories/assignments') }}" id="assignForm">
-  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
-  <div class="admin-panel">
-    <div class="admin-panel-h">
-      <span>工具归类</span>
-      <span class="admin-muted" style="font-weight:600;font-size:12px">为每个工具选择所属分类</span>
-    </div>
-    <div class="admin-tools-list">
-      {% for tool in tools %}
-      <div class="admin-tool-row">
-        <div class="admin-tool-main">
-          <span class="admin-tool-icon" aria-hidden="true">{{ tool.icon }}</span>
-          <div class="admin-tool-text">
-            <div class="admin-tool-name">
-              {{ tool.name }}
-              <span class="admin-badge">{{ tool.slug }}</span>
-              {% if tool.featured %}<span class="admin-badge warn">特色</span>{% endif %}
-            </div>
-            <div class="admin-tool-desc">{{ tool.description }}</div>
-          </div>
-        </div>
-        <div class="admin-cat-assign">
-          <label class="admin-cat-assign-label">
-            <span class="admin-muted">所属分类</span>
-            <select name="assign_{{ tool.slug }}">
-              <option value="">— 默认 —</option>
-              {% for cat in categories %}
-              <option value="{{ cat.id }}" {% if tool.category == cat.id %}selected{% endif %}>{{ cat.icon }} {{ cat.name }}</option>
-              {% endfor %}
-            </select>
-          </label>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    <div class="admin-panel-b">
-      <p class="admin-muted">
-        选择“— 默认 —”即使用内置默认归类；下拉框仅列出当前已保存的分类，新增分类后请先“保存分类”再归类。
-      </p>
-      <button type="submit" class="admin-btn admin-btn-primary">保存归类</button>
-    </div>
-  </div>
-</form>
 
 <script>
 (function () {

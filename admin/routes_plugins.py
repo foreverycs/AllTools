@@ -1,9 +1,8 @@
-"""Admin console: plugin management (list / hot reload / docs).
+"""Admin console: plugin hot reload.
 
-The plugin table and the 「插件重载」 action used to live inside the system
-status page; they are now a dedicated page so plugin health gets its own
-focus. Reload re-discovers ``PLUGINS_DIR`` and swaps routers / registry /
-templates / static mounts without restarting the app.
+The plugin table now lives inside the unified tool-management page
+(``admin/routes_tools.py``); this module only provides the reload endpoint
+(also invoked from the tool page header).
 """
 
 from __future__ import annotations
@@ -12,48 +11,21 @@ from typing import Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 
-from admin._common import _admin_url, _redirect, _tpl, admin_post
+from admin._common import _admin_url, _redirect, admin_post
 from admin.auth import require_admin
-from core.plugins import get_plugin_discovery, get_plugin_statuses, plugins_dir
+from core.plugins import plugins_dir
 
 router = APIRouter(tags=["admin"])
 
 
-@router.get("/plugins", response_class=HTMLResponse)
-async def plugins_page(request: Request):
-    redir = require_admin(request)
-    if redir:
-        return redir
-    disc = get_plugin_discovery()
-    statuses = disc.statuses
-    loaded = [s for s in statuses if s.loaded]
-    failed = [s for s in statuses if not s.loaded]
-    entries_by_slug = {str(e.get("slug") or ""): e for e in disc.entries}
-    rows = []
-    for s in statuses:
-        entry = entries_by_slug.get(str(s.slug or "")) or {}
-        rows.append(
-            {
-                "name": s.name,
-                "slug": s.slug,
-                "version": s.version,
-                "loaded": s.loaded,
-                "error": s.error,
-                "route": entry.get("route"),
-            }
-        )
-    return _tpl(
-        request,
-        "admin/plugins.html",
-        active="plugins",
-        plugins=rows,
-        loaded_count=len(loaded),
-        failed_count=len(failed),
-        plugin_dir=str(plugins_dir()),
-        static_mounts=disc.static_mounts,
-        flash=request.query_params.get("msg"),
+@router.get("/plugins", include_in_schema=False)
+async def plugins_page_redirect(request: Request):
+    """The standalone plugin page was merged into /admin/tools."""
+    return RedirectResponse(
+        _admin_url("/admin/tools", request),
+        status_code=307,
     )
 
 
@@ -75,4 +47,4 @@ async def plugins_reload(
     loaded = sum(1 for s in disc.statuses if s.loaded)
     failed = len(disc.statuses) - loaded
     msg = f"插件已重载：{loaded} 个加载，{failed} 个失败（目录：{plugins_dir()}）"
-    return _redirect(_admin_url("/admin/plugins", request) + "?msg=" + quote(msg))
+    return _redirect(_admin_url("/admin/tools", request) + "?msg=" + quote(msg))

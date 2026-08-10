@@ -21,42 +21,25 @@ from core.tool_catalog import (
     ACCENT_CHOICES,
     get_assignments,
     get_categories,
-    get_tool_category,
     reset_catalog,
-    save_assignments,
     save_catalog,
 )
-from tools import get_registry, get_tool_by_slug
 
 router = APIRouter(tags=["admin"])
 
 
 @router.get("/categories", response_class=HTMLResponse)
 async def categories_page(request: Request):
-    """Admin UI: customize categories and assign tools to categories."""
+    """Admin UI: customize categories (tools are categorized from /admin/tools)."""
     redir = require_admin(request)
     if redir:
         return redir
-
-    cats = get_categories()
-    tools = []
-    for t in get_registry():
-        slug = str(t.get("slug") or "")
-        if not slug:
-            continue
-        tools.append(
-            {
-                **t,
-                "category": get_tool_category(slug) or "",
-            }
-        )
 
     return _tpl(
         request,
         "admin/categories.html",
         active="categories",
-        categories=cats,
-        tools=tools,
+        categories=get_categories(),
         accent_choices=ACCENT_CHOICES,
         flash=request.query_params.get("msg"),
     )
@@ -113,36 +96,6 @@ async def categories_save(
     _bust_public_and_health()
 
     msg = f"saved {len(cats)} categories"
-    return _redirect(_admin_url("/admin/categories", request) + "?msg=" + quote(msg))
-
-
-@router.post("/categories/assignments")
-@admin_post
-async def categories_assignments_save(
-    request: Request,
-    csrf_token: Optional[str] = Form(None),
-):
-    """Save which category each tool belongs to."""
-    form = await request.form()
-    valid_ids = {c["id"] for c in get_categories()}
-    assignments = {}
-    for t in get_registry():
-        slug = str(t.get("slug") or "")
-        if not slug:
-            continue
-        raw = str(form.get("assign_" + slug) or "").strip()
-        default_cat = str((get_tool_by_slug(slug) or {}).get("category") or "")
-        # Persist an override only when it points to a valid category and
-        # actually differs from the registry default. Clearing to default (or
-        # an unknown target) drops any prior override for this slug.
-        if raw and raw in valid_ids and raw != default_cat:
-            assignments[slug] = raw
-        else:
-            assignments.pop(slug, None)
-    save_assignments(assignments)
-    _bust_public_and_health()
-
-    msg = f"saved assignments for {len(assignments)} tools"
     return _redirect(_admin_url("/admin/categories", request) + "?msg=" + quote(msg))
 
 

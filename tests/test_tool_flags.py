@@ -127,19 +127,21 @@ def test_admin_tools_page_and_save(flags_client):
 
     page = client.get("/admin/tools")
     assert page.status_code == 200
-    assert "功能开关" in page.text
+    assert "工具管理" in page.text
     assert "pdf2word" in page.text
     assert "markdown" in page.text
 
     token = client.cookies.get("toolkit_csrf")
     assert token
 
-    # Save with only pdf2word + code-format enabled (omit the rest)
+    # Save with only pdf2word + code-format enabled (omit the rest), and move
+    # pdf2word into the image category as an override.
     save = client.post(
         "/admin/tools",
         data={
             "csrf_token": token,
             "enabled": ["pdf2word", "code-format"],
+            "assign_pdf2word": "image",
         },
         follow_redirects=False,
     )
@@ -151,6 +153,12 @@ def test_admin_tools_page_and_save(flags_client):
     assert flags["code-format"] is True
     assert flags["markdown"] is False
     assert flags["word2pdf"] is False
+
+    # Category assignment persisted via the same submit.
+    from core.tool_catalog import get_assignments, get_tool_category
+
+    assert get_assignments().get("pdf2word") == "image"
+    assert get_tool_category("pdf2word") == "image"
 
     catalog = client.get("/api/tools").json()
     public = {t["slug"] for t in catalog["tools"]}

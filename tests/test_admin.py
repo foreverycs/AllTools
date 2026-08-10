@@ -522,32 +522,56 @@ def test_storage_delete_and_stats(hist_only):
     assert h.delete_record("no-such") is False
 
 
-def test_admin_plugins_page_and_reload(admin_client):
-    """Plugin management is a standalone page; system page has no plugin block."""
+def test_admin_plugins_merged_into_tool_management(admin_client):
+    """Plugin management lives inside /admin/tools; /admin/plugins redirects."""
     from urllib.parse import unquote
 
     client, _, _ = admin_client
     _login(client)
 
-    page = client.get("/admin/plugins")
+    # Old standalone page → redirect to the unified tool management page.
+    r = client.get("/admin/plugins", follow_redirects=False)
+    assert r.status_code in (307, 302, 303)
+    assert "/admin/tools" in r.headers.get("location", "")
+
+    page = client.get("/admin/tools")
     assert page.status_code == 200
-    assert "插件管理" in page.text
+    assert "工具管理" in page.text
+    # Unified table lists builtin + plugin tools with source badges.
+    assert "pdf2word" in page.text
+    assert "text-lines" in page.text
+    assert "插件" in page.text
+    assert "内置" in page.text
+    # Reload action + plugin docs live on the tool page now.
     assert "热重载插件" in page.text
-    assert "text-lines" in page.text  # bundled example plugin is listed
+    assert "plugins/text-lines" in page.text
 
     tok = client.cookies.get("toolkit_csrf")
-    r = client.post(
+    r2 = client.post(
         "/admin/plugins/reload",
         data={"csrf_token": tok},
         follow_redirects=False,
     )
-    assert r.status_code in (303, 307, 302)
-    assert "/admin/plugins" in r.headers.get("location", "")
-    msg = unquote(r.headers.get("location", "").split("msg=")[-1])
+    assert r2.status_code in (303, 307, 302)
+    assert "/admin/tools" in r2.headers.get("location", "")
+    msg = unquote(r2.headers.get("location", "").split("msg=")[-1])
     assert "已重载" in msg and "目录" in msg
 
-    # The system page no longer embeds the plugin section.
+    # The system page has no plugin block / sidebar entry anymore.
     sys_page = client.get("/admin/system")
     assert sys_page.status_code == 200
     assert "热重载插件" not in sys_page.text
-    assert "/admin/plugins" in sys_page.text  # sidebar entry present
+    assert "/admin/plugins" not in sys_page.text
+
+
+def test_admin_categories_page_has_no_tool_assignment(admin_client):
+    """Tool→category assignment moved to /admin/tools; categories page keeps
+    only the category-entity editor."""
+    client, _, _ = admin_client
+    _login(client)
+
+    page = client.get("/admin/categories")
+    assert page.status_code == 200
+    assert "工具归类" not in page.text
+    assert "/categories/assignments" not in page.text
+    assert "分类管理" in page.text

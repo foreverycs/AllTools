@@ -1,15 +1,20 @@
 {% extends "admin/base.html" %}
-{% block title %}功能开关{% endblock %}
+{% block title %}工具管理{% endblock %}
 {% block content %}
 <div class="admin-header">
   <div>
-    <h1>功能开关</h1>
-    <p>控制前台展示与 API 是否开放；关闭后首页隐藏，访问返回 403</p>
+    <h1>工具管理</h1>
+    <p>统一管理所有工具（内置 + 插件）：启用开关、分类归属与加载状态</p>
   </div>
   <div class="admin-actions">
     <span class="admin-badge {% if enabled_count == total %}ok{% elif enabled_count == 0 %}err{% else %}warn{% endif %}">
       {{ enabled_count }} / {{ total }} 已启用
     </span>
+    <form method="post" action="{{ url_path('/admin/plugins/reload') }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="admin-btn">热重载插件</button>
+    </form>
+    <a class="admin-btn" href="{{ url_path('/admin/categories') }}">分类管理</a>
     <a class="admin-btn" href="{{ url_path('/admin/system') }}">系统状态</a>
   </div>
 </div>
@@ -32,86 +37,243 @@
     </div>
   </div>
 
-  {% for cat in categories %}
-  <div class="admin-panel admin-tools-cat">
-    <div class="admin-panel-h">
-      <span>{{ cat.icon or '' }} {{ cat.name }}</span>
-      <span class="admin-muted" style="font-weight:600;font-size:12px">
-        {{ cat.tools|length }} 个工具
-      </span>
-    </div>
-    <div class="admin-tools-list">
-      {% for tool in cat.tools %}
-      <label class="admin-tool-row {% if not tool.enabled %}is-off{% endif %}">
-        <div class="admin-tool-main">
-          <span class="admin-tool-icon" aria-hidden="true">{{ tool.icon }}</span>
-          <div class="admin-tool-text">
-            <div class="admin-tool-name">
-              {{ tool.name }}
-              <span class="admin-badge">{{ tool.slug }}</span>
-              {% if tool.enabled %}
-              <span class="admin-badge ok">启用</span>
-              {% else %}
-              <span class="admin-badge err">已关闭</span>
-              {% endif %}
-            </div>
-            <div class="admin-tool-desc">{{ tool.description }}</div>
-            <div class="admin-tool-meta admin-mono">{{ tool.route }}</div>
-          </div>
-        </div>
-        <div class="admin-tool-switch">
-          <input
-            type="checkbox"
-            name="enabled"
-            value="{{ tool.slug }}"
-            class="admin-switch-input"
-            {% if tool.enabled %}checked{% endif %}
-          />
-          <span class="admin-switch-ui" aria-hidden="true"></span>
-        </div>
-      </label>
-      {% else %}
-      <div class="admin-muted" style="padding:16px 18px">该分类暂无工具</div>
-      {% endfor %}
-    </div>
-  </div>
-  {% else %}
   <div class="admin-panel">
-    <div class="admin-panel-b admin-muted">未注册任何工具</div>
-  </div>
-  {% endfor %}
-
-  <div class="admin-tools-foot">
-    <p class="admin-muted">
-      关闭后：首页与分类页不再显示；直接访问页面或调用转换 API 返回 403。
-      配置保存在归档目录下的 <code>tool_flags.json</code>，重启后仍然生效。
-    </p>
-    <button type="submit" class="admin-btn admin-btn-primary">保存更改</button>
+    <div class="admin-panel-h">
+      <span>工具列表（{{ tools|length }}）</span>
+      <span class="admin-muted" style="font-weight:600;font-size:12px">关闭后前台隐藏，访问返回 403；分类保存后前台导航立即生效</span>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>工具</th>
+            <th>来源</th>
+            <th>分类</th>
+            <th>启用</th>
+            <th>版本</th>
+            <th>路由</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tools %}
+          <tr class="{% if not t.enabled %}is-off{% endif %}">
+            <td>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="admin-tool-icon" style="width:34px;height:34px;font-size:15px">{{ t.icon or '🧩' }}</span>
+                <div>
+                  <div class="admin-tool-name" style="margin:0;font-size:13.5px">{{ t.name }}</div>
+                  <div class="admin-mono" style="font-size:11px;color:var(--muted-2)">{{ t.slug }}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              {% if t.source == 'plugin' %}
+              <span class="admin-badge">插件</span>
+              {% else %}
+              <span class="admin-badge" style="background:rgba(148,163,184,0.16);color:var(--muted)">内置</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="cat-picker" data-slug="{{ t.slug }}" data-menu="catMenu-{{ t.slug }}">
+                <button type="button" class="cat-picker-btn" aria-haspopup="listbox" aria-expanded="false">
+                  <span class="cat-picker-label">{{ t.category_name or '—' }}</span>
+                  <svg class="cat-picker-arrow" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <input type="hidden" name="assign_{{ t.slug }}" value="{{ t.category }}" />
+                <div class="cat-picker-menu" id="catMenu-{{ t.slug }}" role="listbox" hidden>
+                  {% for c in categories %}
+                  <button type="button" class="cat-picker-opt {% if c.id == t.category %}is-checked{% endif %}" role="option" aria-selected="{% if c.id == t.category %}true{% else %}false{% endif %}" data-value="{{ c.id }}">
+                    <span class="cat-picker-opt-label">{{ c.icon or '' }} {{ c.name }}</span>
+                    <span class="cat-picker-check" aria-hidden="true">✓</span>
+                  </button>
+                  {% endfor %}
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="admin-tool-switch" style="width:44px;height:26px">
+                <input type="checkbox" class="admin-switch-input" name="enabled" value="{{ t.slug }}" id="en-{{ t.slug }}" {% if t.enabled %}checked{% endif %} />
+                <span class="admin-switch-ui" style="top:0"></span>
+              </div>
+            </td>
+            <td class="admin-mono">{{ t.plugin_version or '—' }}</td>
+            <td><a class="admin-link admin-mono" href="{{ url_path(t.route) }}" target="_blank" rel="noopener">{{ t.route }}</a></td>
+            <td>
+              {% if t.source == 'plugin' %}
+                {% if t.plugin_loaded %}
+                <span class="admin-badge ok">已加载</span>
+                {% else %}
+                <span class="admin-badge err">加载失败</span>
+                {% endif %}
+              {% else %}
+              <span class="admin-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% if not t.plugin_loaded and t.plugin_error %}
+          <tr>
+            <td colspan="7" class="admin-mono" style="color:var(--danger-ink, #dc2626)">{{ t.plugin_error }}</td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </form>
 
+<div class="admin-panel" style="margin-top:16px">
+  <div class="admin-panel-h">
+    <span style="display:inline-flex;align-items:center;gap:8px">
+      <span class="admin-panel-h-icon" style="--ic:#7c3aed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+      插件
+    </span>
+  </div>
+  <div class="admin-panel-b">
+    <p class="admin-muted" style="margin-bottom:10px">
+      插件目录：<code class="admin-mono">{{ plugin_dir }}</code>
+      — 插件是 <code class="admin-mono">plugins/&lt;slug&gt;/__init__.py</code> 形式的 Python 包（必含
+      <code class="admin-mono">TOOL</code> 清单与 <code class="admin-mono">router</code>）；
+      上传后点击「热重载插件」立即生效，加载失败会显示在列表中并附错误原因。
+      内置示例：<span class="admin-mono">plugins/text-lines/</span>、<span class="admin-mono">plugins/html2md/</span>。
+    </p>
+    {% if static_mounts %}
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr><th>插件</th><th>静态资源访问路径</th><th>磁盘目录</th></tr>
+        </thead>
+        <tbody>
+          {% for slug, static_path in static_mounts %}
+          <tr>
+            <td class="admin-mono">{{ slug }}</td>
+            <td class="admin-mono">{{ url_path('/plugins/' ~ slug ~ '/static') }}</td>
+            <td class="admin-mono">{{ static_path }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
 <script>
 (function () {
-  var form = document.getElementById('toolsFlagsForm');
-  if (!form) return;
-  var boxes = function () { return form.querySelectorAll('input.admin-switch-input[type="checkbox"]'); };
   var allBtn = document.getElementById('toolsSelectAll');
   var noneBtn = document.getElementById('toolsSelectNone');
-  function setAll(on) {
-    boxes().forEach(function (el) {
-      el.checked = on;
-      var row = el.closest('.admin-tool-row');
-      if (row) row.classList.toggle('is-off', !on);
-    });
+  if (allBtn && noneBtn) {
+    function setAll(checked) {
+      document.querySelectorAll('#toolsFlagsForm input[name="enabled"]').forEach(function (cb) {
+        cb.checked = checked;
+      });
+    }
+    allBtn.addEventListener('click', function () { setAll(true); });
+    noneBtn.addEventListener('click', function () { setAll(false); });
   }
-  if (allBtn) allBtn.addEventListener('click', function () { setAll(true); });
-  if (noneBtn) noneBtn.addEventListener('click', function () { setAll(false); });
-  form.addEventListener('change', function (e) {
-    var t = e.target;
-    if (!t || !t.classList.contains('admin-switch-input')) return;
-    var row = t.closest('.admin-tool-row');
-    if (row) row.classList.toggle('is-off', !t.checked);
+
+  // Custom category pickers (replaces the native <select> options panel,
+  // which the OS renders and CSS cannot style).
+  var pickers = document.querySelectorAll('.cat-picker');
+  // Remove orphan menus: a previous page view may have left an open menu
+  // attached to <body> (soft navigation replaces #adminMain, not <body>).
+  document.querySelectorAll('body > .cat-picker-menu').forEach(function (m) {
+    m.remove();
   });
+
+  function menuOf(picker) {
+    var id = picker.getAttribute('data-menu');
+    var menu = id ? document.getElementById(id) : null;
+    return menu || picker.querySelector('.cat-picker-menu');
+  }
+
+  function closePicker(picker) {
+    var menu = menuOf(picker);
+    var btn = picker.querySelector('.cat-picker-btn');
+    picker.classList.remove('open');
+    menu.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+  }
+
+  function openPicker(picker) {
+    pickers.forEach(closePicker);
+    var btn = picker.querySelector('.cat-picker-btn');
+    var menu = menuOf(picker);
+    // The menu is attached to <body> before positioning: `position: fixed`
+    // is relative to the viewport ONLY when no ancestor has a `transform`
+    // (the .admin-main fade-in animation briefly applies one, hijacking the
+    // containing block and pushing the menu to the wrong place).
+    if (menu.parentElement !== document.body) {
+      document.body.appendChild(menu);
+    }
+    // Measure while hidden (same frame, so no flicker), then flip above the
+    // button when the dropdown would run past the bottom edge of the viewport.
+    menu.style.visibility = 'hidden';
+    menu.hidden = false;
+    var mh = menu.offsetHeight;
+    menu.hidden = true;
+    menu.style.visibility = '';
+    var r = btn.getBoundingClientRect();
+    var top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) {
+      top = Math.max(8, r.top - mh - 6);
+    }
+    menu.style.top = top + 'px';
+    menu.style.left = Math.max(8, r.left) + 'px';
+    menu.style.minWidth = Math.max(r.width, 150) + 'px';
+    menu.hidden = false;
+    picker.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    // Keep the dropdown inside the right edge of the viewport.
+    var mr = menu.getBoundingClientRect();
+    if (mr.right > window.innerWidth - 8) {
+      menu.style.left = Math.max(8, window.innerWidth - mr.width - 8) + 'px';
+    }
+  }
+
+  pickers.forEach(function (picker) {
+    var btn = picker.querySelector('.cat-picker-btn');
+    var menu = menuOf(picker);
+    var hidden = picker.querySelector('input[type="hidden"]');
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (picker.classList.contains('open')) {
+        closePicker(picker);
+      } else {
+        openPicker(picker);
+      }
+    });
+
+    menu.addEventListener('click', function (e) {
+      var opt = e.target.closest('.cat-picker-opt');
+      if (!opt) return;
+      hidden.value = opt.getAttribute('data-value') || '';
+      picker.querySelector('.cat-picker-label').textContent = opt.querySelector('.cat-picker-opt-label').textContent;
+      picker.querySelectorAll('.cat-picker-opt').forEach(function (o) {
+        var on = o === opt;
+        o.classList.toggle('is-checked', on);
+        o.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      closePicker(picker);
+    });
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.cat-picker')) {
+      pickers.forEach(closePicker);
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') pickers.forEach(closePicker);
+  });
+  // Close when the main pane / table scrolls under a fixed-position menu
+  // (scrolling INSIDE the menu itself is fine).
+  document.addEventListener('scroll', function (e) {
+    var t = e.target;
+    if (t === document || (t.closest && t.closest('.cat-picker-menu'))) return;
+    pickers.forEach(closePicker);
+  }, true);
 })();
 </script>
 {% endblock %}
