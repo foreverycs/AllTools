@@ -12,6 +12,10 @@
 #   - 应用不发布宿主端口（ports 被移除），多实例扩容不冲突；请在前面加
 #     Nginx / 负载均衡，经 compose 网络访问 toolbox:8000。
 #   - 生产账号密钥在项目根 .env（ADMIN_PASSWORD / ADMIN_SECRET）中配置。
+#
+# version 兼容旧版 docker-compose v1（宝塔等默认安装）。新版 compose v2
+# 会忽略该字段（仅告警），v1 则依赖它切换 schema（mem_limit 等 v2 特性）。
+version: "2.4"
 
 services:
   redis:
@@ -19,12 +23,16 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - ./redis-data:/data
+      # Named volume (not a host bind mount): on first create Docker copies
+      # the image's /data ownership (redis user, UID 999), so appendonly AOF
+      # writes never hit Permission denied like a root-owned host dir.
+      - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG || exit 1"]
+      interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
   toolbox:
     build:
@@ -97,3 +105,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 45s
+
+volumes:
+  redis-data:
