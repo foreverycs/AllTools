@@ -56,15 +56,22 @@ def get_cached_health() -> Optional[dict]:
 
 
 def get_health_snapshot(*, force: bool = False) -> dict:
-    """Compose (and cache) the engine/OCR/flag snapshot."""
+    """Compose (and cache) the engine/OCR/flag snapshot.
+
+    The LibreOffice/Tesseract probe runs OUTSIDE the lock so a background warm
+    (or a concurrent reader) is never blocked by a multi-second probe, which
+    would otherwise freeze async handlers (e.g. /admin/api/stats) on the
+    event loop while they wait for the lock.
+    """
     global _cache, _cache_ts
     with _lock:
         if not force and _cache and time.monotonic() - _cache_ts < _TTL:
             return _cache
-        snap = _build(force=force)
+    snap = _build(force=force)
+    with _lock:
         _cache = snap
         _cache_ts = time.monotonic()
-        return snap
+    return snap
 
 
 def schedule_health_warm() -> None:

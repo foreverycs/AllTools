@@ -145,6 +145,7 @@
 (function () {
   var root = (window.__ROOT__ || '').replace(/\/$/, '');
   var tries = 0;
+  var cancelled = false;
   function paint(h) {
     if (!h) return;
     var w = document.getElementById('healthW2p');
@@ -178,10 +179,12 @@
     if (c) c.textContent = h.categories != null ? h.categories : '—';
   }
   function tick() {
+    if (cancelled) return;
     tries += 1;
     fetch(root + '/admin/api/stats', { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
+        if (cancelled) return;
         if (data && data.health && data.health.word2pdf) {
           paint(data.health);
           return;
@@ -189,10 +192,14 @@
         if (tries < 20) setTimeout(tick, 400);
       })
       .catch(function () {
+        if (cancelled) return;
         if (tries < 20) setTimeout(tick, 600);
       });
   }
   setTimeout(tick, 200);
+  (window.__adminCleanup || (window.__adminCleanup = [])).push(function () {
+    cancelled = true;
+  });
 })();
 </script>
 {% endif %}

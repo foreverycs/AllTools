@@ -156,7 +156,7 @@
   const WORD_EXTS = new Set(['docx','doc']);
   var previewBlobUrl = null;
 
-  document.addEventListener('click', function(e) {
+  window.__adminAddDoc('click', function(e) {
     var btn = e.target.closest('.preview-btn');
     if (!btn) return;
     var id = btn.getAttribute('data-id');
@@ -259,7 +259,7 @@
     document.body.style.overflow = '';
   }
 
-  document.addEventListener('keydown', function(e) {
+  window.__adminAddDoc('keydown', function(e) {
     if (e.key === 'Escape' && overlay.classList.contains('show')) closePreview();
   });
 
@@ -326,14 +326,14 @@
     });
   }
 
-  document.addEventListener('change', function(e) {
+  window.__adminAddDoc('change', function(e) {
     if (e.target && e.target.classList && e.target.classList.contains('row-check')) {
       updateBatchUI();
     }
   });
 
   // Two-click delete: first click turns red, second click submits.
-  document.addEventListener('click', function(e) {
+  window.__adminAddDoc('click', function(e) {
     var btn = e.target.closest && e.target.closest('.delete-confirm-btn');
     if (!btn || btn.disabled) return;
     if (btn.classList.contains('is-armed')) {
@@ -344,12 +344,12 @@
     armDeleteBtn(btn);
   }, true);
 
-  document.addEventListener('click', function(e) {
+  window.__adminAddDoc('click', function(e) {
     if (e.target.closest && e.target.closest('.delete-confirm-btn')) return;
     disarmAllDeleteBtns();
   });
 
-  document.addEventListener('keydown', function(e) {
+  window.__adminAddDoc('keydown', function(e) {
     if (e.key === 'Escape') disarmAllDeleteBtns();
   });
 

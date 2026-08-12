@@ -447,6 +447,11 @@ html.light-mode .admin-body::after  { background: radial-gradient(circle, rgba(2
   animation: admin-fade-in 0.25s ease-out;
   position: relative;
 }
+/* After the first soft navigation, skip the entrance fade so view switches
+   don't re-trigger a full-content repaint/translate animation. */
+.admin-body.admin-soft-nav .admin-main {
+  animation: none;
+}
 @keyframes admin-fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }

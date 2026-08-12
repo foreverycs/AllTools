@@ -24,34 +24,38 @@
       <span class="admin-panel-h-icon" style="--ic:#6366f1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>
       转换引擎
     </div>
-    <div class="admin-panel-b">
+    <div class="admin-panel-b" id="sysHealthPanel">
       <dl class="admin-kv">
         <dt>Word→PDF 就绪</dt>
-        <dd>
-          {% if health.word2pdf.ready %}
+        <dd id="sysW2pReady">
+          {% if health_pending %}
+          <span class="admin-badge">检测中…</span>
+          {% elif health.word2pdf.ready %}
           <span class="admin-badge ok">是</span>
           {% else %}
           <span class="admin-badge err">否</span>
           {% endif %}
         </dd>
         <dt>可用引擎</dt>
-        <dd>{{ (health.word2pdf.engines or [])|join(', ') or '无' }}</dd>
+        <dd id="sysW2pEngines">{{ (health.word2pdf.engines or [])|join(', ') or ('检测中…' if health_pending else '无') }}</dd>
         <dt>首选引擎</dt>
-        <dd>{{ health.word2pdf.preferred or '—' }}</dd>
+        <dd id="sysW2pPreferred">{{ health.word2pdf.preferred or ('检测中…' if health_pending else '—') }}</dd>
         <dt>LibreOffice 路径</dt>
-        <dd class="admin-mono">{{ health.word2pdf.libreoffice_path or '—' }}</dd>
+        <dd id="sysW2pPath" class="admin-mono">{{ health.word2pdf.libreoffice_path or ('检测中…' if health_pending else '—') }}</dd>
         <dt>OCR 可用</dt>
-        <dd>
-          {% if health.ocr.available %}
+        <dd id="sysOcrReady">
+          {% if health_pending %}
+          <span class="admin-badge">检测中…</span>
+          {% elif health.ocr.available %}
           <span class="admin-badge ok">是</span>
           {% else %}
           <span class="admin-badge warn">否</span>
           {% endif %}
         </dd>
         <dt>OCR 语言</dt>
-        <dd>{{ health.ocr.lang or '—' }}</dd>
+        <dd id="sysOcrLang">{{ health.ocr.lang or ('检测中…' if health_pending else '—') }}</dd>
         <dt>Tesseract</dt>
-        <dd class="admin-mono">{{ health.ocr.tesseract_cmd or '—' }}</dd>
+        <dd id="sysOcrCmd" class="admin-mono">{{ health.ocr.tesseract_cmd or ('检测中…' if health_pending else '—') }}</dd>
       </dl>
     </div>
   </div>
@@ -138,4 +142,69 @@
     </table>
   </div>
 </div>
+{% if health_pending %}
+<script>
+(function () {
+  var root = (window.__ROOT__ || '').replace(/\/$/, '');
+  var tries = 0;
+  var cancelled = false;
+  function badge(ok, okText, errText, warnText) {
+    var el = document.createElement('span');
+    el.className = 'admin-badge ' + (ok ? 'ok' : (errText != null ? 'err' : 'warn'));
+    el.textContent = ok ? okText : (errText != null ? errText : warnText);
+    return el;
+  }
+  function paint(h) {
+    var w2p = h && h.word2pdf;
+    var ocr = h && h.ocr;
+    if (w2p) {
+      var r = document.getElementById('sysW2pReady');
+      if (r) {
+        r.textContent = '';
+        r.appendChild(badge(w2p.ready, '是', '否'));
+      }
+      var e = document.getElementById('sysW2pEngines');
+      if (e) e.textContent = (w2p.engines || []).join(', ') || '无';
+      var p = document.getElementById('sysW2pPreferred');
+      if (p) p.textContent = w2p.preferred || '—';
+      var pp = document.getElementById('sysW2pPath');
+      if (pp) pp.textContent = w2p.libreoffice_path || '—';
+    }
+    if (ocr) {
+      var or = document.getElementById('sysOcrReady');
+      if (or) {
+        or.textContent = '';
+        or.appendChild(badge(ocr.available, '是', null, '否'));
+      }
+      var ol = document.getElementById('sysOcrLang');
+      if (ol) ol.textContent = ocr.lang || '—';
+      var oc = document.getElementById('sysOcrCmd');
+      if (oc) oc.textContent = ocr.tesseract_cmd || '—';
+    }
+  }
+  function tick() {
+    if (cancelled) return;
+    tries += 1;
+    fetch(root + '/admin/api/stats', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (cancelled) return;
+        if (data && data.health && data.health.word2pdf) {
+          paint(data.health);
+          return;
+        }
+        if (tries < 30) setTimeout(tick, 500);
+      })
+      .catch(function () {
+        if (cancelled) return;
+        if (tries < 30) setTimeout(tick, 800);
+      });
+  }
+  setTimeout(tick, 300);
+  (window.__adminCleanup || (window.__adminCleanup = [])).push(function () {
+    cancelled = true;
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

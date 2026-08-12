@@ -7,9 +7,8 @@ import os
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from admin._common import _tpl, get_cached_health
+from admin._common import _tpl, get_cached_health, schedule_health_warm
 from admin.auth import is_admin, require_admin
-from core.health import get_health_snapshot
 from core.settings import dotenv_status, get_settings
 from storage import (
     file_dir,
@@ -20,6 +19,21 @@ from tools import get_registry, tools_by_category
 
 router = APIRouter(tags=["admin"])
 
+# Placeholder rendered while the engine probe warms in the background.
+_EMPTY_HEALTH = {
+    "word2pdf": {
+        "ready": False,
+        "engines": [],
+        "preferred": "",
+        "libreoffice_path": "",
+    },
+    "ocr": {"available": False, "lang": "", "tesseract_cmd": ""},
+    "tools": 0,
+    "tools_registered": 0,
+    "tools_disabled": 0,
+    "categories": 0,
+}
+
 
 @router.get("/system", response_class=HTMLResponse)
 async def system_page(request: Request):
@@ -28,16 +42,20 @@ async def system_page(request: Request):
         return redir
     from core.tool_flags import flags_status
 
-    # Prefer warm cache; only probe synchronously if still cold after startup warm.
+    # Never block the page on LibreOffice/Tesseract probes: use the warm cache
+    # and refresh engines in the browser via /admin/api/stats when cold.
     health = get_cached_health()
-    if health is None:
-        health = get_health_snapshot(force=True)
+    health_pending = health is None
+    if health_pending:
+        schedule_health_warm()
+        health = _EMPTY_HEALTH
 
     return _tpl(
         request,
         "admin/system.html",
         active="system",
         health=health,
+        health_pending=health_pending,
         stats=storage_stats(),
         tools=get_registry(),
         categories=tools_by_category(include_disabled=True),
@@ -61,10 +79,18 @@ async def api_stats(request: Request):
         raise HTTPException(status_code=401, detail="Unauthorized")
     from core.tool_flags import flags_status
 
+    # Never block the event loop on a cold engine probe: return the cached
+    # snapshot (None while warming) and let the browser poll again. The
+    # background warm (schedule_health_warm) fills the cache off the request
+    # path, so a subsequent poll returns fresh data without stalling.
+    health = get_cached_health()
+    if health is None:
+        schedule_health_warm()
+
     return JSONResponse(
         {
             "storage": storage_stats(),
-            "health": get_health_snapshot(),
+            "health": health,
             "tool_flags": flags_status(),
         }
     )

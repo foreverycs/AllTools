@@ -259,17 +259,17 @@
     });
   });
 
-  document.addEventListener('click', function (e) {
+  window.__adminAddDoc('click', function (e) {
     if (!e.target.closest('.cat-picker')) {
       pickers.forEach(closePicker);
     }
   });
-  document.addEventListener('keydown', function (e) {
+  window.__adminAddDoc('keydown', function (e) {
     if (e.key === 'Escape') pickers.forEach(closePicker);
   });
   // Close when the main pane / table scrolls under a fixed-position menu
   // (scrolling INSIDE the menu itself is fine).
-  document.addEventListener('scroll', function (e) {
+  window.__adminAddDoc('scroll', function (e) {
     var t = e.target;
     if (t === document || (t.closest && t.closest('.cat-picker-menu'))) return;
     pickers.forEach(closePicker);

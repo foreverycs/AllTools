@@ -107,7 +107,6 @@
 
 <script>
 (function () {
-  // ---- Category reorder (up/down) ----
   var list = document.querySelector('.admin-cats');
   function swap(row, dir) {
     var rows = Array.prototype.slice.call(list.children);
@@ -152,7 +151,12 @@
   bindRemove();
   // Re-bind for rows added later.
   var mo = new MutationObserver(bindRemove);
-  if (list) mo.observe(list, { childList: true });
+  if (list) {
+    mo.observe(list, { childList: true });
+    (window.__adminCleanup || (window.__adminCleanup = [])).push(function () {
+      mo.disconnect();
+    });
+  }
 })();
 </script>
 {% endblock %}

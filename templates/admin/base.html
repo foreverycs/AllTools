@@ -9,6 +9,17 @@
   <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/admin.css') }}" />
   <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
+  <script>
+    // Defined in <head> so page scripts (which parse before the shell script
+    // at the end of <body>) can register teardown callbacks on full loads too.
+    window.__adminCleanup = window.__adminCleanup || [];
+    window.__adminAddDoc = function (type, fn, capture) {
+      document.addEventListener(type, fn, capture);
+      window.__adminCleanup.push(function () {
+        document.removeEventListener(type, fn, capture);
+      });
+    };
+  </script>
   {# Speculative prefetch: makes sidebar switches feel instant after first paint. #}
   <link rel="prefetch" href="{{ url_path('/admin') }}" as="document" />
   <link rel="prefetch" href="{{ url_path('/admin/uploads') }}" as="document" />
@@ -136,6 +147,8 @@
       if (!side || !backdrop || !openBtn || !main) return;
 
       var navBusy = false;
+      var navTimer = null;
+      var navSeq = 0;
       var root = (window.__ROOT__ || '').replace(/\/$/, '');
 
       function isMobileNav() {
@@ -230,11 +243,36 @@
         });
       }
 
+      function runPageCleanup() {
+        var fns = window.__adminCleanup || [];
+        for (var i = 0; i < fns.length; i++) {
+          try { fns[i](); } catch (e) {}
+        }
+        window.__adminCleanup = [];
+      }
+
       function softNavigate(href, push) {
         if (navBusy) return;
         navBusy = true;
+        var seq = ++navSeq;
         body.classList.add('admin-navigating');
+        // Once the admin shell uses soft navigation, the entrance fade-in
+        // is disabled for subsequent views (it only applies on full loads).
+        body.classList.add('admin-soft-nav');
         if (isMobileNav()) closeSide();
+
+        // Safety timeout: unlock if fetch stalls (15s). Bump navSeq so a
+        // late-resolving response for this request is treated as stale and
+        // cannot overwrite a newer view or push a duplicate history entry.
+        if (navTimer) clearTimeout(navTimer);
+        navTimer = setTimeout(function () {
+          if (navBusy) {
+            navSeq++;
+            body.classList.remove('admin-navigating');
+            navBusy = false;
+            window.location.href = href;
+          }
+        }, 15000);
 
         fetch(href, {
           credentials: 'same-origin',
@@ -247,10 +285,13 @@
             return r.text();
           })
           .then(function (html) {
+            // Stale: a newer navigation (or the timeout fallback) happened.
+            if (seq !== navSeq) return;
             var doc = new DOMParser().parseFromString(html, 'text/html');
             var nextMain = doc.querySelector('#adminMain, main.admin-main');
             if (!nextMain) throw new Error('no main');
-            // Tear down page-local overlays from previous view
+            // Tear down previous page's event listeners & overlays
+            runPageCleanup();
             document.querySelectorAll('.preview-overlay').forEach(function (el) {
               el.remove();
             });
@@ -266,10 +307,13 @@
             window.scrollTo(0, 0);
           })
           .catch(function () {
+            if (seq !== navSeq) return;
             // Fallback: full navigation
             window.location.href = href;
           })
           .finally(function () {
+            if (seq !== navSeq) return;
+            if (navTimer) { clearTimeout(navTimer); navTimer = null; }
             body.classList.remove('admin-navigating');
             navBusy = false;
           });
