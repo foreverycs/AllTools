@@ -29,6 +29,15 @@ def test_request_id_context():
     assert len(new_request_id()) == 16
 
 
+def test_jobs_output_dir_creates_configured_path(tmp_path, monkeypatch):
+    """Regression: JOB_OUTPUT_DIR on a fresh host is not pre-created; the
+    dir must be made before mkdtemp so async submits never 500."""
+    target = tmp_path / "file" / "jobs"
+    monkeypatch.setenv("JOB_OUTPUT_DIR", str(target))
+    assert jobs_mod.jobs_output_dir() == str(target)
+    assert target.is_dir()
+
+
 @pytest.mark.asyncio
 async def test_job_lifecycle():
     job = await create_job("pdf2word", download_name="a.docx")

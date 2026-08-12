@@ -76,11 +76,15 @@ def jobs_output_dir() -> str:
     """Shared directory for async job work/output files.
 
     When using the Redis backend this must live on storage visible to every
-    worker/instance. Override with ``JOB_OUTPUT_DIR``.
+    worker/instance. Override with ``JOB_OUTPUT_DIR``. The directory is always
+    created (also for the configured path) so ``mkdtemp``/downloads on a fresh
+    deployment never fail with FileNotFoundError.
     """
     configured = (os.environ.get("JOB_OUTPUT_DIR") or "").strip()
     if configured:
-        return configured
+        path = Path(configured)
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
     from storage.history import file_dir
 
     path = file_dir() / "jobs"
@@ -214,19 +218,48 @@ class _MemoryJobStore:
 
 
 class _RedisJobStore:
+    """Redis-backed store with graceful degradation.
+
+    When Redis is configured but unavailable at request time (down, wrong
+    URL, auth), operations fall back to an in-process memory store so the job
+    APIs never 500 (mirroring the rate-limit backend's behavior). The
+    fallback is sticky for the process lifetime and logged loudly once; fix
+    ``REDIS_URL`` and restart to restore cross-worker visibility.
+    """
 
     def __init__(self) -> None:
         self._ttl = int(_JOB_TTL_SEC + 3600)
         self._grace_ttl = int(_DOWNLOAD_GRACE_SEC + 1)
+        self._mem = _MemoryJobStore()
+        self._mem_active = False
+
+    def _mem_store(self, exc: BaseException) -> _MemoryJobStore:
+        if not self._mem_active:
+            self._mem_active = True
+            _mark_redis_fallback()
+            logger.error(
+                "redis job store unavailable; falling back to in-memory jobs "
+                "(restart or fix REDIS_URL to restore cross-worker jobs): %s",
+                exc,
+            )
+        return self._mem
 
     async def create(self, job: Job) -> Job:
-        client = _redis()
-        await client.set(_key(job.id), json.dumps(_job_to_dict(job)), ex=self._ttl)
-        return job
+        try:
+            client = _redis()
+            await client.set(
+                _key(job.id), json.dumps(_job_to_dict(job)), ex=self._ttl
+            )
+            return job
+        except Exception as exc:
+            return await self._mem_store(exc).create(job)
 
     async def get(self, job_id: str) -> Optional[Job]:
-        client = _redis()
-        raw = await client.get(_key(job_id))
+        try:
+            client = _redis()
+            raw = await client.get(_key(job_id))
+        except Exception as exc:
+            return await self._mem_store(exc).get(job_id)
         if not raw:
             return None
         try:
@@ -236,84 +269,107 @@ class _RedisJobStore:
             return None
 
     async def update(self, job_id: str, fields: Dict[str, Any]) -> Optional[Job]:
-        client = _redis()
-        raw = await client.get(_key(job_id))
-        if not raw:
-            return None
         try:
-            data = json.loads(raw)
-        except (ValueError, TypeError) as exc:
-            logger.warning("corrupt job record id=%s: %s", job_id, exc)
-            return None
-        for k, v in fields.items():
-            if k in Job.__dataclass_fields__:
-                data[k] = v
-        data["updated_at"] = _now()
-        job = _job_from_dict(data)
-        await client.set(_key(job_id), json.dumps(_job_to_dict(job)), ex=self._ttl)
-        return job
+            client = _redis()
+            raw = await client.get(_key(job_id))
+            if not raw:
+                return None
+            try:
+                data = json.loads(raw)
+            except (ValueError, TypeError) as exc:
+                logger.warning("corrupt job record id=%s: %s", job_id, exc)
+                return None
+            for k, v in fields.items():
+                if k in Job.__dataclass_fields__:
+                    data[k] = v
+            data["updated_at"] = _now()
+            job = _job_from_dict(data)
+            await client.set(
+                _key(job_id), json.dumps(_job_to_dict(job)), ex=self._ttl
+            )
+            return job
+        except Exception as exc:
+            return await self._mem_store(exc).update(job_id, fields)
 
     async def mark_downloaded(self, job_id: str) -> Optional[Job]:
-        client = _redis()
-        raw = await client.get(_key(job_id))
-        if not raw:
-            return None
         try:
-            job = _job_from_dict(json.loads(raw))
-        except (ValueError, TypeError, KeyError) as exc:
-            logger.warning("corrupt job record id=%s: %s", job_id, exc)
-            return None
-        _cleanup_job_files(job)
-        job.downloaded_at = _now()
-        job.updated_at = _now()
-        job.message = "downloaded"
-        # Short-lived after download so poll/download reuse is brief.
-        await client.set(
-            _key(job_id), json.dumps(_job_to_dict(job)), ex=self._grace_ttl
-        )
-        return job
-
-    async def reclaim(self, now: float) -> int:
-        client = _redis()
-        removed = 0
-        async for key in client.scan_iter(match=f"{_REDIS_PREFIX}*", count=100):
-            raw = await client.get(key)
+            client = _redis()
+            raw = await client.get(_key(job_id))
             if not raw:
-                continue
+                return None
             try:
                 job = _job_from_dict(json.loads(raw))
-            except (ValueError, TypeError, KeyError):
-                await client.delete(key)
-                removed += 1
-                continue
-            if _reclaim_should_drop(job, now):
-                _cleanup_job_files(job)
-                await client.delete(key)
-                removed += 1
-        return removed
+            except (ValueError, TypeError, KeyError) as exc:
+                logger.warning("corrupt job record id=%s: %s", job_id, exc)
+                return None
+            _cleanup_job_files(job)
+            job.downloaded_at = _now()
+            job.updated_at = _now()
+            job.message = "downloaded"
+            # Short-lived after download so poll/download reuse is brief.
+            await client.set(
+                _key(job_id), json.dumps(_job_to_dict(job)), ex=self._grace_ttl
+            )
+            return job
+        except Exception as exc:
+            return await self._mem_store(exc).mark_downloaded(job_id)
+
+    async def reclaim(self, now: float) -> int:
+        try:
+            client = _redis()
+            removed = 0
+            async for key in client.scan_iter(match=f"{_REDIS_PREFIX}*", count=100):
+                raw = await client.get(key)
+                if not raw:
+                    continue
+                try:
+                    job = _job_from_dict(json.loads(raw))
+                except (ValueError, TypeError, KeyError):
+                    await client.delete(key)
+                    removed += 1
+                    continue
+                if _reclaim_should_drop(job, now):
+                    _cleanup_job_files(job)
+                    await client.delete(key)
+                    removed += 1
+            return removed
+        except Exception as exc:
+            return await self._mem_store(exc).reclaim(now)
 
     async def clear(self) -> None:
-        client = _redis()
-        removed: List[str] = []
-        async for key in client.scan_iter(match=f"{_REDIS_PREFIX}*", count=100):
-            removed.append(key)
-        if removed:
-            await client.delete(*removed)
+        try:
+            client = _redis()
+            removed: List[str] = []
+            async for key in client.scan_iter(match=f"{_REDIS_PREFIX}*", count=100):
+                removed.append(key)
+            if removed:
+                await client.delete(*removed)
+        except Exception as exc:
+            await self._mem_store(exc).clear()
 
 
 _backend_name: str = "memory"
 _store: _MemoryJobStore = _MemoryJobStore()
 _backend_warned = False
+_redis_fallback_active = False
+
+
+def _mark_redis_fallback() -> None:
+    """Record that the Redis store degraded to in-memory (health reporting)."""
+    global _redis_fallback_active
+    _redis_fallback_active = True
 
 
 def jobs_backend_name() -> str:
     """Active backend label for health / docs (memory | redis | redis-fallback)."""
+    if _redis_fallback_active:
+        return "redis-fallback"
     return _backend_name
 
 
 def jobs_backend_is_shared() -> bool:
-    """True when the job store is shared across workers (Redis)."""
-    return _backend_name == "redis"
+    """True when the job store is shared across workers (Redis, not degraded)."""
+    return _backend_name == "redis" and not _redis_fallback_active
 
 
 def _configure_backend() -> None:

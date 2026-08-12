@@ -26,6 +26,10 @@ class TempWorkspace:
 
     def create(self) -> str:
         if self.base_dir:
+            # A fresh deployment may not have the base dir yet (e.g. the
+            # JOB_OUTPUT_DIR volume on a new host); create it so mkdtemp
+            # never fails with FileNotFoundError.
+            os.makedirs(self.base_dir, exist_ok=True)
             self.path = tempfile.mkdtemp(prefix=self.prefix, dir=self.base_dir)
         else:
             self.path = tempfile.mkdtemp(prefix=self.prefix)

@@ -86,3 +86,15 @@ def test_temp_workspace_create_and_cleanup(tmp_path, monkeypatch):
     assert (tmp_path / "ws" / "a.txt").is_file()
     ws.cleanup_now()
     assert ws.path is None
+
+
+def test_temp_workspace_creates_missing_base_dir(tmp_path):
+    """A fresh deployment may lack the base dir; create() must not 500."""
+    base = tmp_path / "file" / "jobs"
+    ws = TempWorkspace("pdf2word_async_", base_dir=str(base))
+    path = ws.create()
+    try:
+        assert base.is_dir()
+        assert path.startswith(str(base))
+    finally:
+        ws.cleanup_now()
