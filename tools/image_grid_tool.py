@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from core.concurrency import run_heavy
+from media import check_image_dimensions
 from media.image_grid import (
     ImageGridError,
     build_grid_preview,
@@ -161,6 +162,10 @@ async def api_split(
         work = ws.create()
         in_path = os.path.join(work, "input.bin")
         await save_upload(file, in_path)
+        try:
+            check_image_dimensions(in_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
 
         result = await run_heavy(
             _split_file,

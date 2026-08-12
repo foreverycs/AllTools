@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import secrets
 import shutil
 import sqlite3
@@ -38,7 +37,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DB_NAME = "records.db"
 LEGACY_JSON_NAME = "records.json"
 
-_SAFE_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 _lock = threading.Lock()
 _last_cleanup_ts: float = 0.0
 _CLEANUP_INTERVAL: float = 300.0  # seconds
@@ -90,22 +88,9 @@ def _iso(dt: datetime) -> str:
 
 
 def _safe_name(name: str, default: str = "file") -> str:
-    return _sanitize_filename(name, default, stem_limit=80, ext_limit=12)
+    from core.filename import sanitize_filename
 
-
-def _sanitize_filename(
-    name: str,
-    default: str = "file",
-    *,
-    stem_limit: int = 80,
-    ext_limit: int = 12,
-) -> str:
-    """Sanitize a filename for safe on-disk storage (shared with express)."""
-    base = os.path.basename(name or default)
-    stem, ext = os.path.splitext(base)
-    stem = _SAFE_RE.sub("_", stem).strip("._") or default
-    ext = re.sub(r"[^\w.]", "", ext)[:ext_limit]
-    return (stem[:stem_limit] + ext) if ext else stem[:stem_limit]
+    return sanitize_filename(name, default, stem_limit=80, ext_limit=12)
 
 
 def ensure_file_dir() -> Path:
@@ -254,19 +239,26 @@ def _do_cleanup() -> int:
     with _lock:
         conn = _get_conn()
         _migrate_json_if_needed(conn)
-        expired = conn.execute(
-            "SELECT * FROM records WHERE created_at < ? OR created_at = ''",
-            (cutoff_iso,),
-        ).fetchall()
-        for row in expired:
-            rec = _row_to_dict(row)
-            _remove_record_files(rec)
-        removed = len(expired)
-        if removed:
-            conn.execute(
-                "DELETE FROM records WHERE created_at < ? OR created_at = ''",
+        # Batch the expired scan so a large backlog is never fully loaded into
+        # memory; files are removed per-row (I/O) while rows are deleted in
+        # bounded batches of ids.
+        while True:
+            expired = conn.execute(
+                "SELECT id, input_rel FROM records "
+                "WHERE created_at < ? OR created_at = '' LIMIT 500",
                 (cutoff_iso,),
+            ).fetchall()
+            if not expired:
+                break
+            for row in expired:
+                _remove_record_files({"input_rel": str(row["input_rel"] or "")})
+            ids = [str(r["id"]) for r in expired]
+            placeholders = ",".join("?" * len(ids))
+            conn.execute(
+                f"DELETE FROM records WHERE id IN ({placeholders})", ids
             )
+            removed += len(ids)
+        if removed:
             conn.commit()
 
         for child in list(root.iterdir()):

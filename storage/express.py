@@ -133,9 +133,9 @@ def close_db_connections() -> None:
 
 
 def _safe_name(name: str, default: str = "file") -> str:
-    from storage.history import _sanitize_filename
+    from core.filename import sanitize_filename
 
-    return _sanitize_filename(name, default, stem_limit=100, ext_limit=20)
+    return sanitize_filename(name, default, stem_limit=100, ext_limit=20)
 
 
 def _normalize_code(code: str) -> str:

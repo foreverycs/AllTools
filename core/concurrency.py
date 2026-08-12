@@ -165,11 +165,21 @@ async def run_conversion_process(func, /, *args, **kwargs):
 _PROCESS_POOL_THRESHOLD = int(
     os.environ.get("PDF_PROCESS_POOL_THRESHOLD", str(2 * 1024 * 1024))
 )
+# Small files with many pages are still CPU-bound (page parsing / layout under
+# the GIL); promote them to the process pool too. 0 disables the page dimension.
+_PROCESS_POOL_MIN_PAGES = int(os.environ.get("PDF_PROCESS_POOL_MIN_PAGES", "40"))
 
 
-def should_use_process_pool(file_size: int) -> bool:
-    """True when the file is large enough to benefit from process-based parallelism."""
-    return file_size >= _PROCESS_POOL_THRESHOLD
+def should_use_process_pool(
+    file_size: Optional[int] = None, *, pages: Optional[int] = None
+) -> bool:
+    """True when the file is large / page-heavy enough to benefit from process
+    -based parallelism (bypasses the GIL for CPU-bound parsing)."""
+    if file_size is not None and file_size >= _PROCESS_POOL_THRESHOLD:
+        return True
+    if _PROCESS_POOL_MIN_PAGES > 0 and pages is not None and pages >= _PROCESS_POOL_MIN_PAGES:
+        return True
+    return False
 
 
 async def run_heavy(
@@ -178,16 +188,16 @@ async def run_heavy(
     *args,
     file_size: Optional[int] = None,
     force_process: bool = False,
+    pages: Optional[int] = None,
     **kwargs,
 ):
     """Run ``func`` under the conversion slot; use process pool when appropriate.
 
-    Process pool is selected when ``force_process`` is true or ``file_size``
-    meets :func:`should_use_process_pool`. Otherwise uses a worker thread.
+    Process pool is selected when ``force_process`` is true or ``file_size`` /
+    ``pages`` meet :func:`should_use_process_pool`. Otherwise uses a worker
+    thread.
     """
-    use_proc = force_process or (
-        file_size is not None and should_use_process_pool(file_size)
-    )
+    use_proc = force_process or should_use_process_pool(file_size, pages=pages)
     if use_proc:
         return await run_conversion_process(func, *args, **kwargs)
     return await run_conversion(func, *args, **kwargs)

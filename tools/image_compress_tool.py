@@ -11,7 +11,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from core.concurrency import run_heavy
-from media import CompressError, compress_image, supported_formats
+from media import (
+    CompressError,
+    check_image_dimensions,
+    compress_image,
+    supported_formats,
+)
 from tools.common import (
     check_upload_size_header,
     safe_stem,
@@ -66,6 +71,14 @@ def _parse_max_side(raw: Optional[str]) -> Optional[int]:
     if value > 20000:
         raise HTTPException(status_code=400, detail="max_side too large")
     return value
+
+
+def _reject_oversize(path: str) -> None:
+    """Reject raster images whose pixel count exceeds the app cap (413)."""
+    try:
+        check_image_dimensions(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
 
 def _compress_file(
@@ -155,6 +168,7 @@ async def api_compress(
         work = ws.create()
         in_path = os.path.join(work, "input.bin")
         await save_upload(file, in_path)
+        _reject_oversize(in_path)
 
         result = await run_heavy(
             _compress_file,
@@ -238,6 +252,7 @@ async def api_compress_info(
         work = ws.create()
         in_path = os.path.join(work, "input.bin")
         await save_upload(file, in_path)
+        _reject_oversize(in_path)
         result = await run_heavy(
             _compress_file,
             in_path,

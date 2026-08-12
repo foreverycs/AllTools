@@ -201,10 +201,11 @@ def test_install_plugin_routes_swaps_on_reload(monkeypatch):
     monkeypatch.setattr(plugins_mod, "_discovery", disc1)
 
     mini = FastAPI()
-    saved_routes = app_mod._installed_plugin_routes
-    app_mod._installed_plugin_routes = []
+    rt = app_mod.plugin_runtime
+    saved_routes = rt.installed_plugin_routes
+    rt._installed_plugin_routes = []
     try:
-        app_mod.install_plugin_routes(mini)
+        rt.install_routes(mini)
         c = TestClient(mini)
         assert c.get("/one").status_code == 200
         assert c.get("/two").status_code == 404
@@ -213,11 +214,11 @@ def test_install_plugin_routes_swaps_on_reload(monkeypatch):
         disc2 = PluginDiscovery()
         disc2.routers.append(make_router("two"))
         monkeypatch.setattr(plugins_mod, "_discovery", disc2)
-        app_mod.install_plugin_routes(mini)
+        rt.install_routes(mini)
         assert c.get("/one").status_code == 404
         assert c.get("/two").status_code == 200
     finally:
-        app_mod._installed_plugin_routes = saved_routes
+        rt._installed_plugin_routes = saved_routes
 
 
 HOT_PLUGIN = """\

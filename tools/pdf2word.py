@@ -10,10 +10,24 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
-from converter import content_warnings, count_blocks, extract_document, ocr_info, write_document
+from converter import (
+    content_warnings,
+    count_blocks,
+    count_pdf_pages,
+    extract_document,
+    ocr_info,
+    write_document,
+)
 from core.concurrency import run_conversion, run_heavy, should_use_process_pool
 from core.errors import ConversionError, PDFParseError
-from core.jobs import create_job, job_public_dict, jobs_output_dir, schedule_job, update_job
+from core.jobs import (
+    create_job,
+    job_public_dict,
+    jobs_output_dir,
+    schedule_job,
+    update_job,
+    update_job_progress,
+)
 from tools.common import (
     DOCX_MEDIA,
     ZIP_MEDIA,
@@ -79,6 +93,14 @@ def _convert_one(
     return stats
 
 
+def _count_pages(pdf_path: str) -> Optional[int]:
+    """Page count for pool decisions; None when unreadable (worker reports it)."""
+    try:
+        return count_pdf_pages(pdf_path)
+    except Exception:
+        return None
+
+
 def _stats_headers(stats: dict) -> dict:
     headers = {
         "X-Pages": str(stats.get("pages", 0)),
@@ -127,22 +149,30 @@ async def _run_single_async_job(
     use_ocr: bool,
     original_name: str,
     file_size: int,
+    pages: Optional[int] = None,
 ) -> dict:
     # Prefer thread pool so per-page progress can update the job store.
     # Large files without progress still use process pool via run_heavy.
     loop = asyncio.get_running_loop()
     progress_pending: list = []
 
+    # Small files with many pages are CPU-bound; count pages to decide.
+    # Skipped for large files (already promoted by the size threshold) and
+    # when OCR forces the process pool anyway. ``pages`` may be precomputed by
+    # the route to avoid a second header read.
+    if pages is None and not should_use_process_pool(file_size) and not use_ocr:
+        pages = _count_pages(pdf_path)
+
     def on_page(done: int, total: int) -> None:
         frac = 0.1 + 0.85 * (done / max(total, 1))
         msg = f"page {done}/{total}"
         fut = asyncio.run_coroutine_threadsafe(
-            update_job(job_id, progress=min(0.95, frac), message=msg),
+            update_job_progress(job_id, progress=min(0.95, frac), message=msg),
             loop,
         )
         progress_pending.append(fut)
 
-    use_proc = should_use_process_pool(file_size) or use_ocr
+    use_proc = should_use_process_pool(file_size, pages=pages) or use_ocr
     if use_proc:
         # Process pool: progress callbacks are not available (pickling).
         stats = await run_heavy(
@@ -153,6 +183,7 @@ async def _run_single_async_job(
             page_breaks,
             use_ocr,
             file_size=file_size,
+            pages=pages,
             force_process=True,
         )
     else:
@@ -214,6 +245,7 @@ async def _run_batch_async_job(
         idx: int, name: str, pdf_path: str, docx_path: str
     ) -> Tuple[int, str, str, str, dict]:
         file_size = os.path.getsize(pdf_path)
+        pages = None if should_use_process_pool(file_size) else _count_pages(pdf_path)
         stats = await run_heavy(
             _convert_one,
             pdf_path,
@@ -222,6 +254,7 @@ async def _run_batch_async_job(
             page_breaks,
             use_ocr,
             file_size=file_size,
+            pages=pages,
         )
         return idx, name, pdf_path, docx_path, stats
 
@@ -336,6 +369,7 @@ async def convert(
     try:
         await save_upload(file, pdf_path)
         file_size = os.path.getsize(pdf_path)
+        pages = None if should_use_process_pool(file_size) else _count_pages(pdf_path)
         stats = await run_heavy(
             _convert_one,
             pdf_path,
@@ -344,6 +378,7 @@ async def convert(
             page_breaks,
             use_ocr,
             file_size=file_size,
+            pages=pages,
         )
     except Exception as exc:
         ws.cleanup_now()
@@ -395,6 +430,11 @@ async def convert_async(
     try:
         await save_upload(file, pdf_path)
         file_size = os.path.getsize(pdf_path)
+        pages = (
+            None
+            if (should_use_process_pool(file_size) or use_ocr)
+            else _count_pages(pdf_path)
+        )
     except Exception as exc:
         ws.cleanup_now()
         raise map_conversion_error(exc) from exc
@@ -419,13 +459,16 @@ async def convert_async(
             use_ocr=use_ocr,
             original_name=original,
             file_size=file_size,
+            pages=pages,
         )
 
     schedule_job(job.id, _factory)
     body = job_public_dict(job)
     body.update(job_urls(job.id))
     body["mode"] = "async"
-    body["prefer_process_pool"] = should_use_process_pool(file_size) or use_ocr
+    body["prefer_process_pool"] = (
+        should_use_process_pool(file_size, pages=pages) or use_ocr
+    )
     return JSONResponse(body, status_code=202)
 
 
@@ -476,6 +519,11 @@ async def convert_batch(
         ) -> Tuple[int, str, str, str, dict]:
             try:
                 file_size = os.path.getsize(pdf_path)
+                pages = (
+                    None
+                    if should_use_process_pool(file_size)
+                    else _count_pages(pdf_path)
+                )
                 stats = await run_heavy(
                     _convert_one,
                     pdf_path,
@@ -484,6 +532,7 @@ async def convert_batch(
                     page_breaks,
                     use_ocr,
                     file_size=file_size,
+                    pages=pages,
                 )
             except Exception as exc:
                 raise map_conversion_error(exc, name_prefix=name) from exc

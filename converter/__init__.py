@@ -15,12 +15,14 @@ from .pdf_reader import (
     extract_document,
     parse_page_range,
 )
+from .extract import count_pdf_pages
 
 __all__ = [
     "extract_document",
     "write_document",
     "parse_page_range",
     "count_blocks",
+    "count_pdf_pages",
     "content_warnings",
     "PageContent",
     "TextBlock",

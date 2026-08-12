@@ -17,6 +17,7 @@ holds its own module ``_lock`` around every ``get``/``close_all`` call.
 from __future__ import annotations
 
 import sqlite3
+import time
 from pathlib import Path
 from typing import Dict
 
@@ -28,12 +29,14 @@ class ConnCache:
 
     def __init__(self) -> None:
         self._cache: Dict[str, sqlite3.Connection] = {}
+        self._last_used: Dict[str, float] = {}
 
     def get(self, db_path: Path, schema: str) -> sqlite3.Connection:
         """Return a reusable connection for ``db_path``.
 
-        When the cache is full (e.g. tests rotating tmp dirs) the oldest
-        connection is closed to bound open file handles.
+        When the cache is full (e.g. tests rotating tmp dirs) the *least
+        recently used* connection is closed to bound open file handles, so a
+        hot database is never evicted in favor of a cold one.
         """
         key = str(db_path)
         conn = self._cache.get(key)
@@ -44,13 +47,18 @@ class ConnCache:
             conn.row_factory = sqlite3.Row
             conn.executescript(schema)
             if len(self._cache) >= self._MAX:
-                old_path, old_conn = next(iter(self._cache.items()))
-                try:
-                    old_conn.close()
-                except sqlite3.Error:
-                    pass
-                del self._cache[old_path]
+                # Evict the connection used least recently (insertion order is
+                # not a proxy for hotness once connections are reused).
+                victim_key = min(self._last_used, key=self._last_used.get)
+                victim = self._cache.pop(victim_key, None)
+                self._last_used.pop(victim_key, None)
+                if victim is not None:
+                    try:
+                        victim.close()
+                    except sqlite3.Error:
+                        pass
             self._cache[key] = conn
+        self._last_used[key] = time.monotonic()
         return conn
 
     def close_all(self) -> None:
@@ -61,3 +69,4 @@ class ConnCache:
             except sqlite3.Error:
                 pass
         self._cache.clear()
+        self._last_used.clear()

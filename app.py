@@ -148,11 +148,11 @@ async def lifespan(app: FastAPI):
         "yes",
     ):
         async def _plugin_watcher() -> None:
-            last = _plugin_fingerprint()
+            last = plugin_runtime.fingerprint()
             while True:
                 await asyncio.sleep(3)
                 try:
-                    snap = _plugin_fingerprint()
+                    snap = plugin_runtime.fingerprint()
                     if snap != last:
                         last = snap
                         await asyncio.to_thread(hot_reload_plugins)
@@ -264,112 +264,24 @@ def register_middleware(app: FastAPI) -> None:
 register_middleware(app)
 
 
-
 # ---------------------------------------------------------------------------
 # Plugin runtime: routers / static / templates are installed through a mutable
 # container so hot reload (admin「插件重载」, or PLUGIN_AUTO_RELOAD watcher) can
-# swap plugins without restarting the app.
+# swap plugins without restarting the app. The FastAPI-facing wiring lives in
+# core/plugin_runtime.py; discovery lives in core/plugins.py.
 # ---------------------------------------------------------------------------
-import threading
+from core.plugin_runtime import PluginRuntime
 
-_installed_plugin_routes: list = []
-_mounted_plugin_static: set = set()
-# Serialize plugin route swaps: hot reload runs in a background thread while
-# requests match routes concurrently.
-_plugin_route_lock = threading.RLock()
-
-
-def install_plugin_routes(app) -> None:
-    """(Re)install the current plugin routers onto ``app``.
-
-    Previously installed plugin routes are removed by identity, then the fresh
-    set is included under a new container router. Safe to call repeatedly.
-
-    The route list is REBUILT as a new list and swapped atomically: Starlette
-    iterates ``router.routes`` while dispatching requests, so an in-place
-    mutation could race with an in-flight request (stale index / mixed routes).
-    Assigning a fresh list object leaves any current reader iterating the old
-    list undisturbed.
-    """
-    global _installed_plugin_routes
-    with _plugin_route_lock:
-        from core.plugins import get_plugin_discovery
-
-        base = [
-            r for r in app.router.routes if r not in _installed_plugin_routes
-        ]
-        routers = get_plugin_discovery().routers
-        if routers:
-            container = APIRouter()
-            for r in routers:
-                container.include_router(r)
-            base = base + list(container.routes)
-            _installed_plugin_routes = list(container.routes)
-        else:
-            _installed_plugin_routes = []
-        app.router.routes = base  # single atomic swap
-        app.openapi_schema = None  # force OpenAPI schema regeneration
-
-
-def mount_plugin_statics(app) -> None:
-    """Mount static dirs for plugins not yet mounted (idempotent)."""
-    global _mounted_plugin_static
-    from core.plugins import get_plugin_static_mounts
-
-    for slug, static_path in get_plugin_static_mounts():
-        key = f"/plugins/{slug}/static"
-        if key in _mounted_plugin_static:
-            continue
-        app.mount(key, StaticFiles(directory=str(static_path)), name=f"plugin-{slug}")
-        _mounted_plugin_static.add(key)
+plugin_runtime = PluginRuntime(app)
 
 
 def hot_reload_plugins():
     """Re-discover plugins and swap registry, routes, templates and static.
 
-    Called from the admin「插件重载」button and (optionally) the file watcher.
-    Returns the new PluginDiscovery. Never raises for plugin-level failures.
-
-    The whole reload holds ``_plugin_route_lock`` so concurrent reloads (admin
-    click + file watcher) cannot interleave registry purges / route swaps.
+    Thin delegate kept for the admin reload endpoint and the auto-reload
+    watcher; see ``core.plugin_runtime.PluginRuntime.reload``.
     """
-    with _plugin_route_lock:
-        from tools import refresh_plugins_registry
-
-        disc = refresh_plugins_registry()
-        install_plugin_routes(app)
-        mount_plugin_statics(app)
-        try:
-            from core.health import bust_health_cache
-
-            bust_health_cache()
-        except Exception:
-            pass
-        return disc
-
-
-def _plugin_fingerprint():
-    """Snapshot of plugin files for the optional auto-reload watcher."""
-    from core.plugins import plugins_dir
-
-    root = plugins_dir()
-    if not root.is_dir():
-        return None
-    parts = []
-    try:
-        for p in root.rglob("*"):
-            if "__pycache__" in p.parts:
-                continue
-            try:
-                st = p.stat()
-                parts.append(
-                    (p.relative_to(root).as_posix(), st.st_mtime_ns, st.st_size)
-                )
-            except OSError:
-                continue
-    except OSError:
-        return None
-    return tuple(sorted(parts))
+    return plugin_runtime.reload()
 
 
 # Static assets (shared CSS, etc.)
@@ -378,14 +290,14 @@ if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Plugin static assets (mounts grow on hot reload; idempotent).
-mount_plugin_statics(app)
+plugin_runtime.mount_statics()
 
 # Register all builtin tool routers (plugins install via the container below).
 for router in TOOL_ROUTERS:
     app.include_router(router)
 
 # Install plugin routers after the builtin ones (startup; reload swaps later).
-install_plugin_routes(app)
+plugin_runtime.install_routes()
 
 # Admin console (password-protected)
 app.include_router(admin_router)

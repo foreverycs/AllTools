@@ -96,6 +96,23 @@ def _ocr_page_to_text_blocks(page, *, lang: Optional[str] = None) -> List[TextBl
         return []
 
 
+def count_pdf_pages(pdf_path: str) -> int:
+    """Quick page count for a PDF (metadata-level; no full render).
+
+    Cheap enough to call before choosing the conversion execution strategy
+    (process pool for small-but-multi-page files). Raises ``ValueError`` when
+    the file cannot be opened.
+    """
+    try:
+        pdf = pdfplumber.open(pdf_path)
+    except Exception as exc:
+        raise ValueError(_friendly_open_error(exc)) from exc
+    try:
+        return len(pdf.pages)
+    finally:
+        pdf.close()
+
+
 def parse_page_range(spec: Optional[str], total_pages: int) -> List[int]:
     """Parse a 1-based page range like ``1-3,5,7-9`` into 0-based indices.
 
@@ -269,6 +286,7 @@ def extract_document(
 __all__ = [
     "extract_document",
     "parse_page_range",
+    "count_pdf_pages",
     "count_blocks",
     "content_warnings",
     "_extract_page",

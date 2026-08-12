@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from core.concurrency import run_heavy
+from media import check_image_dimensions
 from media.image_to_pdf import (
     ImageToPdfError,
     images_to_pdf,
@@ -203,6 +204,10 @@ async def api_convert(
             name = f.filename or f"image_{i + 1}.bin"
             dest = os.path.join(work, f"in_{i:03d}.bin")
             await save_upload(f, dest)
+            try:
+                check_image_dimensions(dest)
+            except ValueError as exc:
+                raise HTTPException(status_code=413, detail=str(exc)) from exc
             paths.append(dest)
             names.append(name)
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-import re
+import threading
+import time
 from typing import Any, Optional
 
 from fastapi import HTTPException, UploadFile
@@ -20,6 +21,12 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+# Guards loader rebuilds (plugin hot reload runs in a background thread while
+# requests render templates concurrently). The swap itself is a single atomic
+# attribute assignment, but rebuilding the loader chain must not interleave
+# with another reload.
+_plugin_loader_lock = threading.RLock()
+
 
 def set_plugin_template_dirs(dirs) -> None:
     """Rebuild the Jinja2 loader with the current plugin template folders.
@@ -30,13 +37,12 @@ def set_plugin_template_dirs(dirs) -> None:
     """
     from jinja2 import ChoiceLoader, FileSystemLoader
 
-    loaders = [FileSystemLoader(TEMPLATES_DIR)]
-    for d in dirs or ():
-        if os.path.isdir(str(d)):
-            loaders.append(FileSystemLoader(str(d)))
-    templates.env.loader = ChoiceLoader(loaders)
-
-_SAFE_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
+    with _plugin_loader_lock:
+        loaders = [FileSystemLoader(TEMPLATES_DIR)]
+        for d in dirs or ():
+            if os.path.isdir(str(d)):
+                loaders.append(FileSystemLoader(str(d)))
+        templates.env.loader = ChoiceLoader(loaders)
 
 # Bump when shipping CSS/JS that must invalidate CDN/browser caches.
 # Also mixed with file mtime so local edits bust cache without code changes.
@@ -69,15 +75,34 @@ def url_path(path: str, request: Optional[Request] = None) -> str:
     return join_url(effective_root_path(request), path)
 
 
+# Short TTL so frequent template renders (which call static_url for many
+# assets) dedupe the per-file stat() without hiding local edits for long.
+_VER_CACHE_TTL = 5.0  # seconds
+_ver_cache: dict = {}
+_ver_cache_lock = threading.Lock()
+
+
 def _static_file_version(rel_path: str) -> str:
-    """Return a short cache-buster for a static file under /static/."""
+    """Return a short cache-buster for a static file under /static/.
+
+    The mtime lookup is cached for ``_VER_CACHE_TTL`` seconds; dev edits are
+    still picked up (and uvicorn --reload restarts the process anyway).
+    """
     rel = rel_path.lstrip("/").removeprefix("static/").lstrip("/")
+    now = time.monotonic()
+    with _ver_cache_lock:
+        hit = _ver_cache.get(rel)
+        if hit is not None and now - hit[0] < _VER_CACHE_TTL:
+            return hit[1]
     full = os.path.join(STATIC_DIR, rel.replace("/", os.sep))
     try:
         mtime = int(os.path.getmtime(full))
     except OSError:
         mtime = 0
-    return f"{_ASSET_BUILD}.{mtime}" if mtime else _ASSET_BUILD
+    ver = f"{_ASSET_BUILD}.{mtime}" if mtime else _ASSET_BUILD
+    with _ver_cache_lock:
+        _ver_cache[rel] = (now, ver)
+    return ver
 
 
 def static_url(path: str, request: Optional[Request] = None) -> str:
@@ -205,14 +230,18 @@ def with_nav(
 
     Ensures ``nav_items`` / ``active_nav`` so ``partials/top_nav.html`` works
     on tool pages the same way as home / category.
+
+    Nav items and the command-palette catalog come from the cached public
+    snapshot (``public_snapshot``), which is rebuilt only when admin enable/
+    disable flags or category overrides change — tool page renders no longer
+    rebuild the whole category/nav lists per request.
     """
     # Local import: tools package imports common at load time.
-    from tools import get_tool_by_slug, nav_categories
-
-    from tools import enabled_tools, featured_tools
+    from tools import get_tool_by_slug, public_snapshot
 
     ctx: dict = dict(context or {})
-    ctx.setdefault("nav_items", nav_categories())
+    if "nav_items" not in ctx:
+        ctx["nav_items"] = public_snapshot()["nav"]
 
     tool = ctx.get("tool")
     if not isinstance(tool, dict):
@@ -248,16 +277,17 @@ def with_nav(
 
     # Flat catalog for command palette (same shape as homepage tools_catalog).
     if "tools_catalog" not in ctx:
-        ctx["tools_catalog"] = build_tools_catalog()
+        ctx["tools_catalog"] = public_snapshot()["catalog"]
 
     # Sibling tools in the same category (for quick chips under tool_nav).
     if "sibling_tools" not in ctx and tool.get("category") and slug:
-        from core.tool_catalog import get_tool_category
-
         cat_id = str(tool["category"])
+        # Snapshot catalog entries carry the *effective* category (admin
+        # override or registry default) and include featured tools, matching
+        # the previous enabled_tools(include_featured=True) scan.
         siblings: list = []
-        for t in enabled_tools(include_featured=True):
-            if (get_tool_category(t.get("slug") or "") or t.get("category")) != cat_id:
+        for t in public_snapshot()["catalog"]:
+            if t.get("category") != cat_id:
                 continue
             if str(t.get("slug") or "") == slug:
                 continue
@@ -299,9 +329,9 @@ def upload_chunk_size() -> int:
 
 
 def safe_stem(filename: Optional[str], default: str = "output") -> str:
-    stem = os.path.splitext(os.path.basename(filename or default))[0]
-    stem = _SAFE_NAME_RE.sub("_", stem).strip("._") or default
-    return stem[:80]
+    from core.filename import safe_stem as _core_safe_stem
+
+    return _core_safe_stem(filename, default)
 
 
 def content_disposition(

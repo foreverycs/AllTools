@@ -16,6 +16,7 @@ import logging
 import os
 import secrets
 import shutil
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
@@ -382,6 +383,57 @@ async def get_job(job_id: str) -> Optional[Job]:
 
 async def update_job(job_id: str, **fields: Any) -> Optional[Job]:
     return await _store.update(job_id, fields)
+
+
+# Progress throttling: per-page (or per-unit) progress updates are frequent and
+# the Redis backend round-trips a GET+SET per call. Track the last applied
+# progress per job and skip updates that move less than ``min_delta`` within
+# ``min_interval`` seconds. The final done/error update always applies.
+_min_delta_p = 0.02  # 2 percentage points
+_min_interval_s = 1.0
+_progress_lock = threading.Lock()
+_last_progress: Dict[str, tuple[float, float]] = {}  # job_id -> (progress, ts)
+
+
+def _prune_progress_watermark(now: float) -> None:
+    """Drop stale throttle entries (keeps the dict bounded over long uptime)."""
+    if len(_last_progress) <= 512:
+        return
+    cutoff = now - 600.0
+    for jid in [j for j, (_, ts) in _last_progress.items() if ts < cutoff]:
+        _last_progress.pop(jid, None)
+
+
+async def update_job_progress(
+    job_id: str,
+    progress: float,
+    message: Optional[str] = None,
+    *,
+    min_delta: float = _min_delta_p,
+    min_interval: float = _min_interval_s,
+) -> Optional[Job]:
+    """Update ``progress``/``message``, skipping redundant intermediate states.
+
+    Consecutive calls that only nudge progress by less than ``min_delta`` and
+    arrive within ``min_interval`` seconds are coalesced. Called from worker
+    threads (progress callbacks), hence the lock around the watermark map.
+    """
+    now = time.monotonic()
+    with _progress_lock:
+        prev = _last_progress.get(job_id)
+        if prev is not None:
+            last_progress, last_ts = prev
+            if (
+                progress - last_progress < min_delta
+                and now - last_ts < min_interval
+            ):
+                return None
+        _last_progress[job_id] = (progress, now)
+    _prune_progress_watermark(now)
+    fields: Dict[str, Any] = {"progress": progress}
+    if message is not None:
+        fields["message"] = message
+    return await update_job(job_id, **fields)
 
 
 async def mark_downloaded(job_id: str) -> Optional[Job]:
