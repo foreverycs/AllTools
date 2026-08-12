@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from pypdf import PdfReader
 
-from media.image_to_pdf import (
+from plugins.image_to_pdf.pdf import (
     ImageToPdfError,
     images_to_pdf,
     input_formats,

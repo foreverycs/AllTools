@@ -1,15 +1,22 @@
-"""Shared helpers for tool HTTP routes: templates, uploads, naming."""
+"""Shared helpers for tool HTTP routes: templates, uploads, naming.
+
+Also hosts cross-plugin image helpers (dimension guard + format detection)
+so image plugins stay self-contained and the ``media`` package can be removed.
+"""
 
 from __future__ import annotations
 
+import io
 import os
+import re
 import threading
 import time
-from typing import Any, Optional
+from typing import Any, List, Optional, Tuple
 
 from fastapi import HTTPException, UploadFile
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
+from PIL import Image
 from starlette.requests import Request
 from urllib.parse import quote
 
@@ -423,6 +430,122 @@ def check_upload_size_header(
         )
 
 
+# ---------------------------------------------------------------------------
+# Cross-plugin image helpers (replaces the former ``media`` package)
+# ---------------------------------------------------------------------------
+
+# App-level raster dimension cap (pixels). Pillow's built-in decompression
+# bomb threshold is much higher (~179M) — decoding an image up to that limit
+# can still allocate hundreds of MB per request, so bound it earlier.
+# ~ 8000x8000, safely below common printable/browser sizes.
+MAX_IMAGE_PIXELS = 64_000_000
+
+# Common raster formats accepted by the shared detector.
+IMAGE_INPUT_FORMATS = ("jpeg", "png", "gif", "webp", "bmp", "tiff", "ico")
+
+_SVG_RE = re.compile(
+    rb"^\s*(?:<\?xml\b[^>]*>\s*)?(?:<!--.*?-->\s*)*<svg\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+class ImageFormatError(ValueError):
+    """Raised when input cannot be processed (bad format / corrupt data)."""
+
+
+def check_image_dimensions(
+    path: str, *, head_bytes: int = 16 * 1024
+) -> Optional[Tuple[int, int]]:
+    """Header-only raster dimension check before any heavy decoding.
+
+    Reads only the first ``head_bytes`` (dimensions live in the file header for
+    PNG/GIF/BMP/ICO/WebP and the JPEG SOF marker) and rejects oversized images.
+    Non-raster or unreadable inputs are skipped — the worker produces the real
+    error. Returns ``(width, height)`` when the header parsed, else None.
+
+    Raises ``ValueError`` when ``width * height`` exceeds ``MAX_IMAGE_PIXELS``.
+    """
+    with open(path, "rb") as f:
+        head = f.read(head_bytes)
+    if not head:
+        raise ValueError("empty image file")
+    try:
+        with Image.open(io.BytesIO(head)) as im:
+            w, h = im.size
+    except Exception:
+        return None
+    if (w or 0) * (h or 0) > MAX_IMAGE_PIXELS:
+        raise ValueError(
+            f"image too large ({w}x{h}); max {MAX_IMAGE_PIXELS} pixels"
+        )
+    return int(w or 0), int(h or 0)
+
+
+def image_input_formats() -> List[str]:
+    """Common raster formats accepted by the shared detector."""
+    return list(IMAGE_INPUT_FORMATS)
+
+
+def detect_image_format(data: bytes, filename: Optional[str] = None) -> str:
+    """Return one of ``IMAGE_INPUT_FORMATS`` or raise ``ImageFormatError``."""
+    if not data:
+        raise ImageFormatError("Empty file")
+
+    name = (filename or "").lower()
+    head = data[:32]
+
+    # Magic numbers first.
+    if head.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    # WebP: RIFF....WEBP
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    if head[:2] == b"BM":
+        return "bmp"
+    # TIFF little/big endian
+    if head[:4] in (b"II*\x00", b"MM\x00*"):
+        return "tiff"
+    # ICO / CUR
+    if head[:4] in (b"\x00\x00\x01\x00", b"\x00\x00\x02\x00"):
+        return "ico"
+
+    # Reject SVG early with a clear message (no native rasterizer here).
+    if _SVG_RE.match(data[:4096] if len(data) > 4096 else data):
+        raise ImageFormatError(
+            "SVG is not supported for raster image processing. "
+            "Export to PNG/JPEG first, or use a vector editor."
+        )
+
+    # Extension fallback.
+    if name.endswith((".jpg", ".jpeg", ".jpe", ".jfif")):
+        return "jpeg"
+    if name.endswith(".png"):
+        return "png"
+    if name.endswith(".gif"):
+        return "gif"
+    if name.endswith(".webp"):
+        return "webp"
+    if name.endswith(".bmp"):
+        return "bmp"
+    if name.endswith((".tif", ".tiff")):
+        return "tiff"
+    if name.endswith((".ico", ".cur")):
+        return "ico"
+    if name.endswith((".svg", ".svgz")):
+        raise ImageFormatError(
+            "SVG is not supported for raster image processing. "
+            "Export to PNG/JPEG first, or use a vector editor."
+        )
+
+    raise ImageFormatError(
+        f"Unsupported image format. Use one of: {', '.join(IMAGE_INPUT_FORMATS)}."
+    )
+
+
 __all__ = [
     "BASE_DIR",
     "TEMPLATES_DIR",
@@ -444,4 +567,10 @@ __all__ = [
     "url_path",
     "static_url",
     "build_tools_catalog",
+    "MAX_IMAGE_PIXELS",
+    "IMAGE_INPUT_FORMATS",
+    "ImageFormatError",
+    "check_image_dimensions",
+    "image_input_formats",
+    "detect_image_format",
 ]

@@ -11,13 +11,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from core.concurrency import run_heavy
-from media import (
-    CompressError,
-    check_image_dimensions,
-    compress_image,
-    supported_formats,
-)
 from tools.common import (
+    check_image_dimensions,
     check_upload_size_header,
     safe_stem,
     save_upload,
@@ -26,6 +21,12 @@ from tools.common import (
     with_nav,
 )
 from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
+
+from .compress import (
+    CompressError,
+    compress_image,
+    supported_formats,
+)
 
 router = APIRouter(prefix="/tools/image-compress", tags=["image-compress"])
 

@@ -14,7 +14,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageOps
 
-from media.image_convert import ConvertError, detect_format
+from tools.common import (
+    ImageFormatError as ConvertError,
+    detect_image_format as detect_format,
+)
 
 # ---------------------------------------------------------------------------
 # Public constants / errors

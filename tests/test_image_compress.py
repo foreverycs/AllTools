@@ -8,7 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from media import CompressError, compress_image, detect_format, supported_formats
+from plugins.image_compress.compress import (
+    CompressError,
+    compress_image,
+    detect_format,
+    supported_formats,
+)
 
 
 def _jpeg_bytes(size=(400, 300), color=(40, 120, 200), quality=95) -> bytes:

@@ -1,0 +1,535 @@
+{% extends "tools/base.html" %}
+{% set page_title = "图片加水印" %}
+{% set page_description = "图片添加文字 / Logo 水印" %}
+{% set accent = "cyan" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/#col-office") %}
+{% set back_label = "办公工具" %}
+{% set chip = "办公工具 · 图片加水印" %}
+
+{% block head_styles %}
+<style>
+.tool-page .opts{
+  margin-top: 16px; display: grid; gap: 14px;
+  padding: 16px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 16px;
+}
+.tool-page .type-row{
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.tool-page .t-card{
+  position: relative; border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 10px 10px; background: var(--surface-solid); cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background .15s; text-align: center;
+}
+.tool-page .t-card:hover{ border-color: var(--c-border); }
+.tool-page .t-card.active{
+  border-color: var(--c); background: var(--c-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent);
+}
+.tool-page .t-card input{ position: absolute; opacity: 0; pointer-events: none; }
+.tool-page .t-card .fl{ font-size: 13px; font-weight: 750; color: var(--ink); }
+.tool-page .t-card .fh{ font-size: 10px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+.tool-page label.field{
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.tool-page label.field input, .tool-page label.field select{
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px;
+  font-size: 13px; font-weight: 500; outline: none; background: var(--surface-solid); color: var(--ink);
+}
+.tool-page label.field input[type="color"]{
+  padding: 3px; height: 42px; cursor: pointer;
+}
+.tool-page label.field input[type="range"]{
+  padding: 0; border: none; background: transparent;
+}
+.tool-page .hint{ color: var(--muted-2); font-size: 11px; font-weight: 500; }
+.tool-page .range-meta{ display: flex; justify-content: space-between; align-items: center; }
+.tool-page .range-meta .val{ font-size: 12px; font-weight: 700; color: var(--ink); }
+.tool-page .xy-row{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tool-page .check{
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
+}
+.tool-page .logo-drop-inline{
+  display: none; gap: 10px; align-items: center;
+  padding: 12px; border: 1.5px dashed var(--line); border-radius: 12px;
+  background: var(--surface-solid); cursor: pointer;
+}
+.tool-page .logo-drop-inline.show{ display: flex; }
+.tool-page .logo-drop-inline input{ display: none; }
+.tool-page .logo-thumb{
+  width: 46px; height: 46px; border-radius: 10px; object-fit: contain;
+  border: 1px solid var(--line); background:
+    repeating-conic-gradient(var(--chip-bg) 0% 25%, var(--surface-solid) 0% 50%) 0 0 / 14px 14px;
+  flex-shrink: 0;
+}
+.tool-page .logo-meta{ font-size: 12px; color: var(--muted); font-weight: 500; min-width: 0; }
+.tool-page .logo-meta .ln{ font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">💧</div>
+        <div>
+          <h1>图片加水印</h1>
+          <p>为图片添加文字或 Logo 水印，防止盗用。可调节透明度、颜色、大小、旋转角度与摆放位置，也支持斜向平铺铺满全图。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">文字水印</span>
+        <span class="feat">Logo 水印</span>
+        <span class="feat">透明度调节</span>
+        <span class="feat">平铺模式</span>
+      </div>
+
+      {% with
+  accept='image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff',
+  multiple=false,
+  title_html='点击或拖拽 <strong>要加水印的图片</strong> 到此处',
+  hint='JPEG / PNG / WebP / GIF / BMP / TIFF · 单张 ≤ 50 MB'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
+
+      <div class="preview-wrap" id="previewWrap">
+        <div class="preview-bar">
+          <span id="fileName">—</span>
+          <span class="meta" id="fileMeta">—</span>
+        </div>
+        <div class="preview-stage">
+          <img id="previewImg" alt="预览" />
+        </div>
+      </div>
+
+      <div class="opts">
+        <div class="opts-title">水印类型</div>
+        <div class="type-row" id="typeRow" role="radiogroup" aria-label="水印类型">
+          <label class="t-card active" data-t="text">
+            <input type="radio" name="wm_type" value="text" checked />
+            <div class="fl">文字水印</div>
+            <div class="fh">自定义文字</div>
+          </label>
+          <label class="t-card" data-t="image">
+            <input type="radio" name="wm_type" value="image" />
+            <div class="fl">Logo 水印</div>
+            <div class="fh">上传图片作为水印</div>
+          </label>
+        </div>
+
+        <div id="textPanel">
+          <label class="field">
+            水印文字
+            <input type="text" id="wmText" maxlength="200" placeholder="样例水印" />
+            <span class="hint">支持中文；留空时使用默认文字「样例水印」。</span>
+          </label>
+
+          <div class="xy-row">
+            <label class="field">
+              字号（相对短边 %）
+              <input type="number" id="fontSize" value="5" min="1" max="60" step="0.5" inputmode="decimal" />
+            </label>
+            <label class="field">
+              文字颜色
+              <input type="color" id="wmColor" value="#ffffff" />
+            </label>
+          </div>
+        </div>
+
+        <div id="logoPanel" hidden>
+          <div class="opts-title">Logo 图片</div>
+          <label class="logo-drop-inline" id="logoDrop">
+            <input type="file" id="logoInput" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" />
+            <img class="logo-thumb" id="logoThumb" hidden alt="" />
+            <span class="logo-meta"><span class="ln" id="logoName">点击选择 Logo（PNG/JPEG/WebP）</span><br />建议使用透明背景 PNG</span>
+          </label>
+
+          <label class="field">
+            Logo 大小（相对短边 %）
+            <input type="number" id="logoSize" value="15" min="1" max="90" step="1" inputmode="numeric" />
+          </label>
+        </div>
+
+        <div class="xy-row">
+          <label class="field">
+            透明度（%）
+            <input type="range" id="opacity" min="1" max="100" value="40" />
+            <div class="range-meta"><span class="val" id="opacityVal">40%</span></div>
+          </label>
+          <label class="field">
+            旋转角度（度）
+            <input type="number" id="angle" value="0" min="-180" max="180" step="1" />
+          </label>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="repeat" />
+          平铺水印（铺满整张图片，建议配合 45° 旋转）
+        </label>
+
+        <div class="xy-row">
+          <label class="field">
+            位置（非平铺时）
+            <select id="position">
+              <option value="top-left">左上角</option>
+              <option value="top-right">右上角</option>
+              <option value="bottom-left">左下角</option>
+              <option value="bottom-right" selected>右下角</option>
+              <option value="center">居中</option>
+            </select>
+          </label>
+          <label class="field">
+            输出格式
+            <select id="format">
+              <option value="auto">自动（保持原格式）</option>
+              <option value="png">PNG（无损 · 保留透明）</option>
+              <option value="jpeg">JPEG（体积更小）</option>
+              <option value="webp">WebP（体积更小）</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <button id="btn" disabled>开始添加水印</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div class="stats" id="stats">
+        <div class="stat"><div class="k">原始大小</div><div class="v" id="statOrig">—</div></div>
+        <div class="stat"><div class="k">输出大小</div><div class="v" id="statOut">—</div></div>
+        <div class="stat"><div class="k">水印方式</div><div class="v" id="statMode">—</div></div>
+      </div>
+      <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const LS_KEY = "image_watermark_opts_v1";
+    const fileInput = document.getElementById("file");
+    const drop = document.getElementById("drop");
+    const btn = document.getElementById("btn");
+    const status = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const UX = window.ToolkitUX || null;
+    const progress = document.getElementById("progress");
+    const bar = document.getElementById("bar");
+    const previewWrap = document.getElementById("previewWrap");
+    const previewImg = document.getElementById("previewImg");
+    const fileName = document.getElementById("fileName");
+    const fileMeta = document.getElementById("fileMeta");
+    const stats = document.getElementById("stats");
+    const statOrig = document.getElementById("statOrig");
+    const statOut = document.getElementById("statOut");
+    const statMode = document.getElementById("statMode");
+    const typeRow = document.getElementById("typeRow");
+    const textPanel = document.getElementById("textPanel");
+    const logoPanel = document.getElementById("logoPanel");
+    const wmText = document.getElementById("wmText");
+    const fontSize = document.getElementById("fontSize");
+    const wmColor = document.getElementById("wmColor");
+    const opacity = document.getElementById("opacity");
+    const opacityVal = document.getElementById("opacityVal");
+    const angle = document.getElementById("angle");
+    const repeat = document.getElementById("repeat");
+    const position = document.getElementById("position");
+    const format = document.getElementById("format");
+    const logoDrop = document.getElementById("logoDrop");
+    const logoInput = document.getElementById("logoInput");
+    const logoThumb = document.getElementById("logoThumb");
+    const logoName = document.getElementById("logoName");
+    const logoSize = document.getElementById("logoSize");
+
+    /** @type {File|null} */
+    let selected = null;
+    let previewUrl = null;
+    /** @type {File|null} */
+    let logoFile = null;
+    let logoUrl = null;
+
+    const {
+      fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl,
+    } = window.ToolkitUpload;
+
+    function currentType() {
+      return (typeRow.querySelector("input:checked") || {}).value || "text";
+    }
+
+    function persistOpts() {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          type: currentType(),
+          text: wmText.value,
+          font_size_pct: fontSize.value,
+          color: wmColor.value,
+          opacity: opacity.value,
+          angle: angle.value,
+          repeat: repeat.checked,
+          position: position.value,
+          format: format.value,
+          logo_size_pct: logoSize.value,
+        }));
+      } catch (e) { /* ignore */ }
+    }
+
+    function applySaved() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+        if (saved.type === "text" || saved.type === "image") {
+          const r = typeRow.querySelector('input[value="' + saved.type + '"]');
+          if (r) r.checked = true;
+          typeRow.querySelectorAll(".t-card").forEach(function (c) {
+            c.classList.toggle("active", c.getAttribute("data-t") === saved.type);
+          });
+          syncPanels();
+        }
+        if (saved.text != null) wmText.value = saved.text;
+        if (saved.font_size_pct != null) fontSize.value = saved.font_size_pct;
+        if (/^#[0-9a-fA-F]{6}$/.test(saved.color || "")) wmColor.value = saved.color;
+        if (saved.opacity != null) { opacity.value = saved.opacity; opacityVal.textContent = saved.opacity + "%"; }
+        if (saved.angle != null) angle.value = saved.angle;
+        repeat.checked = !!saved.repeat;
+        if (saved.position && position.querySelector('option[value="' + saved.position + '"]')) position.value = saved.position;
+        if (saved.format && format.querySelector('option[value="' + saved.format + '"]')) format.value = saved.format;
+        if (saved.logo_size_pct != null) logoSize.value = saved.logo_size_pct;
+      } catch (e) { /* ignore */ }
+    }
+
+    function syncPanels() {
+      const t = currentType();
+      textPanel.hidden = t !== "text";
+      logoPanel.hidden = t !== "image";
+      logoDrop.classList.toggle("show", t === "image");
+    }
+
+    typeRow.addEventListener("change", function (e) {
+      const input = e.target;
+      if (!input || input.name !== "wm_type") return;
+      typeRow.querySelectorAll(".t-card").forEach(function (c) {
+        c.classList.toggle("active", c.getAttribute("data-t") === input.value);
+      });
+      syncPanels();
+      persistOpts();
+    });
+    [wmText, fontSize, wmColor, angle, repeat, position, format, logoSize].forEach(function (el) {
+      el.addEventListener("change", persistOpts);
+      el.addEventListener("blur", persistOpts);
+    });
+    opacity.addEventListener("input", function () { opacityVal.textContent = opacity.value + "%"; });
+    opacity.addEventListener("change", persistOpts);
+
+    function setProgress(pct) {
+      progress.classList.add("show");
+      bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    }
+    function hideProgress() {
+      progress.classList.remove("show");
+      bar.style.width = "0%";
+    }
+    function setStatus(text, cls) {
+      status.textContent = text || "";
+      status.className = cls || "";
+    }
+    function clearStats() {
+      stats.classList.remove("show");
+      statOrig.textContent = "—";
+      statOut.textContent = "—";
+      statMode.textContent = "—";
+    }
+
+    function acceptBaseFile(file) {
+      if (!file) return false;
+      if (file.size > MAX_BYTES) {
+        setStatus("文件过大（最大 50 MB）", "err");
+        return false;
+      }
+      var name = (file.name || "").toLowerCase();
+      var okExt = /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(name);
+      var okType = /^(image\/(jpeg|png|gif|webp|bmp|tiff)|application\/octet-stream)$/i.test(file.type || "");
+      if (!okExt && !okType) {
+        setStatus("仅支持 JPEG、PNG、WebP、GIF、BMP、TIFF", "err");
+        return false;
+      }
+      return true;
+    }
+
+    function acceptLogoFile(file) {
+      if (!file) return false;
+      if (file.size > MAX_BYTES) {
+        setStatus("Logo 文件过大（最大 50 MB）", "err");
+        return false;
+      }
+      var name = (file.name || "").toLowerCase();
+      var okExt = /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(name);
+      var okType = /^(image\/(jpeg|png|gif|webp|bmp|tiff)|application\/octet-stream)$/i.test(file.type || "");
+      if (!okExt && !okType) {
+        setStatus("Logo 仅支持常见图片格式", "err");
+        return false;
+      }
+      return true;
+    }
+
+    function setFile(file) {
+      if (!acceptBaseFile(file)) return;
+      selected = file;
+      btn.disabled = false;
+      clearStats();
+      setStatus("");
+      fileName.textContent = file.name;
+      fileMeta.textContent = fmtSize(file.size);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+      previewUrl = URL.createObjectURL(file);
+      previewImg.src = previewUrl;
+      previewImg.onerror = function () {
+        previewWrap.classList.remove("show");
+      };
+      previewImg.onload = function () {
+        previewWrap.classList.add("show");
+      };
+      previewWrap.classList.add("show");
+    }
+
+    function setLogo(file) {
+      if (!acceptLogoFile(file)) return;
+      logoFile = file;
+      logoName.textContent = file.name + " · " + fmtSize(file.size);
+      if (logoUrl) {
+        URL.revokeObjectURL(logoUrl);
+        logoUrl = null;
+      }
+      logoUrl = URL.createObjectURL(file);
+      logoThumb.src = logoUrl;
+      logoThumb.hidden = false;
+      setStatus("");
+    }
+
+    bindDropZone({
+      drop: drop,
+      input: fileInput,
+      paste: true,
+      acceptFile: acceptBaseFile,
+      rejectMessage: "仅支持 JPEG、PNG、WebP、GIF、BMP、TIFF",
+      onFiles: function (files) {
+        if (files && files[0]) setFile(files[0]);
+        fileInput.value = "";
+      },
+    });
+
+    logoDrop.addEventListener("click", function (e) {
+      if (e.target && e.target.tagName && e.target.tagName.toLowerCase() === "button") return;
+      logoInput.click();
+    });
+    logoInput.addEventListener("change", function () {
+      if (logoInput.files && logoInput.files[0]) setLogo(logoInput.files[0]);
+      logoInput.value = "";
+    });
+
+    btn.addEventListener("click", async function () {
+      if (!selected) return;
+      persistOpts();
+      btn.disabled = true;
+      clearStats();
+      setStatus("正在添加水印…", "info");
+      setProgress(8);
+
+      var fd = new FormData();
+      fd.append("file", selected, selected.name);
+      fd.append("type", currentType());
+      if (currentType() === "text") {
+        fd.append("text", wmText.value.trim() || "样例水印");
+        fd.append("font_size_pct", String(parseFloat(fontSize.value) || 5));
+        fd.append("color", wmColor.value || "#ffffff");
+      } else {
+        if (!logoFile) {
+          setStatus("请先选择 Logo 图片", "err");
+          btn.disabled = false;
+          return;
+        }
+        fd.append("logo", logoFile, logoFile.name);
+        fd.append("logo_size_pct", String(parseFloat(logoSize.value) || 15));
+      }
+      fd.append("opacity", String(parseInt(opacity.value, 10) || 40));
+      fd.append("angle", String(parseFloat(angle.value) || 0));
+      fd.append("repeat", repeat.checked ? "1" : "0");
+      fd.append("position", position.value);
+      fd.append("fmt", format.value);
+
+      try {
+        var xhr = await xhrPost(appUrl("/tools/image-watermark/watermark"), fd, {
+          processHint: "上传完成，正在添加水印…",
+          longWaitSec: 15,
+          onProgress: function (pct) { setProgress(pct); },
+          onStatus: function (text, cls) { setStatus(text, cls || "info"); },
+        });
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var blob = xhr.response;
+          var name = downloadName(
+            xhr.getResponseHeader("Content-Disposition"),
+            selected.name.replace(/\.[^.]+$/, "") + "_watermarked"
+          );
+          var orig = parseInt(xhr.getResponseHeader("X-Original-Bytes") || "0", 10);
+          var out = parseInt(xhr.getResponseHeader("X-Output-Bytes") || "0", 10);
+          var wmType = xhr.getResponseHeader("X-Watermark-Type") || "";
+          var wmRepeat = xhr.getResponseHeader("X-Watermark-Repeat") === "1";
+          if (!orig) orig = selected.size;
+          if (!out && blob && blob.size) out = blob.size;
+          statOrig.textContent = fmtSize(orig);
+          statOut.textContent = fmtSize(out);
+          statMode.textContent = (wmType === "image" ? "Logo" : "文字") + (wmRepeat ? " · 平铺" : "");
+          stats.classList.add("show");
+          saveBlob(blob, name);
+          var msg = "水印已添加" + (wmRepeat ? "（平铺）" : "");
+          if (orig && out) msg += " · " + fmtSize(orig) + " → " + fmtSize(out);
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, {
+              kind: "ok",
+              title: "水印添加完成",
+              detail: msg,
+              filename: name,
+              downloadBlob: blob,
+              downloadName: name,
+              againLabel: "继续添加",
+              onAgain: function () {
+                UX.hideResult(resultEl);
+              },
+            });
+          } else {
+            setStatus(msg, "ok");
+          }
+          setProgress(100);
+        } else {
+          var em = await xhrErrorMessage(xhr);
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, { kind: "err", title: "添加水印失败", detail: em || "添加水印失败" });
+          } else {
+            setStatus(em || "添加水印失败", "err");
+          }
+        }
+      } catch (err) {
+        var em2 = (err && err.message) || "网络错误";
+        if (UX) {
+          setStatus("", "");
+          UX.showResult(resultEl, { kind: "err", title: "添加水印失败", detail: em2 });
+        } else {
+          setStatus(em2, "err");
+        }
+      } finally {
+        btn.disabled = !selected;
+        setTimeout(hideProgress, 600);
+      }
+    });
+
+    applySaved();
+    syncPanels();
+  </script>
+{% endblock %}

@@ -1,24 +1,31 @@
 """Image format conversion (JPEG / PNG / WebP / GIF / BMP / TIFF / ICO).
 
 Converts between common raster formats with sensible defaults for alpha,
-animation, and quality. Designed to mirror the style of ``image_compress``.
+animation, and quality. Self-contained plugin module: shared format
+detection lives in ``media`` (see ``media/__init__.py``).
 """
 
 from __future__ import annotations
 
 import io
-import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageChops, ImageOps, ImageSequence
 
+from tools.common import (
+    ImageFormatError as ConvertError,
+    detect_image_format as detect_format,
+    image_input_formats as input_formats,
+)
+
 # ---------------------------------------------------------------------------
 # Public constants / errors
 # ---------------------------------------------------------------------------
 
-# Formats we accept as *input* (magic / extension).
-INPUT_FORMATS = ("jpeg", "png", "gif", "webp", "bmp", "tiff", "ico")
+# Formats we accept as *input* (magic / extension) — provided by the shared
+# detection layer; re-exposed here for compatibility with this tool's API.
+INPUT_FORMATS = input_formats()
 
 # Formats we can *emit*.
 OUTPUT_FORMATS = ("jpeg", "png", "webp", "gif", "bmp", "tiff", "ico")
@@ -55,86 +62,13 @@ _PIL_SAVE = {
 }
 
 
-class ConvertError(ValueError):
-    """Raised when input cannot be converted (bad format / corrupt data)."""
-
-
 # ---------------------------------------------------------------------------
-# Format detection
+# Output format helpers
 # ---------------------------------------------------------------------------
-
-_SVG_RE = re.compile(
-    rb"^\s*(?:<\?xml\b[^>]*>\s*)?(?:<!--.*?-->\s*)*<svg\b",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
-def input_formats() -> List[str]:
-    return list(INPUT_FORMATS)
 
 
 def output_formats() -> List[str]:
     return list(OUTPUT_FORMATS)
-
-
-def detect_format(data: bytes, filename: Optional[str] = None) -> str:
-    """Return one of INPUT_FORMATS or raise ``ConvertError``."""
-    if not data:
-        raise ConvertError("Empty file")
-
-    name = (filename or "").lower()
-    head = data[:32]
-
-    # Magic numbers first.
-    if head.startswith(b"\xff\xd8\xff"):
-        return "jpeg"
-    if head.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "png"
-    if head[:6] in (b"GIF87a", b"GIF89a"):
-        return "gif"
-    # WebP: RIFF....WEBP
-    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        return "webp"
-    if head[:2] == b"BM":
-        return "bmp"
-    # TIFF little/big endian
-    if head[:4] in (b"II*\x00", b"MM\x00*"):
-        return "tiff"
-    # ICO / CUR
-    if head[:4] in (b"\x00\x00\x01\x00", b"\x00\x00\x02\x00"):
-        return "ico"
-
-    # Reject SVG early with a clear message (no native rasterizer here).
-    if _SVG_RE.match(data[:4096] if len(data) > 4096 else data):
-        raise ConvertError(
-            "SVG is not supported for format conversion. "
-            "Export to PNG/JPEG first, or use a vector editor."
-        )
-
-    # Extension fallback.
-    if name.endswith((".jpg", ".jpeg", ".jpe", ".jfif")):
-        return "jpeg"
-    if name.endswith(".png"):
-        return "png"
-    if name.endswith(".gif"):
-        return "gif"
-    if name.endswith(".webp"):
-        return "webp"
-    if name.endswith(".bmp"):
-        return "bmp"
-    if name.endswith((".tif", ".tiff")):
-        return "tiff"
-    if name.endswith((".ico", ".cur")):
-        return "ico"
-    if name.endswith((".svg", ".svgz")):
-        raise ConvertError(
-            "SVG is not supported for format conversion. "
-            "Export to PNG/JPEG first, or use a vector editor."
-        )
-
-    raise ConvertError(
-        "Unsupported image format. Use JPEG, PNG, GIF, WebP, BMP, TIFF, or ICO."
-    )
 
 
 def _normalize_target(target: str) -> str:

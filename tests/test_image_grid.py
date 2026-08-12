@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app import app
-from media.image_grid import (
+from plugins.image_grid.grid import (
     ImageGridError,
     build_grid_preview,
     max_dim,

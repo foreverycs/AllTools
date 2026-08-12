@@ -12,16 +12,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from core.concurrency import run_heavy
-from media import check_image_dimensions
-from media.image_grid import (
-    ImageGridError,
-    build_grid_preview,
-    max_dim,
-    split_image,
-    supported_formats,
-)
 from tools.common import (
     ZIP_MEDIA,
+    check_image_dimensions,
     check_upload_size_header,
     safe_stem,
     save_upload,
@@ -29,6 +22,14 @@ from tools.common import (
     with_nav,
 )
 from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
+
+from .grid import (
+    ImageGridError,
+    build_grid_preview,
+    max_dim,
+    split_image,
+    supported_formats,
+)
 
 router = APIRouter(prefix="/tools/image-grid", tags=["image-grid"])
 

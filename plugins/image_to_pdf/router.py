@@ -11,8 +11,18 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from core.concurrency import run_heavy
-from media import check_image_dimensions
-from media.image_to_pdf import (
+from tools.common import (
+    check_image_dimensions,
+    check_upload_size_header,
+    safe_stem,
+    save_upload,
+    templates,
+    to_bool,
+    with_nav,
+)
+from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
+
+from .pdf import (
     ImageToPdfError,
     images_to_pdf,
     input_formats,
@@ -20,14 +30,6 @@ from media.image_to_pdf import (
     orientations,
     page_modes,
 )
-from tools.common import (
-    check_upload_size_header,
-    safe_stem,
-    save_upload,
-    templates,
-    with_nav,
-)
-from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
 
 router = APIRouter(prefix="/tools/image-to-pdf", tags=["image-to-pdf"])
 

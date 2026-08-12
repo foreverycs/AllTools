@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from media.image_convert import (
+from plugins.image_convert.convert import (
     ConvertError,
     convert_image,
     detect_format,
