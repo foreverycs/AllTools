@@ -42,14 +42,38 @@
 html.light-mode .admin-body::before { background: radial-gradient(circle, rgba(99, 102, 241, 0.10), transparent 62%); }
 html.light-mode .admin-body::after  { background: radial-gradient(circle, rgba(217, 119, 6, 0.06), transparent 62%); }
 
-/* Brief full-page dim while navigating between admin views */
+/* Navigation feedback: keep the old view fully visible (no dimming) and show
+   a thin indeterminate progress bar only when the fetch actually waits. */
 .admin-body.admin-navigating .admin-main {
-  opacity: 0.55;
   pointer-events: none;
-  transition: opacity 0.12s ease;
 }
 .admin-body.admin-navigating {
   cursor: progress;
+}
+.admin-layout::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 60;
+  background: linear-gradient(90deg, transparent, #818cf8, #22d3ee, #818cf8, transparent);
+  background-size: 200% 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.admin-body.admin-navigating .admin-layout::before {
+  opacity: 1;
+  animation: admin-nav-progress 1.2s linear infinite;
+}
+@keyframes admin-nav-progress {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-body.admin-navigating .admin-layout::before { animation: none; }
 }
 .admin-body,
 .admin-body *,
@@ -451,6 +475,30 @@ html.light-mode .admin-body::after  { background: radial-gradient(circle, rgba(2
    don't re-trigger a full-content repaint/translate animation. */
 .admin-body.admin-soft-nav .admin-main {
   animation: none;
+}
+/* Seamless view switches: only the content pane cross-fades; the sidebar and
+   top bar stay put. Works in browsers with View Transitions (Chrome/Edge 111+,
+   Safari 18+); others degrade to an instant swap. */
+@supports (view-transition-name: none) {
+  .admin-main { view-transition-name: admin-main; }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.16s;
+    animation-timing-function: ease-out;
+  }
+  ::view-transition-old(admin-main),
+  ::view-transition-new(admin-main) {
+    animation-duration: 0.16s;
+    animation-timing-function: ease-out;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-old(admin-main),
+  ::view-transition-new(admin-main) {
+    animation-duration: 0.01s;
+  }
 }
 @keyframes admin-fade-in {
   from { opacity: 0; transform: translateY(6px); }

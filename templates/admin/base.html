@@ -251,6 +251,48 @@
         window.__adminCleanup = [];
       }
 
+      // Client-side cache of rendered #adminMain content so revisiting a page
+      // (menu switch back / history) skips the network round-trip, the full
+      // document DOMParser pass and the server-side render of the shell.
+      var pageCache = {};
+      var PAGE_CACHE_TTL = 20000; // ms; short enough that data stays fresh
+
+      function commitView(mainHtml, title, href, push, seq) {
+        if (seq !== navSeq) return false;
+
+        function doSwap() {
+          // Tear down previous page's event listeners & overlays
+          runPageCleanup();
+          document.querySelectorAll('.preview-overlay').forEach(function (el) {
+            el.remove();
+          });
+          main.innerHTML = mainHtml;
+          document.title = title || document.title;
+          setActiveNav(href);
+          runScripts(main);
+          if (push) {
+            history.pushState({ adminSoft: true }, '', href);
+          }
+          // Scroll main pane to top
+          main.scrollTop = 0;
+          window.scrollTo(0, 0);
+        }
+
+        // Seamless switch: let the browser cross-fade the content pane.
+        // The callback runs synchronously (required by the spec), so all DOM
+        // work happens before the transition snapshots the new view.
+        if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          try {
+            document.startViewTransition(doSwap);
+          } catch (e) {
+            doSwap();
+          }
+        } else {
+          doSwap();
+        }
+        return true;
+      }
+
       function softNavigate(href, push) {
         if (navBusy) return;
         navBusy = true;
@@ -260,6 +302,13 @@
         // is disabled for subsequent views (it only applies on full loads).
         body.classList.add('admin-soft-nav');
         if (isMobileNav()) closeSide();
+
+        function finish() {
+          if (seq !== navSeq) return;
+          if (navTimer) { clearTimeout(navTimer); navTimer = null; }
+          body.classList.remove('admin-navigating');
+          navBusy = false;
+        }
 
         // Safety timeout: unlock if fetch stalls (15s). Bump navSeq so a
         // late-resolving response for this request is treated as stale and
@@ -273,6 +322,14 @@
             window.location.href = href;
           }
         }, 15000);
+
+        // Cache hit: render the previously-fetched view without a round-trip.
+        var cached = pageCache[href];
+        if (cached && Date.now() - cached.ts < PAGE_CACHE_TTL) {
+          commitView(cached.main, cached.title, href, push, seq);
+          finish();
+          return;
+        }
 
         fetch(href, {
           credentials: 'same-origin',
@@ -290,33 +347,22 @@
             var doc = new DOMParser().parseFromString(html, 'text/html');
             var nextMain = doc.querySelector('#adminMain, main.admin-main');
             if (!nextMain) throw new Error('no main');
-            // Tear down previous page's event listeners & overlays
-            runPageCleanup();
-            document.querySelectorAll('.preview-overlay').forEach(function (el) {
-              el.remove();
-            });
-            main.innerHTML = nextMain.innerHTML;
-            document.title = doc.title || document.title;
-            setActiveNav(href);
-            runScripts(main);
-            if (push) {
-              history.pushState({ adminSoft: true }, '', href);
-            }
-            // Scroll main pane to top
-            main.scrollTop = 0;
-            window.scrollTo(0, 0);
+            // Cache the main content so switching back is instant.
+            try {
+              pageCache[href] = {
+                main: nextMain.innerHTML,
+                title: doc.title || '',
+                ts: Date.now(),
+              };
+            } catch (e) {}
+            commitView(nextMain.innerHTML, doc.title, href, push, seq);
           })
           .catch(function () {
             if (seq !== navSeq) return;
             // Fallback: full navigation
             window.location.href = href;
           })
-          .finally(function () {
-            if (seq !== navSeq) return;
-            if (navTimer) { clearTimeout(navTimer); navTimer = null; }
-            body.classList.remove('admin-navigating');
-            navBusy = false;
-          });
+          .finally(finish);
       }
 
       side.querySelectorAll('a[href]').forEach(function (a) {
@@ -338,6 +384,46 @@
             // Same page: still allow refresh of query-less dashboard etc.
           }
           softNavigate(a.href, true);
+        });
+
+        // Hover prefetch: parse the target page into pageCache so the click
+        // renders instantly (no fetch / no full-document DOMParser pass).
+        var hoverTimer = null;
+        a.addEventListener('mouseenter', function () {
+          var href = a.getAttribute('href') || '';
+          if (!isAdminPageUrl(a.href)) return;
+          if (pageCache[href]) return;
+          if (navBusy) return;
+          if (hoverTimer) clearTimeout(hoverTimer);
+          hoverTimer = setTimeout(function () {
+            fetch(href, {
+              credentials: 'same-origin',
+              headers: { 'X-Requested-With': 'AdminNav', 'Accept': 'text/html' },
+            })
+              .then(function (r) {
+                if (!r.ok) return null;
+                var ct = (r.headers.get('content-type') || '');
+                if (ct.indexOf('text/html') < 0) return null;
+                return r.text();
+              })
+              .then(function (html) {
+                if (!html) return;
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var nextMain = doc.querySelector('#adminMain, main.admin-main');
+                if (!nextMain) return;
+                try {
+                  pageCache[href] = {
+                    main: nextMain.innerHTML,
+                    title: doc.title || '',
+                    ts: Date.now(),
+                  };
+                } catch (e) {}
+              })
+              .catch(function () {});
+          }, 120);
+        });
+        a.addEventListener('mouseleave', function () {
+          if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
         });
       });
 
