@@ -194,7 +194,7 @@ def test_api_convert_without_engine_returns_503(tmp_path: Path):
     _make_docx(str(src))
 
     client = TestClient(app)
-    with mock.patch("tools.word2pdf.engine_info", return_value={
+    with mock.patch("plugins.word2pdf.router.engine_info", return_value={
         "engines": [],
         "preferred": None,
         "libreoffice_path": None,
@@ -226,12 +226,12 @@ def test_api_convert_mocked_engine(tmp_path: Path):
         return {"engine": "libreoffice", "bytes": 12}
 
     client = TestClient(app)
-    with mock.patch("tools.word2pdf.engine_info", return_value={
+    with mock.patch("plugins.word2pdf.router.engine_info", return_value={
         "engines": ["libreoffice"],
         "preferred": "libreoffice",
         "libreoffice_path": "/usr/bin/soffice",
         "ready": True,
-    }), mock.patch("tools.word2pdf._convert_one", side_effect=fake_convert):
+    }), mock.patch("plugins.word2pdf.router._convert_one", side_effect=fake_convert):
         with open(src, "rb") as f:
             r = client.post(
                 "/tools/word2pdf/convert",

@@ -3,8 +3,7 @@ import tempfile
 
 import pytest
 
-from converter import extract_document, write_document
-from converter.pdf_reader import TableBlock, TextBlock
+from converter import TableBlock, TextBlock, extract_document, write_document
 
 
 def _make_sample_pdf(path: str) -> None:
@@ -249,7 +248,7 @@ def test_fidelity_soft_newline_normalized():
 def test_fidelity_text_strategy_fallback_border():
     # When no drawn lines exist (e.g. text-strategy tables), the writer must
     # still emit a uniform grid so the table is visible.
-    from converter.pdf_reader import Cell, TableBlock
+    from converter import Cell, PageContent, TableBlock
     from docx import Document
     from docx.oxml.ns import qn
 
@@ -260,7 +259,7 @@ def test_fidelity_text_strategy_fallback_border():
     table = TableBlock(rows=2, cols=2, cells=cells, owner=owner,
                        col_widths=[90, 90], row_heights=[20, 20],
                        border_outer=1.0, border_inner=1.0)
-    write_document([__import__("converter.pdf_reader", fromlist=["PageContent"]).PageContent(blocks=[table])],
+    write_document([PageContent(blocks=[table])],
                   docx_path)
     doc = Document(docx_path)
     doc_table = doc.tables[0]
@@ -464,7 +463,7 @@ def test_extract_page_range_and_stats():
 
 
 def test_write_document_page_breaks():
-    from converter.pdf_reader import PageContent, TextBlock
+    from converter import PageContent, TextBlock
     from docx import Document
     from docx.oxml.ns import qn
 
@@ -496,7 +495,7 @@ def test_write_document_page_breaks():
 
 
 def test_image_block_written_to_docx():
-    from converter.pdf_reader import PageContent, ImageBlock
+    from converter import PageContent, ImageBlock
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from PIL import Image
@@ -523,7 +522,7 @@ def test_image_block_written_to_docx():
 
 def test_image_placement_align_and_indent():
     """Images keep PDF horizontal alignment (center/right) and left indent."""
-    from converter.pdf_reader import PageContent, ImageBlock, TextBlock
+    from converter import PageContent, ImageBlock, TextBlock
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Inches
@@ -622,7 +621,7 @@ def test_image_placement_align_and_indent():
 
 def test_content_warnings_image_only():
     from converter import content_warnings, count_blocks
-    from converter.pdf_reader import PageContent, ImageBlock
+    from converter import PageContent, ImageBlock
 
     pages = [PageContent(blocks=[
         ImageBlock(image_bytes=b"\x89PNG", top=0, width_pt=100, height_pt=100),
@@ -641,7 +640,7 @@ def test_scanned_page_embeds_full_image():
     from reportlab.lib.utils import ImageReader
     from PIL import Image
     import io
-    from converter.pdf_reader import ImageBlock
+    from converter import ImageBlock
     from converter import content_warnings
 
     tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
@@ -682,7 +681,7 @@ def test_embedded_image_keeps_native_resolution(tmp_path):
     from reportlab.lib.utils import ImageReader
     from PIL import Image
     import io
-    from converter.pdf_reader import ImageBlock
+    from converter import ImageBlock
 
     pdf_path = str(tmp_path / "hires.pdf")
     # 800×600 source displayed in a 200×150 pt box (~288 DPI equivalent).
@@ -718,7 +717,7 @@ def test_image_only_page_keeps_partial_native_image(tmp_path):
     from reportlab.lib.utils import ImageReader
     from PIL import Image
     import io
-    from converter.pdf_reader import ImageBlock
+    from converter import ImageBlock
 
     pdf_path = str(tmp_path / "photo_only.pdf")
     src = Image.new("RGB", (1200, 900), color=(10, 20, 30))
@@ -744,13 +743,12 @@ def test_image_only_page_keeps_partial_native_image(tmp_path):
 
 
 def test_image_render_dpi_default_raised():
-    from converter import pdf_reader
-
-    assert pdf_reader.IMAGE_RENDER_DPI >= 200
+    from converter.constants import IMAGE_RENDER_DPI
+    assert IMAGE_RENDER_DPI >= 200
 
 
 def test_image_h_align_helper():
-    from converter.pdf_reader import _image_h_align
+    from converter.images import _image_h_align
 
     # centered: equal side pads
     assert _image_h_align(197.5, 200, 595) == "center"
@@ -765,7 +763,7 @@ def test_image_h_align_helper():
 def test_header_logo_and_title_same_row():
     """Logo + company name share one paragraph; signature labels too — not tables."""
     from converter.docx_writer import _group_horizontal_rows
-    from converter.pdf_reader import ImageBlock, TextBlock, PageContent, LineBlock
+    from converter import ImageBlock, TextBlock, PageContent, LineBlock
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
@@ -850,7 +848,7 @@ def test_header_logo_and_title_same_row():
 
 def test_title_table_gap_no_spacer_paragraph():
     """Title→table gap must use a compact spacer (exact 1pt line), not a full blank line."""
-    from converter.pdf_reader import PageContent, TextBlock, TableBlock, Cell
+    from converter import PageContent, TextBlock, TableBlock, Cell
     from docx import Document
     from docx.enum.text import WD_LINE_SPACING
 
@@ -888,7 +886,7 @@ def test_title_table_gap_no_spacer_paragraph():
 
 def test_cell_nested_runs_written_to_docx():
     """Multi-run nested styles inside a cell become multiple Word runs."""
-    from converter.pdf_reader import PageContent, TableBlock, Cell, TextRun
+    from converter import PageContent, TableBlock, Cell, TextRun
     from docx import Document
 
     rich = [
@@ -920,7 +918,9 @@ def test_cell_nested_runs_written_to_docx():
 
 def test_refine_merges_from_words_horizontal_span():
     """Word boxes spanning multiple empty columns grow colspan."""
-    from converter.pdf_reader import Cell, WordIndex, _refine_merges_from_words
+    from converter import Cell
+    from converter.tables import _refine_merges_from_words
+    from converter.word_index import WordIndex
 
     # 1 row × 3 cols; left cell holds a wide title word.
     cells = [[Cell(text="总标题"), Cell(text=""), Cell(text="")]]
@@ -940,7 +940,8 @@ def test_refine_merges_from_words_horizontal_span():
 
 
 def test_region_paragraphs_splits_font_runs():
-    from converter.pdf_reader import WordIndex, _region_paragraphs
+    from converter.tables import _region_paragraphs
+    from converter.word_index import WordIndex
 
     vx = [0.0, 200.0]
     hy = [0.0, 40.0]
@@ -974,7 +975,7 @@ def test_ocr_module_graceful_when_unavailable(monkeypatch):
 
 
 def test_content_warnings_ocr_flag():
-    from converter.pdf_reader import PageContent, TextBlock, content_warnings
+    from converter import PageContent, TextBlock, content_warnings
 
     pages = [PageContent(blocks=[
         TextBlock(text="识别文字", top=10, bottom=20, x0=10, x1=80, from_ocr=True)
@@ -985,7 +986,7 @@ def test_content_warnings_ocr_flag():
 
 def test_join_words_list_marker_before_body():
     """List number must stay left of body even when baselines differ slightly."""
-    from converter.pdf_reader import _join_words
+    from converter.text_utils import _join_words
 
     # Marker a bit lower (larger top) than the CJK body — old sort put "10" last.
     words = [

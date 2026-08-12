@@ -228,7 +228,7 @@ def with_nav(
 ) -> dict:
     """Merge top-nav context into a tool (or other) page template dict.
 
-    Ensures ``nav_items`` / ``active_nav`` so ``partials/top_nav.html`` works
+    Ensures ``nav_items`` / ``active_nav`` so ``partials/pill_nav.html`` works
     on tool pages the same way as home / category.
 
     Nav items and the command-palette catalog come from the cached public

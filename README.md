@@ -107,7 +107,7 @@ graph TB
 
 ## 🧩 插件开发
 
-功能工具支持**插件式扩展**：将一个工具放入 `plugins/<名称>/` 目录并重启，即可自动注册页面、路由、导航、工具开关、sitemap 与健康检查，无需改动主程序代码。
+所有功能工具（含原内置工具）均以**插件**形式位于 `plugins/<名称>/` 目录，启动时自动注册页面、路由、导航、工具开关、sitemap 与健康检查，无需改动主程序代码。原内置工具迁移为插件后，`tools/` 仅保留注册表基础设施与共享辅助（`tools/common.py`、`tools/pipeline.py`），以及 `/tools/json` 遗留 308 重定向。
 
 插件目录约定（见 `plugins/text-lines/` 示例）：
 
@@ -133,6 +133,7 @@ TOOL = {                                       # 与内置工具注册表同构
     "description": "…", "icon": "📋",
     "route": "/tools/text-lines",
     "features": [...], "cta": "开始处理", "accent": "cyan",
+    "order": 100,                              # 可选：首页展示顺序（升序，缺省 999）
 }
 router = APIRouter(prefix="/tools/text-lines", tags=["text-lines"])
 ```

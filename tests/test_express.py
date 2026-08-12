@@ -187,9 +187,7 @@ def test_registry_has_express(tmp_path, monkeypatch):
 
     from tools import (
         TOOL_REGISTRY,
-        TOOL_ROUTERS,
         enabled_tools,
-        express_router,
         featured_tools,
         tools_by_category,
     )
@@ -200,7 +198,6 @@ def test_registry_has_express(tmp_path, monkeypatch):
     assert tool["category"] == "text"
     assert tool.get("featured") is True
     assert tool["route"] == "/tools/express"
-    assert express_router in TOOL_ROUTERS
 
     # Featured: not in module catalog / category grids; only in featured list.
     assert "express" not in {t["slug"] for t in enabled_tools()}

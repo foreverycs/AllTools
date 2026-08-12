@@ -61,14 +61,14 @@ def test_convert_async_lifecycle(client, tmp_path):
         return {"engine": "libreoffice", "bytes": 18}
 
     with mock.patch(
-        "tools.word2pdf.engine_info",
+        "plugins.word2pdf.router.engine_info",
         return_value={
             "engines": ["libreoffice"],
             "preferred": "libreoffice",
             "libreoffice_path": "/usr/bin/soffice",
             "ready": True,
         },
-    ), mock.patch("tools.word2pdf._convert_one", side_effect=fake_convert):
+    ), mock.patch("plugins.word2pdf.router._convert_one", side_effect=fake_convert):
         with open(src, "rb") as f:
             resp = client.post(
                 "/tools/word2pdf/convert-async",
@@ -105,7 +105,7 @@ def test_convert_async_rejects_without_engine(client, tmp_path):
     src = tmp_path / "a.docx"
     _make_docx(str(src))
     with mock.patch(
-        "tools.word2pdf.engine_info",
+        "plugins.word2pdf.router.engine_info",
         return_value={
             "engines": [],
             "preferred": None,
@@ -138,14 +138,14 @@ def test_convert_batch_async_zip(client, tmp_path):
         return {"engine": "libreoffice", "bytes": 12}
 
     with mock.patch(
-        "tools.word2pdf.engine_info",
+        "plugins.word2pdf.router.engine_info",
         return_value={
             "engines": ["libreoffice"],
             "preferred": "libreoffice",
             "libreoffice_path": "/usr/bin/soffice",
             "ready": True,
         },
-    ), mock.patch("tools.word2pdf._convert_one", side_effect=fake_convert):
+    ), mock.patch("plugins.word2pdf.router._convert_one", side_effect=fake_convert):
         with open(a, "rb") as fa, open(b, "rb") as fb:
             resp = client.post(
                 "/tools/word2pdf/convert-batch-async",

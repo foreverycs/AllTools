@@ -60,7 +60,7 @@ def merge_client(tmp_path, monkeypatch):
 
 def test_merge_single_upper_half_only(tmp_path):
     """One invoice → one A4 page, content on upper half only."""
-    from tools.pdf_merge import _merge_single
+    from plugins.pdf_merge.router import _merge_single
 
     src = tmp_path / "1page.pdf"
     _make_single_page_pdf(str(src), "ONLY-TOP")
@@ -87,7 +87,7 @@ def test_merge_single_upper_half_only(tmp_path):
 
 def test_merge_single_ignores_extra_pages(tmp_path):
     """Multi-page PDF uses first page only (one invoice per file)."""
-    from tools.pdf_merge import _merge_single
+    from plugins.pdf_merge.router import _merge_single
 
     src = tmp_path / "3pages.pdf"
     _make_pdf(str(src), pages=3)
@@ -106,7 +106,7 @@ def test_merge_single_ignores_extra_pages(tmp_path):
 
 
 def test_merge_two_files(tmp_path):
-    from tools.pdf_merge import merge_invoices
+    from plugins.pdf_merge.router import merge_invoices
 
     src1 = tmp_path / "a.pdf"
     src2 = tmp_path / "b.pdf"
@@ -129,7 +129,7 @@ def test_merge_two_files(tmp_path):
 
 def test_merge_offset_cropbox_not_blank(tmp_path):
     """Non-zero cropbox origin must still place visible content (not blank)."""
-    from tools.pdf_merge import merge_invoices
+    from plugins.pdf_merge.router import merge_invoices
 
     src = tmp_path / "offset.pdf"
     _make_single_page_pdf(str(src), "OFFSET-OK")

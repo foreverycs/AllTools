@@ -1,6 +1,7 @@
 """Legacy ``/tools/json`` → permanent redirect to ``/tools/code-format``.
 
-Keeps old bookmarks and scripts working. Prefer :mod:`tools.code_format_tool`.
+Keeps old bookmarks and scripts working. The code-format tool itself lives as
+a plugin under ``plugins/code_format/``.
 """
 
 from __future__ import annotations

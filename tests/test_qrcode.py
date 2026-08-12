@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tools import TOOL_REGISTRY
-from tools.qrcode_tool import _build_payload, render_qr_png
+from plugins.qrcode.router import _build_payload, render_qr_png
 
 
 def _png_bytes(data_uri: str) -> bytes:

@@ -42,6 +42,9 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 # Manifest defaults applied to every plugin (all overridable by the plugin).
 # ``name`` / ``route`` are intentionally absent so their fallbacks (package
 # directory name / ``/tools/<slug>``) apply when a plugin omits them.
+# ``order`` is a display-order hint: plugins sort by it (default 999) so the
+# homepage / category grids keep a curated order even though discovery scans
+# directories alphabetically.
 _TOOL_DEFAULTS: Dict[str, Any] = {
     "name_en": "",
     "category": "text",
@@ -52,6 +55,7 @@ _TOOL_DEFAULTS: Dict[str, Any] = {
     "cta": "打开工具",
     "accent": "indigo",
     "featured": False,
+    "order": 999,
 }
 
 
@@ -254,6 +258,16 @@ def discover_plugins(
         static_dir = pkg_dir / "static"
         if static_dir.is_dir():
             out.static_mounts.append((slug, static_dir))
+
+    # Preserve curated display order (manifest ``order``), not directory
+    # alphabetical scan order. ``entries`` and ``routers`` are kept aligned.
+    if len(out.entries) > 1:
+        ordered = sorted(
+            zip(out.entries, out.routers),
+            key=lambda pair: int(pair[0].get("order", 999)),
+        )
+        out.entries = [e for e, _ in ordered]
+        out.routers = [r for _, r in ordered]
 
     if base is None:
         _discovery = out

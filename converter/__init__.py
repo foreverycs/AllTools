@@ -9,13 +9,13 @@ from .models import (
     TextRun,
 )
 from .ocr import ocr_available, ocr_info
-from .pdf_reader import (
-    content_warnings,
+from .extract import (
     count_blocks,
+    content_warnings,
+    count_pdf_pages,
     extract_document,
     parse_page_range,
 )
-from .extract import count_pdf_pages
 
 __all__ = [
     "extract_document",

@@ -27,8 +27,8 @@ from storage import (
 from admin import admin_router
 from admin.auth import is_admin
 from tools import (
-    TOOL_ROUTERS,
     get_registry,
+    json_legacy_router,
     nav_categories,
 )
 from tools.common import build_tools_catalog, content_disposition, templates
@@ -292,9 +292,9 @@ if os.path.isdir(static_dir):
 # Plugin static assets (mounts grow on hot reload; idempotent).
 plugin_runtime.mount_statics()
 
-# Register all builtin tool routers (plugins install via the container below).
-for router in TOOL_ROUTERS:
-    app.include_router(router)
+# All tool routers are plugins (installed through the plugin container below);
+# the only builtin router is the legacy /tools/json redirect.
+app.include_router(json_legacy_router)
 
 # Install plugin routers after the builtin ones (startup; reload swaps later).
 plugin_runtime.install_routes()

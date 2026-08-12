@@ -1,26 +1,21 @@
-"""工具注册表：按分类组织，供首页与路由挂载。"""
+"""工具注册表基础设施：分类、注册、公开快照与插件协调。
+
+内置工具已全部迁移为插件（``plugins/``），本包不再持有工具路由或注册表
+条目，仅保留：
+
+- 默认分类定义（``TOOL_CATEGORIES``，admin 可覆盖）；
+- 注册表访问器（``get_registry`` / ``get_tool_by_slug`` / 快照缓存）；
+- 插件合并（``refresh_plugins_registry``，启动与热重载时重绑 ``TOOL_REGISTRY``）。
+
+唯一仍内置的路由是 ``json_tool`` 的遗留 308 重定向（无注册表条目，
+不适合插件化），故 ``TOOL_ROUTERS`` 只剩该路由。
+"""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from .base64_tool import router as base64_router
-from .code_format_tool import router as code_format_router
-from .express_tool import router as express_router
-from .image_compress_tool import router as image_compress_router
-from .image_convert_tool import router as image_convert_router
-from .image_grid_tool import router as image_grid_router
-from .image_to_pdf_tool import router as image_to_pdf_router
 from .json_tool import router as json_legacy_router
-from .markdown_tool import router as markdown_router
-from .pdf2word import router as pdf2word_router
-from .pdf_merge import router as pdf_merge_router
-from .qrcode_tool import router as qrcode_router
-from .regex_tool import router as regex_router
-from .rmb_tool import router as rmb_router
-from .timestamp_tool import router as timestamp_router
-from .unicode_tool import router as unicode_router
-from .word2pdf import router as word2pdf_router
 
 # ---------------------------------------------------------------------------
 # Categories (order = homepage display order)
@@ -84,228 +79,17 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
 
 # ---------------------------------------------------------------------------
 # Tools
+#
+# 内置工具的注册表条目已随各工具迁移到 ``plugins/<slug>/`` 的 TOOL 清单
+# （启动时经 ``refresh_plugins_registry`` 合并进本注册表）。此处初始为空；
+# 展示顺序由各插件清单的 ``order`` 字段控制（见 core/plugins.py）。
 # ---------------------------------------------------------------------------
-TOOL_REGISTRY: List[Dict[str, Any]] = [
-    {
-        "name": "PDF 转 Word",
-        "slug": "pdf2word",
-        "category": "pdf",
-        "description": "纯文本 / 表格 PDF 转 Word：合并单元格、嵌套样式、图片嵌入、可选 OCR、批量 ZIP。",
-        "icon": "📄",
-        "route": "/tools/pdf2word",
-        "badge": "PDF → Word",
-        "features": ["合并单元格", "嵌套样式", "可选 OCR", "批量 ZIP"],
-        "cta": "开始转换",
-        "accent": "indigo",
-    },
-    {
-        "name": "Word 转 PDF",
-        "slug": "word2pdf",
-        "category": "pdf",
-        "description": "Word（.docx / .doc）转 PDF：LibreOffice 优先，Windows 可回退 Microsoft Word。",
-        "icon": "📝",
-        "route": "/tools/word2pdf",
-        "badge": "Word → PDF",
-        "features": ["LibreOffice", ".docx / .doc", "批量 ZIP", "引擎回退"],
-        "cta": "开始转换",
-        "accent": "emerald",
-    },
-    {
-        "name": "发票合并",
-        "slug": "pdf-merge",
-        "category": "pdf",
-        "description": "两张发票合并到一张 A4 纸：上下半页、中间分割线；页内预览并直接打印。",
-        "icon": "🧾",
-        "route": "/tools/pdf-merge",
-        "badge": "2→1 A4",
-        "features": ["A4 排版", "页内预览", "一键打印", "中间分割线"],
-        "cta": "开始合并",
-        "accent": "violet",
-    },
-    {
-        "name": "Base64 编解码",
-        "slug": "base64",
-        "category": "text",
-        "description": "文本 / 文件 Base64 编码与解码，支持标准与 URL-safe、换行折叠、多字符集。",
-        "icon": "🔑",
-        "route": "/tools/base64",
-        "badge": "Encode · Decode",
-        "features": ["标准 / URL-safe", "UTF-8 等", "文件编码", "一键复制"],
-        "cta": "打开工具",
-        "accent": "amber",
-    },
-    {
-        "name": "中文 Unicode 还原",
-        "slug": "unicode",
-        "category": "text",
-        "description": "将 \\uXXXX、U+XXXX、HTML 实体等 Unicode 转义还原为中文，也可反向编码。",
-        "icon": "文",
-        "route": "/tools/unicode",
-        "badge": "\\u → 中文",
-        "features": ["\\uXXXX 还原", "双重转义", "U+ / HTML", "反向编码"],
-        "cta": "打开工具",
-        "accent": "amber",
-    },
-    {
-        "name": "代码格式化",
-        "slug": "code-format",
-        "category": "text",
-        "description": "多语言代码美化 / 压缩（JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等），选项卡切换。",
-        "icon": "🧰",
-        "route": "/tools/code-format",
-        "badge": "Multi-lang",
-        "features": ["多语言选项卡", "美化 / 压缩", "JSON 键排序", "错误定位"],
-        "cta": "打开工具",
-        "accent": "amber",
-    },
-    {
-        "name": "Markdown 编辑",
-        "slug": "markdown",
-        "category": "text",
-        "description": "Markdown 左右分栏编辑与实时 HTML 预览，支持表格、代码块，可导出 HTML。",
-        "icon": "📓",
-        "route": "/tools/markdown",
-        "badge": "Edit · Preview",
-        "features": ["实时预览", "表格 / 代码块", "XSS 过滤", "导出 HTML"],
-        "cta": "打开编辑器",
-        "accent": "amber",
-    },
-    {
-        "name": "时间戳转换",
-        "slug": "timestamp",
-        "category": "text",
-        "description": "Unix 时间戳（秒/毫秒）与日期时间互转，本地 / 北京 / UTC 三时区显示，自动识别输入。",
-        "icon": "🕒",
-        "route": "/tools/timestamp",
-        "badge": "Unix ↔ 日期",
-        "features": ["秒 / 毫秒", "自动识别", "三时区", "实时转换"],
-        "cta": "打开工具",
-        "accent": "amber",
-    },
-    {
-        "name": "正则测试",
-        "slug": "regex",
-        "category": "text",
-        "description": "正则表达式匹配 / 捕获 / 替换测试：高亮命中位置、分组信息、常用标志。",
-        "icon": "⌗",
-        "route": "/tools/regex",
-        "badge": "Pattern · 捕获",
-        "features": ["匹配高亮", "捕获分组", "替换预览", "常用标志"],
-        "cta": "打开工具",
-        "accent": "amber",
-    },
-    {
-        "name": "人民币大写",
-        "slug": "rmb",
-        "category": "text",
-        "description": "阿拉伯数字金额转财务规范中文大写，支持角分、千分位与货币符号。",
-        "icon": "¥",
-        "route": "/tools/rmb",
-        "badge": "数字 → 大写",
-        "features": ["角分规范", "千分位清洗", "一键复制", "即时转换"],
-        "cta": "打开工具",
-        "accent": "emerald",
-    },
-    {
-        "name": "二维码生成",
-        "slug": "qrcode",
-        "category": "text",
-        "description": "为网址、文本、Wi-Fi 与邮件生成自定义二维码 PNG，可调整尺寸与容错级别。",
-        "icon": "▤",
-        "route": "/tools/qrcode",
-        "badge": "URL · 文本 · Wi-Fi · 邮件",
-        "features": ["四种内容", "自定义尺寸", "容错级别", "PNG 下载"],
-        "cta": "开始生成",
-        "accent": "amber",
-    },
-    {
-        "name": "图片压缩",
-        "slug": "image-compress",
-        "category": "image",
-        "description": "高观感压缩 JPEG / PNG / GIF / SVG：显著减小体积，尽量保持清晰与细节。",
-        "icon": "📉",
-        "route": "/tools/image-compress",
-        "badge": "JPEG · PNG · GIF · SVG",
-        "features": ["近无损观感", "多格式", "去元数据", "压缩对比"],
-        "cta": "开始压缩",
-        "accent": "violet",
-    },
-    {
-        "name": "图片格式转换",
-        "slug": "image-convert",
-        "category": "image",
-        "description": "JPEG / PNG / WebP / GIF / BMP / TIFF / ICO 互转：透明铺底、动图保留、质量可调。",
-        "icon": "🔄",
-        "route": "/tools/image-convert",
-        "badge": "JPEG · PNG · WebP · …",
-        "features": ["七种格式", "保留透明", "动图支持", "质量可调"],
-        "cta": "开始转换",
-        "accent": "sky",
-    },
-    {
-        "name": "图片转 PDF",
-        "slug": "image-to-pdf",
-        "category": "image",
-        "description": "多张图片合成一个 PDF：每图一页，可选原图像素尺寸或 A4 适配，自动校正 EXIF 方向。",
-        "icon": "📑",
-        "route": "/tools/image-to-pdf",
-        "badge": "Image → PDF",
-        "features": ["多图一 PDF", "原图/A4", "EXIF 校正", "本地处理"],
-        "cta": "开始转换",
-        "accent": "rose",
-    },
-    {
-        "name": "图片九宫格",
-        "slug": "image-grid",
-        "category": "image",
-        "description": "一张图切成 N×N 小块打包 ZIP：3×3 九宫格发朋友圈，按顺序发可无缝拼回原图。",
-        "icon": "🔳",
-        "route": "/tools/image-grid",
-        "badge": "Grid Split",
-        "features": ["3×3 九宫格", "自定义行列", "PNG/JPEG/WebP", "无缝拼接"],
-        "cta": "开始分割",
-        "accent": "indigo",
-    },
-    {
-        "name": "文件快递",
-        "slug": "express",
-        "category": "text",
-        # Featured: shown as a homepage highlight, not listed under module grids.
-        "featured": True,
-        "description": "上传文件生成 6 位取件码，对方输入取件码即可下载；可设有效期与下载次数。",
-        "icon": "📦",
-        "route": "/tools/express",
-        "badge": "特色 · 取件码分享",
-        "features": ["6 位取件码", "有效期", "下载次数", "一键复制"],
-        "cta": "开始寄送",
-        "accent": "indigo",
-        "lead": "临时传文件无需账号：生成取件码，对方输入即可下载。",
-    },
-]
+TOOL_REGISTRY: List[Dict[str, Any]] = []
 
-# Routers to mount on the FastAPI app (order does not matter).
-# code_format first; json_legacy only provides 308 redirects for old URLs.
-# NOTE: plugin routers are intentionally NOT merged here — app.py mounts them
-# through a dedicated container so hot reload can swap routes without restart.
-TOOL_ROUTERS = (
-    pdf2word_router,
-    word2pdf_router,
-    pdf_merge_router,
-    qrcode_router,
-    base64_router,
-    code_format_router,
-    json_legacy_router,
-    markdown_router,
-    unicode_router,
-    rmb_router,
-    regex_router,
-    timestamp_router,
-    image_compress_router,
-    image_convert_router,
-    image_to_pdf_router,
-    image_grid_router,
-    express_router,
-)
+# Routers mounted directly on the FastAPI app (order does not matter).
+# json_legacy only provides 308 redirects for old /tools/json URLs; every other
+# tool router is installed through the plugin container (see app.py / core.plugins).
+TOOL_ROUTERS = (json_legacy_router,)
 
 
 def is_featured_tool(tool: Dict[str, Any] | None) -> bool:
@@ -499,16 +283,17 @@ def clear_public_snapshot() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Plugins (optional): merge discovered plugins into the public registry.
-# Plugin ROUTERS are NOT merged into TOOL_ROUTERS — app.py mounts them through
-# a dedicated container so hot reload can swap routes without a restart.
-# A broken or conflicting plugin is skipped (see core.plugins) — the app
-# always starts with the builtin tools regardless.
+# Plugins: merge discovered plugins (including the converted builtin tools)
+# into the public registry. Plugin ROUTERS are NOT merged into TOOL_ROUTERS —
+# app.py mounts them through a dedicated container so hot reload can swap
+# routes without a restart. A broken or conflicting plugin is skipped (see
+# core.plugins) — the app always starts with the builtin infra regardless.
 # ---------------------------------------------------------------------------
 from core.plugins import PluginDiscovery, discover_plugins
 
-_BUILTIN_REGISTRY: List[Dict[str, Any]] = TOOL_REGISTRY
-_BUILTIN_SLUGS = {str(t["slug"]) for t in _BUILTIN_REGISTRY}
+# No builtin tools remain: the registry is populated entirely by plugins.
+_BUILTIN_REGISTRY: List[Dict[str, Any]] = []
+_BUILTIN_SLUGS = set()
 
 
 def refresh_plugins_registry() -> PluginDiscovery:
@@ -543,21 +328,5 @@ __all__ = [
     "get_registry",
     "public_snapshot",
     "clear_public_snapshot",
-    "pdf2word_router",
-    "word2pdf_router",
-    "pdf_merge_router",
-    "qrcode_router",
-    "base64_router",
-    "unicode_router",
-    "regex_router",
-    "code_format_router",
     "json_legacy_router",
-    "markdown_router",
-    "rmb_router",
-    "timestamp_router",
-    "image_compress_router",
-    "image_convert_router",
-    "image_to_pdf_router",
-    "image_grid_router",
-    "express_router",
 ]
