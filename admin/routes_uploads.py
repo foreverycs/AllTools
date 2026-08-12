@@ -26,6 +26,7 @@ from storage import (
     delete_records,
     get_record,
     list_records,
+    list_tool_names,
     resolve_stored,
     retention_days,
 )
@@ -44,15 +45,14 @@ async def uploads_page(
     if redir:
         return redir
 
-    all_items = list_records(limit=max(limit, 200))
+    # Filter dropdown needs DISTINCT tool names only — one lightweight SQL
+    # GROUP BY instead of fetching up to 200 records just to dedupe.
+    tools_used = list_tool_names()
+
     tool_f = (tool or "").strip()
     q_f = (q or "").strip().lower()
 
-    tools_used = sorted(
-        {str(r.get("tool") or "") for r in all_items if r.get("tool")}
-    )
-
-    items = all_items[:limit]
+    items = list_records(limit=limit)
     if tool_f:
         items = [r for r in items if r.get("tool") == tool_f]
     if q_f:

@@ -451,6 +451,26 @@ def record_count() -> int:
         return conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
 
 
+def list_tool_names() -> List[str]:
+    """Distinct tool names used by records (for admin filter dropdowns).
+
+    Lightweight: one SQL GROUP BY instead of loading N records and deduping
+    in Python (the previous /admin/uploads filter list pulled up to 200 rows).
+    """
+    try:
+        cleanup_expired()
+    except Exception:
+        pass
+    with _lock:
+        conn = _get_conn()
+        _migrate_json_if_needed(conn)
+        rows = conn.execute(
+            "SELECT tool FROM records WHERE tool IS NOT NULL AND tool != '' "
+            "GROUP BY tool ORDER BY tool"
+        ).fetchall()
+    return [str(r["tool"]) for r in rows]
+
+
 def resolve_stored(rel: str) -> Optional[Path]:
     """Resolve a relative stored path under ``file/`` safely."""
     if not rel:

@@ -1412,7 +1412,17 @@ html.light-mode .admin-topbar-mark {
     0 2px 12px rgba(99, 102, 241, 0.35),
     0 0 20px rgba(34, 211, 238, 0.22);
 }
-.admin-nav a.active:hover { color: #fff; }
+/* Selected item must keep its active look on hover (the generic :hover and
+   light-mode :hover rules are more specific and would otherwise repaint it). */
+.admin-nav a.active:hover,
+html.light-mode .admin-nav a.active:hover {
+  background: linear-gradient(135deg, #6366f1, #22d3ee);
+  color: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 2px 12px rgba(99, 102, 241, 0.35),
+    0 0 20px rgba(34, 211, 238, 0.22);
+}
 .admin-nav a.active::before {
   background: linear-gradient(180deg, #818cf8, #22d3ee);
   box-shadow: 0 0 14px rgba(99, 102, 241, 0.8);

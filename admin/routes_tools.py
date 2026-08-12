@@ -84,6 +84,10 @@ async def tools_page(request: Request):
         active="tools",
         tools=_tool_rows(),
         categories=get_categories(),
+        categories_json=[
+            {"id": c["id"], "name": c["name"], "icon": c.get("icon") or ""}
+            for c in get_categories()
+        ],
         flags=flags,
         flags_meta=flags_status(),
         plugin_dir=str(plugins_dir()),

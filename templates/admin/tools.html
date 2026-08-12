@@ -81,14 +81,9 @@
                   <svg class="cat-picker-arrow" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 <input type="hidden" name="assign_{{ t.slug }}" value="{{ t.category }}" />
-                <div class="cat-picker-menu" id="catMenu-{{ t.slug }}" role="listbox" hidden>
-                  {% for c in categories %}
-                  <button type="button" class="cat-picker-opt {% if c.id == t.category %}is-checked{% endif %}" role="option" aria-selected="{% if c.id == t.category %}true{% else %}false{% endif %}" data-value="{{ c.id }}">
-                    <span class="cat-picker-opt-label">{{ c.icon or '' }} {{ c.name }}</span>
-                    <span class="cat-picker-check" aria-hidden="true">✓</span>
-                  </button>
-                  {% endfor %}
-                </div>
+                {# Menu options are rendered lazily by JS on first open (one shared
+                   template), so N tools don't duplicate M category buttons. #}
+                <div class="cat-picker-menu" id="catMenu-{{ t.slug }}" role="listbox" hidden></div>
               </div>
             </td>
             <td>
@@ -160,6 +155,7 @@
 </div>
 <script>
 (function () {
+  var CATEGORY_OPTIONS = {{ categories_json|tojson }};
   var allBtn = document.getElementById('toolsSelectAll');
   var noneBtn = document.getElementById('toolsSelectNone');
   if (allBtn && noneBtn) {
@@ -187,6 +183,36 @@
     return menu || picker.querySelector('.cat-picker-menu');
   }
 
+  // Lazily fill a picker's options on first open (one shared option list per
+  // page instead of M tools x N categories duplicate buttons).
+  var categoryOptions = CATEGORY_OPTIONS || [];
+  function ensureOptions(picker, menu) {
+    if (menu._filled) return;
+    menu._filled = true;
+    var hidden = picker.querySelector('input[type="hidden"]');
+    var current = (hidden && hidden.value) || '';
+    for (var i = 0; i < categoryOptions.length; i++) {
+      var c = categoryOptions[i];
+      var sel = c.id === current;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cat-picker-opt' + (sel ? ' is-checked' : '');
+      b.setAttribute('role', 'option');
+      b.setAttribute('aria-selected', sel ? 'true' : 'false');
+      b.setAttribute('data-value', c.id);
+      var span = document.createElement('span');
+      span.className = 'cat-picker-opt-label';
+      span.textContent = (c.icon || '') + ' ' + c.name;
+      var check = document.createElement('span');
+      check.className = 'cat-picker-check';
+      check.setAttribute('aria-hidden', 'true');
+      check.textContent = '\u2713';
+      b.appendChild(span);
+      b.appendChild(check);
+      menu.appendChild(b);
+    }
+  }
+
   function closePicker(picker) {
     var menu = menuOf(picker);
     var btn = picker.querySelector('.cat-picker-btn');
@@ -199,6 +225,7 @@
     pickers.forEach(closePicker);
     var btn = picker.querySelector('.cat-picker-btn');
     var menu = menuOf(picker);
+    ensureOptions(picker, menu);
     // The menu is attached to <body> before positioning: `position: fixed`
     // is relative to the viewport ONLY when no ancestor has a `transform`
     // (the .admin-main fade-in animation briefly applies one, hijacking the
