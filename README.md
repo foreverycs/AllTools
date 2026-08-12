@@ -33,6 +33,7 @@ PDF ↔ Word 转换、发票合并、编码调试与取件码文件快递
 - **PDF 转 Word**：纯文本/表格 PDF 转 Word，支持合并单元格、嵌套样式、图片嵌入、可选 OCR、批量 ZIP
 - **Word 转 PDF**：基于 LibreOffice 引擎，支持 Windows 下回退 Microsoft Word
 - **发票合并**：两张发票合并到一张 A4 纸，支持页内预览和打印
+- **PDF 工具集**：按页拆分 ZIP、多 PDF 合并、移除密码解密、指定页码抽取
 
 ### 🖼️ 图片处理
 - **图片压缩**：高观感压缩 JPEG/PNG/GIF/SVG，显著减小体积
