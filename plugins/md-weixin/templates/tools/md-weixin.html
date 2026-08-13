@@ -1,0 +1,521 @@
+{% extends "tools/base.html" %}
+{% set page_title = "MD 转公众号" %}
+{% set page_description = "Markdown 一键排版微信公众号文章" %}
+{% set accent = "emerald" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/#col-text") %}
+{% set back_label = "文本工具" %}
+{% set chip = "文本工具 · MD 转公众号" %}
+
+{% block head_styles %}
+<style>
+  .tool-page .panes { gap: 12px; min-height: 480px; align-items: stretch; }
+  @media (max-width: 860px) {
+    .tool-page .panes { grid-template-columns: 1fr; min-height: 0; }
+  }
+  .tool-page .pane { min-height: 0; }
+  .tool-page #editor { flex: 1; min-height: 380px; font-size: 13px; }
+
+  /* Phone-frame preview */
+  .tool-page .preview-wrap {
+    flex: 1; min-height: 380px; display: flex; align-items: flex-start;
+    justify-content: center; overflow: auto; padding: 10px 6px;
+    background: var(--chip-bg); border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+  .tool-page .preview-phone {
+    width: 375px; max-width: 100%; border-radius: 20px;
+    border: 1px solid var(--line); overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,.14);
+    background: #e5e7eb;
+  }
+  .tool-page .preview-phone iframe {
+    display: block; width: 100%; height: 620px; border: 0; background: #e5e7eb;
+  }
+  .tool-page .preview-phone .phone-top {
+    height: 26px; background: #111827; display: flex; align-items: center;
+    justify-content: center; gap: 5px;
+  }
+  .tool-page .preview-phone .phone-top i {
+    width: 5px; height: 5px; border-radius: 50%; background: #374151;
+    font-style: normal;
+  }
+
+  /* Theme switcher */
+  .tool-page .theme-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .tool-page .theme-pill {
+    font: inherit; font-size: 12.5px; font-weight: 600;
+    padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--chip-bg); color: var(--ink-2);
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .tool-page .theme-pill:hover { border-color: var(--tool-accent-border); color: var(--tool-accent-ink); }
+  .tool-page .theme-pill.active {
+    background: var(--tool-accent); border-color: var(--tool-accent);
+    color: #fff; font-weight: 700;
+  }
+
+  /* Color picker popover */
+  .tool-page .color-wrap { position: relative; display: inline-block; }
+  .tool-page .color-pop {
+    position: absolute; top: calc(100% + 8px); left: 0; z-index: 30;
+    width: 252px; padding: 10px; border-radius: 12px;
+    background: var(--surface-solid); border: 1px solid var(--line);
+    box-shadow: 0 12px 32px rgba(0,0,0,.18); display: none;
+  }
+  .tool-page .color-pop.open { display: block; }
+  .tool-page .color-pop .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-bottom: 8px; }
+  .tool-page .color-pop .sw {
+    height: 24px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12);
+    cursor: pointer;
+  }
+  .tool-page .color-pop .sw:hover { transform: scale(1.12); }
+  .tool-page .color-pop .hex-row { display: flex; gap: 6px; align-items: center; }
+  .tool-page .color-pop .hex-row input {
+    flex: 1; min-width: 0; font: inherit; font-size: 12.5px;
+    padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--chip-bg); color: var(--ink); text-transform: uppercase;
+  }
+  .tool-page .color-pop .hex-row input:focus { outline: 2px solid var(--tool-focus); outline-offset: 1px; }
+  .tool-page .color-pop .btn { padding: 6px 12px; font-size: 12.5px; }
+
+  .tool-page .actions.is-inline { margin: 0 0 0 auto; }
+  .tool-page .toolbar .check { margin-left: auto; padding-bottom: 0; }
+  .tool-page .md-empty {
+    color: var(--muted-2); font-size: 13px; font-weight: 500;
+    padding: 24px 8px; text-align: center;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="icon" aria-hidden="true">📰</div>
+    <div>
+      <h1>MD 转公众号</h1>
+      <p>Markdown 一键排版微信公众号文章：左侧书写、右侧手机预览，一键复制内联样式 HTML，粘贴到公众号后台样式 100% 保留。</p>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <button type="button" class="tb" data-wrap="**|**" title="粗体">B</button>
+    <button type="button" class="tb" data-wrap="*|*" title="斜体"><em>I</em></button>
+    <button type="button" class="tb" data-prefix="# " title="一级标题">H1</button>
+    <button type="button" class="tb" data-prefix="## " title="二级标题">H2</button>
+    <button type="button" class="tb" data-prefix="> " title="引用">引用</button>
+    <button type="button" class="tb" data-prefix="- " title="列表">列表</button>
+    <button type="button" class="tb" data-insert="CODE" title="代码块">代码</button>
+    <button type="button" class="tb" data-insert="TABLE" title="表格">表格</button>
+    <button type="button" class="tb" data-insert="HR" title="分割线">分割线</button>
+    <span class="tb-sep" aria-hidden="true"></span>
+    <button type="button" class="tb" id="btnImageUrl" title="插入图片链接">图片</button>
+    <button type="button" class="tb" id="btnImageUpload" title="本地上传图片">上传图</button>
+    <span class="color-wrap">
+      <button type="button" class="tb" id="btnColor" title="文字颜色">🎨 颜色</button>
+      <div class="color-pop" id="colorPop">
+        <div class="swatches" id="colorSwatches"></div>
+        <div class="hex-row">
+          <input type="text" id="colorHex" placeholder="#07c160" maxlength="7" spellcheck="false" />
+          <button type="button" class="btn" id="colorApply">应用</button>
+        </div>
+      </div>
+    </span>
+    <span class="tb-sep" aria-hidden="true"></span>
+    <button type="button" class="tb" id="btnSample">示例</button>
+    <button type="button" class="tb" id="btnClear">清空</button>
+    <label class="check">
+      <input type="checkbox" id="livePreview" checked />
+      实时预览
+    </label>
+  </div>
+
+  <div class="toolbar" style="margin-top: 10px;">
+    <div class="theme-row" id="themeRow">
+      {% for t in themes %}
+      <button type="button" class="theme-pill" data-id="{{ t.id }}" data-name="{{ t.name }}">
+        {{ t.emoji }} {{ t.name }}
+      </button>
+      {% endfor %}
+    </div>
+    <div class="actions is-inline">
+      <button type="button" class="btn" id="btnCopyHtml">复制 HTML</button>
+      <button type="button" class="btn btn-ghost" id="btnCopyMd">复制 MD</button>
+      <button type="button" class="btn btn-ghost" id="btnExport">导出 HTML</button>
+    </div>
+  </div>
+
+  <div class="panes">
+    <div class="pane">
+      <div class="pane-label">
+        <span>Markdown 源码</span>
+        <div class="pane-actions">
+          <button type="button" class="mini" id="btnRender">立即渲染</button>
+        </div>
+      </div>
+      <textarea id="editor" spellcheck="false" placeholder="在此输入 Markdown…"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">
+        <span>公众号预览（375px）</span>
+        <span style="font-weight:500;color:var(--muted-2);font-size:11px" id="renderState">就绪</span>
+      </div>
+      <div class="preview-wrap">
+        <div class="preview-phone" id="phone">
+          <div class="phone-top"><i></i><i></i><i></i></div>
+          <iframe id="previewFrame" title="公众号预览" sandbox=""></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="meta" id="meta"></div>
+  <div class="status" id="status"></div>
+  <p class="tips">
+    提示：主题切换即时生效；「复制 HTML」会把带内联样式的富文本写入剪贴板，
+    粘贴到公众号后台样式完整保留。代码块自动高亮（Pygments），大图上传自动压缩为
+    base64 嵌入。最大输入约 {{ (max_chars // 1024) if max_chars else 512 }}K 字符。
+  </p>
+</div>
+<input type="file" id="fileInput" accept="image/*" hidden />
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const THEMES = {{ themes|tojson }};
+    const SAMPLE = {{ sample|tojson }};
+    const SNIPPETS = {
+      CODE: "\n```python\ncode\n```\n",
+      TABLE: "\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+      HR: "\n---\n"
+    };
+    const PRESET_COLORS = [
+      "#07c160", "#1e88e5", "#8b5ce0", "#e91e63", "#ff6b35", "#f5a623",
+      "#f7c948", "#7ed321", "#00bfa5", "#00bcd4", "#5c6bc0", "#9c27b0",
+      "#795548", "#607d8b", "#3f51b5", "#d32f2f"
+    ];
+    const editor = document.getElementById("editor");
+    const frame = document.getElementById("previewFrame");
+    const livePreview = document.getElementById("livePreview");
+    const meta = document.getElementById("meta");
+    const status = document.getElementById("status");
+    const renderState = document.getElementById("renderState");
+    const themeRow = document.getElementById("themeRow");
+    const colorPop = document.getElementById("colorPop");
+    const colorHex = document.getElementById("colorHex");
+    const fileInput = document.getElementById("fileInput");
+    const TP = window.ToolPage || {};
+    const root = window.__ROOT__ || "";
+
+    let lastHtml = "";
+    let currentTheme = "default";
+    let timer = null;
+    let rendering = false;
+    let pending = false;
+
+    // --- theme switcher --------------------------------------------------
+    themeRow.querySelectorAll(".theme-pill").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        currentTheme = btn.getAttribute("data-id");
+        themeRow.querySelectorAll(".theme-pill").forEach(function (b) {
+          b.classList.toggle("active", b === btn);
+        });
+        persist();
+        scheduleRender();
+      });
+    });
+    function setTheme(id) {
+      currentTheme = id || "default";
+      themeRow.querySelectorAll(".theme-pill").forEach(function (b) {
+        b.classList.toggle("active", b.getAttribute("data-id") === currentTheme);
+      });
+    }
+
+    // --- color picker ----------------------------------------------------
+    const swatches = document.getElementById("colorSwatches");
+    PRESET_COLORS.forEach(function (color) {
+      const sw = document.createElement("button");
+      sw.type = "button";
+      sw.className = "sw";
+      sw.style.background = color;
+      sw.title = color;
+      sw.setAttribute("data-color", color);
+      swatches.appendChild(sw);
+    });
+    swatches.addEventListener("click", function (e) {
+      const sw = e.target.closest(".sw");
+      if (sw) applyColor(sw.getAttribute("data-color"));
+    });
+    document.getElementById("btnColor").addEventListener("click", function (e) {
+      e.stopPropagation();
+      colorPop.classList.toggle("open");
+    });
+    document.getElementById("colorApply").addEventListener("click", function () {
+      const v = (colorHex.value || "").trim();
+      if (/^#?[0-9a-fA-F]{6}$/.test(v)) applyColor(v);
+      else TP.setStatus(status, "err", "颜色格式需为 #RRGGBB");
+    });
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".color-wrap")) colorPop.classList.remove("open");
+    });
+    function applyColor(color) {
+      colorPop.classList.remove("open");
+      const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+      if (!sel) {
+        TP.setStatus(status, "info", "请先选中要上色的文字");
+        return;
+      }
+      const before = editor.value.slice(0, editor.selectionStart);
+      const after = editor.value.slice(editor.selectionEnd);
+      const wrap = `<span style="color:${color}">` + sel + "</span>";
+      editor.value = before + wrap + after;
+      editor.focus();
+      scheduleRender();
+      persist();
+    }
+
+    // --- editor utilities ------------------------------------------------
+    function insertAround(before, after) {
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const val = editor.value;
+      const selected = val.slice(start, end) || "text";
+      editor.value = val.slice(0, start) + before + selected + after + val.slice(end);
+      const s = start + before.length;
+      editor.setSelectionRange(s, s + selected.length);
+      editor.focus();
+      scheduleRender();
+      persist();
+    }
+    function insertPrefix(prefix) {
+      const start = editor.selectionStart;
+      const val = editor.value;
+      const lineStart = val.lastIndexOf("\n", start - 1) + 1;
+      editor.value = val.slice(0, lineStart) + prefix + val.slice(lineStart);
+      editor.setSelectionRange(start + prefix.length, start + prefix.length);
+      editor.focus();
+      scheduleRender();
+      persist();
+    }
+    function insertText(text) {
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const val = editor.value;
+      editor.value = val.slice(0, start) + text + val.slice(end);
+      const pos = start + text.length;
+      editor.setSelectionRange(pos, pos);
+      editor.focus();
+      scheduleRender();
+      persist();
+    }
+    document.querySelectorAll(".tb[data-wrap]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const parts = btn.getAttribute("data-wrap").split("|");
+        insertAround(parts[0], parts[1] || parts[0]);
+      });
+    });
+    document.querySelectorAll(".tb[data-prefix]").forEach(function (btn) {
+      btn.addEventListener("click", function () { insertPrefix(btn.getAttribute("data-prefix")); });
+    });
+    document.querySelectorAll(".tb[data-insert]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        insertText(SNIPPETS[btn.getAttribute("data-insert")] || btn.getAttribute("data-insert"));
+      });
+    });
+
+    document.getElementById("btnImageUrl").addEventListener("click", function () {
+      const url = prompt("请输入图片 URL：");
+      if (!url || !url.trim()) return;
+      insertText("\n![图片](" + url.trim() + ")\n");
+    });
+    document.getElementById("btnImageUpload").addEventListener("click", function () {
+      fileInput.click();
+    });
+    fileInput.addEventListener("change", async function () {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      TP.clearStatus(status);
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const data = await TP.runForm(TP.appUrl("/tools/md-weixin/compress"), fd);
+        const saved = data.original_bytes - data.bytes;
+        const alt = (file.name || "image").replace(/[.#].*$/, "").replace(/[\\/:*?"<>|]/g, "") || "image";
+        insertText("\n![" + alt + "](" + data.data_uri + ")\n");
+        const savedTxt = saved > 0 ? "，已压缩 " + Math.round(saved / 1024) + "KB" : "";
+        TP.setStatus(status, "ok", "已嵌入图片" + savedTxt + "（" + data.width + "×" + data.height + "）");
+      } catch (err) {
+        TP.setStatus(status, "err", err.message || String(err));
+      } finally {
+        fileInput.value = "";
+      }
+    });
+
+    // --- render ----------------------------------------------------------
+    function showMeta(data) {
+      const parts = [];
+      if (data.chars != null) parts.push("字符 <strong>" + data.chars + "</strong>");
+      if (data.words != null) parts.push("字数 <strong>" + data.words + "</strong>");
+      if (data.code_blocks != null) parts.push("代码块 <strong>" + data.code_blocks + "</strong>");
+      if (data.theme_name) parts.push("主题 <strong>" + data.theme_name + "</strong>");
+      if (data.highlight) parts.push("代码高亮 <strong>开</strong>");
+      meta.innerHTML = parts.join(" · ");
+    }
+
+    function detailMessage(data) {
+      const d = data && data.detail;
+      if (typeof d === "string") return d;
+      if (Array.isArray(d)) return d.map(function (x) { return x.msg || x.message || x; }).join("; ");
+      return (data && data.message) || "请求失败";
+    }
+
+    async function renderNow() {
+      if (rendering) { pending = true; return; }
+      rendering = true;
+      pending = false;
+      renderState.textContent = "渲染中…";
+      try {
+        const fd = new FormData();
+        fd.append("text", editor.value);
+        fd.append("theme", currentTheme);
+        const res = await fetch(root + "/tools/md-weixin/render", { method: "POST", body: fd });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(detailMessage(data));
+        lastHtml = data.html || "";
+        if (!lastHtml) {
+          frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#e5e7eb;"></body></html>';
+        } else {
+          frame.srcdoc = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"></head>' +
+            '<body style="margin:0;padding:0;background:#e5e7eb;">' + lastHtml + "</body></html>";
+        }
+        showMeta(data);
+        renderState.textContent = "已更新";
+        TP.clearStatus(status);
+      } catch (err) {
+        renderState.textContent = "失败";
+        TP.setStatus(status, "err", err.message || String(err));
+      } finally {
+        rendering = false;
+        if (pending) renderNow();
+      }
+    }
+
+    function scheduleRender() {
+      if (!livePreview.checked) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(renderNow, 280);
+    }
+
+    // --- clipboard -------------------------------------------------------
+    async function copyRichHtml() {
+      if (!lastHtml) {
+        TP.setStatus(status, "info", "请先输入内容");
+        return;
+      }
+      try {
+        if (window.ClipboardItem) {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              "text/html": new Blob([lastHtml], { type: "text/html" }),
+              "text/plain": new Blob([editor.value], { type: "text/plain" })
+            })
+          ]);
+          TP.setStatus(status, "ok", "已复制（含样式，可直接粘贴到公众号）");
+          return;
+        }
+      } catch (e) { /* fall back below */ }
+      try {
+        await navigator.clipboard.writeText(lastHtml);
+        TP.setStatus(status, "ok", "已复制 HTML");
+      } catch (e) {
+        TP.setStatus(status, "err", "复制失败");
+      }
+    }
+
+    // --- wiring ----------------------------------------------------------
+    function persist() {
+      try {
+        localStorage.setItem("md_weixin_text_v1", editor.value);
+        localStorage.setItem("md_weixin_theme_v1", currentTheme);
+      } catch (e) {}
+    }
+
+    document.getElementById("btnRender").addEventListener("click", renderNow);
+    livePreview.addEventListener("change", function () {
+      if (livePreview.checked) scheduleRender();
+    });
+    document.getElementById("btnCopyHtml").addEventListener("click", copyRichHtml);
+    document.getElementById("btnCopyMd").addEventListener("click", function () {
+      TP.copyText(editor.value, "已复制 Markdown");
+    });
+    document.getElementById("btnExport").addEventListener("click", async function () {
+      try {
+        const fd = new FormData();
+        fd.append("text", editor.value);
+        fd.append("theme", currentTheme);
+        fd.append("title", "文章");
+        const res = await fetch(root + "/tools/md-weixin/export", { method: "POST", body: fd });
+        if (!res.ok) {
+          const data = await res.json().catch(function () { return {}; });
+          throw new Error(detailMessage(data));
+        }
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        const href = URL.createObjectURL(blob);
+        a.href = href;
+        a.download = "weixin-export.html";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(href);
+        TP.setStatus(status, "ok", "已导出 HTML");
+      } catch (err) {
+        TP.setStatus(status, "err", err.message || String(err));
+      }
+    });
+    document.getElementById("btnSample").addEventListener("click", function () {
+      editor.value = SAMPLE || "";
+      persist();
+      scheduleRender();
+    });
+    document.getElementById("btnClear").addEventListener("click", function () {
+      editor.value = "";
+      lastHtml = "";
+      frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#e5e7eb;"></body></html>';
+      meta.innerHTML = "";
+      TP.clearStatus(status);
+      renderState.textContent = "就绪";
+      persist();
+    });
+
+    editor.addEventListener("input", function () { persist(); scheduleRender(); });
+    editor.addEventListener("keydown", function (e) {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        insertText("  ");
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        renderNow();
+      }
+    });
+
+    // --- init ------------------------------------------------------------
+    try {
+      const savedTheme = localStorage.getItem("md_weixin_theme_v1");
+      if (savedTheme && THEMES.some(function (t) { return t.id === savedTheme; })) {
+        setTheme(savedTheme);
+      } else {
+        setTheme("default");
+      }
+      const saved = localStorage.getItem("md_weixin_text_v1");
+      editor.value = (saved != null && saved !== "") ? saved : (SAMPLE || "");
+    } catch (e) {
+      setTheme("default");
+      editor.value = SAMPLE || "";
+    }
+    renderNow();
+  </script>
+{% endblock %}
