@@ -12,7 +12,7 @@
       --ease:cubic-bezier(.22,1,.36,1);
     }
     html.light-mode{
-      --bg:#faf6ef; --surface:rgba(130,88,44,.045); --surface-hov:rgba(130,88,44,.08);
+      --bg:#eef1f8; --surface:rgba(130,88,44,.045); --surface-hov:rgba(130,88,44,.08);
       --border:rgba(130,84,40,.14); --border-hov:rgba(130,84,40,.24);
       --text:#3b2f22; --text-soft:rgba(59,47,34,.64); --text-mute:rgba(59,47,34,.44); --text-faint:rgba(59,47,34,.26);
       --accent:#d97706; --accent-glow:rgba(217,119,6,.16);
@@ -789,11 +789,11 @@ html[data-theme="dark"],html:not([data-theme="light"]){
   --text-mute:rgba(238,242,247,.4); --text-faint:rgba(238,242,247,.22);
 }
 html[data-theme="light"]{
-  --bg:#faf6ef; --text:#3b2f22; --text-soft:rgba(59,47,34,.64);
+  --bg:#eef1f8; --text:#3b2f22; --text-soft:rgba(59,47,34,.64);
   --text-mute:rgba(59,47,34,.44); --text-faint:rgba(59,47,34,.26);
 }
 /* Day/Night full-screen background layer — modern smooth gradient */
-.bg-grid{position:fixed;inset:0;z-index:0;pointer-events:none;transition:opacity .5s ease}
+.bg-grid{position:fixed;inset:0;z-index:0;pointer-events:none;transition:opacity .5s ease,background-color .4s var(--ease)}
 /* Night: starry deep space — static starfield via multi-point radial gradients */
 html:not(.light-mode) .bg-grid{
   background-color:#05060d;
@@ -837,14 +837,14 @@ html:not(.light-mode) .bg-grid::after{
 @media (prefers-reduced-motion:reduce){
   html:not(.light-mode) .bg-grid::after{animation:none}
 }
-/* Day: soft modern pastel gradient (indigo → cyan → warm cream) */
+/* Day: soft modern pastel gradient (indigo → cyan → soft lavender, 无暖黄底色) */
 html.light-mode .bg-grid{
-  background-color:#f3ecd9;
+  background-color:#e8ecff;
   background-image:
     radial-gradient(ellipse 55% 50% at 15% -5%, rgba(99,102,241,.4), transparent 55%),
     radial-gradient(ellipse 46% 45% at 90% 8%, rgba(56,189,248,.36), transparent 50%),
     radial-gradient(ellipse 45% 42% at 72% 100%, rgba(236,72,153,.22), transparent 55%),
-    linear-gradient(160deg, #dce3ff 0%, #c8edfb 34%, #f3ecd9 100%);
+    linear-gradient(160deg, #dce3ff 0%, #c8edfb 34%, #e8ecff 100%);
 }
 /* Day: warm gradient word (amber) */
 html.light-mode #hero-demo-heading .grad{
