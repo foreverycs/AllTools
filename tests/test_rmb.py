@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from office import AmountError, to_rmb_upper
+from plugins.rmb.rmb import AmountError, to_rmb_upper
 from tools import TOOL_REGISTRY, tools_by_category
 
 

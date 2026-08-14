@@ -6,7 +6,7 @@ from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.requests import Request
 
-from office import AmountError, to_rmb_upper
+from .rmb import AmountError, to_rmb_upper
 from tools.common import templates, to_bool, with_nav
 
 router = APIRouter(prefix="/tools/rmb", tags=["rmb"])
