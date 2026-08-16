@@ -347,6 +347,9 @@
 
   /** Join app root path with an absolute path. */
   function appUrl(path) {
+    if (global.ToolkitUX && typeof global.ToolkitUX.appUrl === "function") {
+      return global.ToolkitUX.appUrl(path);
+    }
     var root = global.__ROOT__ || "";
     if (!path) return root || "/";
     if (path.charAt(0) !== "/") path = "/" + path;

@@ -27,37 +27,10 @@
   }
 
   function copyText(text, okMsg) {
-    var t = text == null ? "" : String(text);
-    if (!t) return Promise.resolve(false);
-    var done = function () {
-      if (global.ToolkitUX && typeof global.ToolkitUX.toast === "function") {
-        global.ToolkitUX.toast(okMsg || "已复制到剪贴板", "ok");
-      }
-      return true;
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(t).then(done).catch(function () {
-        return legacyCopy(t) ? done() : Promise.resolve(false);
-      });
+    if (global.ToolkitUX && typeof global.ToolkitUX.copyText === "function") {
+      return global.ToolkitUX.copyText(text, okMsg);
     }
-    return Promise.resolve(legacyCopy(t) ? done() : false);
-  }
-
-  function legacyCopy(t) {
-    try {
-      var ta = document.createElement("textarea");
-      ta.value = t;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.left = "-9999px";
-      document.body.appendChild(ta);
-      ta.select();
-      var ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-      return !!ok;
-    } catch (e) {
-      return false;
-    }
+    return Promise.resolve(false);
   }
 
   function setupCopy(btnEl, getText, okMsg) {
@@ -101,8 +74,13 @@
   }
 
   function appUrl(path) {
+    if (global.ToolkitUX && typeof global.ToolkitUX.appUrl === "function") {
+      return global.ToolkitUX.appUrl(path);
+    }
     var root = global.__ROOT__ || "";
-    return root + path;
+    if (!path) return root || "/";
+    if (path.charAt(0) !== "/") path = "/" + path;
+    return root ? root + path : path;
   }
 
   async function runForm(url, fd, opts) {
