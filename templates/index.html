@@ -73,6 +73,19 @@
           </div>
         </div>
 
+        <!-- ===== 常用功能快捷入口 ===== -->
+        <section class="home-recent" aria-labelledby="recent-tools-title">
+          <div class="home-recent-head">
+            <div>
+              <div class="home-recent-kicker">QUICK ACCESS</div>
+              <h2 id="recent-tools-title">常用功能</h2>
+              <p id="recent-tools-hint">最近使用的工具会显示在这里</p>
+            </div>
+            <button id="recent-clear" class="home-recent-clear" type="button">清除记录</button>
+          </div>
+          <div id="recent-tools" class="recent-tools-grid" aria-live="polite"></div>
+        </section>
+
         {% if express_enabled %}
         <!-- ===== 文件快递 Spotlight (特色功能横幅) ===== -->
         <section class="express-spotlight" aria-label="文件快递">
@@ -82,15 +95,15 @@
             <div class="es-body">
               <div class="es-kicker">特色功能 · 文件快递</div>
               <h2>临时传文件，无需账号</h2>
-              <p>上传生成 8 位取件码，对方输入即可下载；可设有效期与下载次数，文件到期自动过期。</p>
+               <p>上传生成 6 位取件码，对方输入即可下载；可设有效期与下载次数，文件到期自动过期。</p>
               <div class="es-actions">
                 <a class="es-btn-primary" href="{{ url_path('/tools/express') }}">
                   <i aria-hidden="true">✉</i>寄送文件
                 </a>
                 <form class="es-pickup" id="es-pickup" action="{{ url_path('/tools/express') }}" method="get">
                   <label for="es-code" class="es-pickup-label">取件码</label>
-                  <input id="es-code" name="code" inputmode="numeric" maxlength="8" autocomplete="off"
-                         placeholder="8 位取件码" aria-label="输入取件码" />
+                   <input id="es-code" name="code" inputmode="numeric" maxlength="6" autocomplete="off"
+                          placeholder="6 位取件码" aria-label="输入取件码" />
                   <button type="submit" class="es-btn-ghost">取件</button>
                 </form>
               </div>
@@ -470,5 +483,6 @@
     setFilter('');
   });
   </script>
+  <script id="tool-catalog-data" type="application/json">{{ tools_catalog|tojson }}</script>
 </body>
 </html>

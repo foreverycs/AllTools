@@ -8,6 +8,14 @@
 
   var RECENT_KEY = "toolkit_recent_v1";
   var RECENT_MAX = 6;
+  var DEFAULT_RECENT_SLUGS = [
+    "pdf2word",
+    "word2pdf",
+    "image-compress",
+    "image-convert",
+    "code-format",
+    "markdown",
+  ];
   var JOBS_KEY = "toolkit_jobs_v1";
   var JOBS_MAX = 12;
   var JOBS_TTL_MS = 2 * 60 * 60 * 1000;
@@ -1062,6 +1070,23 @@
       });
     });
 
+    var isDefault = false;
+    if (!items.length) {
+      isDefault = true;
+      DEFAULT_RECENT_SLUGS.forEach(function (slug) {
+        var c = catalog[slug];
+        if (!c || !c.route) return;
+        items.push({
+          slug: slug,
+          name: c.name || slug,
+          route: c.route,
+          icon: c.icon || "🔧",
+          description: c.description || "",
+          accent: c.accent || "indigo",
+        });
+      });
+    }
+
     var section = host.closest(".home-recent");
     if (!items.length) {
       if (section) section.hidden = true;
@@ -1069,6 +1094,12 @@
       return;
     }
     if (section) section.hidden = false;
+    var hint = document.getElementById("recent-tools-hint");
+    if (hint) {
+      hint.textContent = isDefault
+        ? "精选常用工具，开始使用后会替换为最近访问"
+        : "按最近使用顺序排列";
+    }
 
     var html = "";
     items.forEach(function (t) {
@@ -1082,10 +1113,13 @@
         escapeHtml(t.icon) +
         "</span>" +
         '<span class="recent-meta">' +
-        '<span class="recent-name">' +
-        escapeHtml(t.name) +
-        "</span>" +
-        (t.description
+         '<span class="recent-name">' +
+         escapeHtml(t.name) +
+         "</span>" +
+        (isDefault
+          ? '<span class="recent-badge">推荐</span>'
+          : '<span class="recent-badge">最近</span>') +
+         (t.description
           ? '<span class="recent-desc">' + escapeHtml(t.description) + "</span>"
           : "") +
         "</span></a>";
