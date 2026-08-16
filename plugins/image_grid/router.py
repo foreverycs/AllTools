@@ -242,7 +242,7 @@ async def api_preview(
     raw = await file.read()
     limit = None
     try:
-        from tools.common import max_upload_bytes
+        from tools.common import check_image_dimensions, max_upload_bytes
 
         limit = max_upload_bytes()
         if len(raw) > limit:
@@ -250,6 +250,21 @@ async def api_preview(
                 status_code=413,
                 detail=f"File too large (max {limit // (1024 * 1024)} MB)",
             )
+        # Header-only dimension check before the worker decodes the whole image.
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(delete=False) as tf:
+            tf.write(raw)
+            tmp = tf.name
+        try:
+            check_image_dimensions(tmp)
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
     except HTTPException:
         raise
     if not raw:

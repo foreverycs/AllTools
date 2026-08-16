@@ -383,6 +383,39 @@ def _convert_msword(input_path: Path, output_pdf: Path) -> None:
         except Exception:
             # Older Word builds: positional (FileName, Confirm, ReadOnly, …).
             doc = word.Documents.Open(src, False, True, False)
+
+        try:
+            # 17 = wdFormatPDF
+            # Prefer ExportAsFixedFormat when available (better layout options).
+            exported = False
+            try:
+                # wdExportFormatPDF=17, wdExportOptimizeForPrint=0,
+                # wdExportAllDocument=0, From=1, To=1, wdExportDocumentContent=0,
+                # IncludeDocProps=True, KeepIRM=True, wdExportCreateWordBookmarks=1
+                doc.ExportAsFixedFormat(
+                    OutputFileName=dst,
+                    ExportFormat=17,
+                    OpenAfterExport=False,
+                    OptimizeFor=0,
+                    BitmapMissingFonts=True,
+                    DocStructureTags=True,
+                    CreateBookmarks=1,
+                    UseDocumentStructureTags=True,
+                )
+                exported = output_pdf.is_file() and output_pdf.stat().st_size > 0
+            except Exception:
+                exported = False
+            if not exported:
+                doc.SaveAs(dst, FileFormat=17)
+        except Exception as exc:
+            raise ConversionError(
+                f"Microsoft Word conversion failed: {exc}"
+                + (
+                    " (complex macros/ActiveX controls are not rendered)"
+                    if has_macros
+                    else ""
+                )
+            ) from exc
     except Exception as exc:
         raise ConversionError(
             f"Microsoft Word failed to open document: {exc}"
@@ -392,40 +425,9 @@ def _convert_msword(input_path: Path, output_pdf: Path) -> None:
                 else ""
             )
         ) from exc
-
-    try:
-        # 17 = wdFormatPDF
-        # Prefer ExportAsFixedFormat when available (better layout options).
-        exported = False
-        try:
-            # wdExportFormatPDF=17, wdExportOptimizeForPrint=0,
-            # wdExportAllDocument=0, From=1, To=1, wdExportDocumentContent=0,
-            # IncludeDocProps=True, KeepIRM=True, wdExportCreateWordBookmarks=1
-            doc.ExportAsFixedFormat(
-                OutputFileName=dst,
-                ExportFormat=17,
-                OpenAfterExport=False,
-                OptimizeFor=0,
-                BitmapMissingFonts=True,
-                DocStructureTags=True,
-                CreateBookmarks=1,
-                UseDocumentStructureTags=True,
-            )
-            exported = output_pdf.is_file() and output_pdf.stat().st_size > 0
-        except Exception:
-            exported = False
-        if not exported:
-            doc.SaveAs(dst, FileFormat=17)
-    except Exception as exc:
-        raise ConversionError(
-            f"Microsoft Word conversion failed: {exc}"
-            + (
-                " (complex macros/ActiveX controls are not rendered)"
-                if has_macros
-                else ""
-            )
-        ) from exc
     finally:
+        # Ensure the COM objects are always released, even when open/export
+        # throws — otherwise the Word.exe process stays resident on Windows.
         try:
             if doc is not None:
                 doc.Close(False)

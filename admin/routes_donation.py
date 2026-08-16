@@ -60,15 +60,20 @@ async def donation_save(
     # 上传新二维码（如有）。
     qr_file: UploadFile = form.get("qr")
     if qr_file is not None and getattr(qr_file, "filename", ""):
-        data = await qr_file.read()
-        if not data:
-            msgs.append("未选择有效图片")
+        if qr_file.size is not None and qr_file.size > 5 * 1024 * 1024:
+            msgs.append("二维码图片不能超过 5 MB")
         else:
-            err = save_qr_image(data)
-            if err:
-                msgs.append(err)
+            data = await qr_file.read()
+            if not data:
+                msgs.append("未选择有效图片")
+            elif len(data) > 5 * 1024 * 1024:
+                msgs.append("二维码图片不能超过 5 MB")
             else:
-                msgs.append("二维码已更新")
+                err = save_qr_image(data)
+                if err:
+                    msgs.append(err)
+                else:
+                    msgs.append("二维码已更新")
 
     # 显式删除二维码（与上传互斥，删除优先）。
     if str(form.get("remove_qr") or "").strip().lower() in (

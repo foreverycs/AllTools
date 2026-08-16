@@ -72,7 +72,7 @@ def test_create_and_lookup_package(express_env, tmp_path):
         max_downloads=3,
         note="给同事",
     )
-    assert pkg["code"] and len(pkg["code"]) == 6 and pkg["code"].isdigit()
+    assert pkg["code"] and len(pkg["code"]) == 8 and pkg["code"].isdigit()
     assert pkg["available"] is True
     assert pkg["max_downloads"] == 3
     assert pkg["downloads_left"] == 3
@@ -113,6 +113,9 @@ def test_invalid_code_format(express_env):
     # Spaces are stripped for paste-friendly codes ("12 3456" → "123456")
     assert ex.is_valid_code_format("12 3456") is True
     assert ex.is_valid_code_format("123456") is True
+    # New codes are 8 digits (backward compatible with legacy 6-digit).
+    assert ex.is_valid_code_format("12345678") is True
+    assert ex.is_valid_code_format("123456789") is False
     assert ex.get_package_by_code("abcdef") is None
     info, err = ex.claim_download("000000")
     assert err == "invalid" and info is None
@@ -279,7 +282,7 @@ def test_api_send_lookup_pickup(express_client):
     body = send.json()
     assert body["ok"] is True
     code = body["code"]
-    assert len(code) == 6 and code.isdigit()
+    assert len(code) == 8 and code.isdigit()
     assert body["original_name"] == "hello.txt"
     assert body["max_downloads"] == 2
     assert "pickup_url" in body

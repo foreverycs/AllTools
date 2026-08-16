@@ -106,11 +106,3 @@ async def logout(
     resp = _redirect(_admin_url("/admin/login", request))
     clear_session_cookie(resp)
     return resp
-
-
-@router.get("/logout")
-async def logout_get(request: Request):
-    """GET logout kept for bookmarks; prefer POST with CSRF."""
-    resp = _redirect(_admin_url("/admin/login", request))
-    clear_session_cookie(resp)
-    return resp

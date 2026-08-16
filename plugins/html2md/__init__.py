@@ -8,6 +8,7 @@ links and images. The conversion core lives in ``converter.py`` (stdlib only).
 from __future__ import annotations
 
 from typing import Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -75,10 +76,28 @@ async def api_convert(
             status_code=413, detail="html too large (max 2M characters)"
         )
     use_tables = str(tables).strip().lower() in ("1", "true", "on", "yes")
-    data = convert_html(html, tables=use_tables, base_url=(base_url or "").strip())
+    base = (base_url or "").strip()
+    _validate_base_url(base)
+    from core.concurrency import run_heavy
+
+    data = await run_heavy(
+        convert_html, html, tables=use_tables, base_url=base,
+        file_size=len(html),
+    )
 
     data["rendered"] = _render_preview(str(data["result"] or ""))
     return JSONResponse(data)
+
+
+def _validate_base_url(base_url: str) -> None:
+    """Reject non-http(s) base_url so urljoin cannot produce a dangerous link."""
+    if not base_url:
+        return
+    scheme = urlsplit(base_url).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise HTTPException(
+            status_code=400, detail="base_url 仅支持 http/https 协议"
+        )
 
 
 def _render_preview(md_source: str) -> Optional[str]:
@@ -120,7 +139,12 @@ async def api_convert_url(url: str = Form(None)):
             status_code=413,
             detail=f"抓取内容过大（>{MAX_CHARS // 1024 // 1024}M 字符），请改用粘贴方式",
         )
-    data = convert_html(html, tables=True, base_url=page["url"])
+    from core.concurrency import run_heavy
+
+    data = await run_heavy(
+        convert_html, html, tables=True, base_url=page["url"],
+        file_size=len(html),
+    )
     data["rendered"] = _render_preview(str(data["result"] or ""))
     data["page_url"] = page["url"]
     data["page_title"] = page["title"]

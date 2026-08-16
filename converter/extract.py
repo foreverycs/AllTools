@@ -260,6 +260,12 @@ def extract_document(
         total = len(pdf.pages)
         if total == 0:
             raise ValueError("PDF has no pages")
+        # Bound per-file work so a huge PDF cannot pin CPU/memory indefinitely.
+        max_pages = int(os.environ.get("PDF2WORD_MAX_PAGES") or "300")
+        if total > max_pages:
+            raise ValueError(
+                f"PDF 页数过多（{total} > {max_pages}），已超出单次处理上限。"
+            )
         indices = parse_page_range(page_range, total)
         n = len(indices)
         for seq, i in enumerate(indices, start=1):

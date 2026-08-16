@@ -8,6 +8,7 @@ downstream middleware can attach the id to early responses (403 / 429).
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Optional
 
@@ -39,11 +40,18 @@ def _tool_path(path: str) -> str:
 class RequestIdMiddleware(BaseHTTPMiddleware):
     """Attach a request id, propagate it to the event-loop context, and echo it."""
 
+    # Bound length + charset so a client-supplied header cannot bloat logs,
+    # inject fake log lines, or break response headers.
+    _SAFE_RID_RE = __import__("re").compile(r"^[A-Za-z0-9._:-]{1,64}$")
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         incoming = request.headers.get(REQUEST_ID_HEADER) or request.headers.get(
             "X-Request-Id"
         )
-        rid = (incoming or "").strip() or new_request_id()
+        if incoming and self._SAFE_RID_RE.match(incoming):
+            rid = incoming
+        else:
+            rid = new_request_id()
         token = set_request_id(rid)
         request.state.request_id = rid
         try:
@@ -139,12 +147,15 @@ class ToolFlagGateMiddleware(BaseHTTPMiddleware):
         accept = (request.headers.get("accept") or "").lower()
         wants_html = "text/html" in accept and "application/json" not in accept
         if request.method == "GET" and wants_html:
+            import html as _html
+
+            safe_slug = _html.escape(slug)
             return HTMLResponse(
                 content=(
                     "<!DOCTYPE html><html lang='zh-CN'><head>"
                     "<meta charset='utf-8'/><title>功能已关闭</title></head>"
                     "<body style='font-family:system-ui;padding:48px;text-align:center'>"
-                    f"<h1>功能已关闭</h1><p>「{slug}」已被管理员停用。</p>"
+                    f"<h1>功能已关闭</h1><p>「{safe_slug}」已被管理员停用。</p>"
                     f"<p><a href='{root or ''}/'>返回首页</a></p>"
                     "</body></html>"
                 ),
@@ -176,6 +187,9 @@ def _is_public_convert_path(path: str) -> bool:
         "/compress",  # image-compress (and future media tools)
         "/send",  # file express upload
         "/pickup",  # file express download
+        "/lookup",  # express metadata query (pickup codes are enumerable)
+        "/regex/test",  # user-supplied regex matching is CPU-sensitive (ReDoS)
+        "/regex/replace",
     )
     return any(m in path for m in markers)
 
@@ -256,3 +270,67 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "Cache-Control", "private, max-age=30, stale-while-revalidate=120"
             )
         return response
+
+
+class _BodyTooLarge(Exception):
+    """Internal signal: request body exceeded the global cap."""
+
+
+class MaxRequestBodySizeMiddleware:
+    """Reject request bodies larger than ``max_bytes`` (defense in depth).
+
+    Endpoint-level checks rely on ``Content-Length`` (``check_upload_size_header``),
+    which chunked-encoded bodies can bypass; this ASGI middleware counts the
+    streamed body regardless of framing, so a huge request can never be fully
+    buffered into memory. ``max_bytes`` is read from ``MAX_REQUEST_BODY_BYTES``
+    (default 512 MiB — generous enough for batch uploads).
+    """
+
+    def __init__(self, app, max_bytes: Optional[int] = None):
+        self.app = app
+        if max_bytes is None:
+            max_bytes = int(os.environ.get("MAX_REQUEST_BODY_BYTES") or str(512 * 1024 * 1024))
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        # Fast path: a declared Content-Length over the cap is rejected up front.
+        for name, value in scope.get("headers", []):
+            if name == b"content-length":
+                try:
+                    if int(value) > self.max_bytes:
+                        await _send_413(send)
+                        return
+                except ValueError:
+                    pass
+                break
+
+        total = 0
+
+        async def limited_receive():
+            nonlocal total
+            message = await receive()
+            if message["type"] == "http.request":
+                total += len(message.get("body", b""))
+                if total > self.max_bytes:
+                    raise _BodyTooLarge()
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except _BodyTooLarge:
+            await _send_413(send)
+
+
+async def _send_413(send) -> None:
+    body = b'{"detail":"Request body too large"}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})

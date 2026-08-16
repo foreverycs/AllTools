@@ -14,6 +14,7 @@ from core.jobs import create_job, job_public_dict, jobs_output_dir, schedule_job
 from tools.common import (
     PDF_MEDIA,
     ZIP_MEDIA,
+    check_batch_total,
     check_upload_size_header,
     max_batch_files,
     safe_stem,
@@ -314,6 +315,7 @@ async def convert_batch(
             status_code=400,
             detail=f"Too many files (max {batch_limit})",
         )
+    await check_batch_total(files)
 
     _require_engine()
 
@@ -417,6 +419,7 @@ async def convert_batch_async(files: List[UploadFile] = File(...)):
             status_code=400,
             detail=f"Too many files (max {batch_limit})",
         )
+    await check_batch_total(files)
 
     _require_engine()
 

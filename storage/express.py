@@ -33,7 +33,10 @@ from storage.sqlite_pool import ConnCache
 
 logger = logging.getLogger("toolkit.express")
 
-_CODE_RE = re.compile(r"^\d{6}$")
+# Pickup codes: 8 digits for new packages (10^8 space); 6-digit codes from
+# before the entropy bump remain valid so existing packages keep working.
+_CODE_RE = re.compile(r"^\d{8}$")
+_LEGACY_CODE_RE = re.compile(r"^\d{6}$")
 _lock = threading.RLock()
 _last_cleanup_ts: float = 0.0
 _CLEANUP_INTERVAL = 120.0
@@ -143,13 +146,14 @@ def _normalize_code(code: str) -> str:
 
 
 def is_valid_code_format(code: str) -> bool:
-    return bool(_CODE_RE.match(_normalize_code(code)))
+    c = _normalize_code(code)
+    return bool(_CODE_RE.match(c) or _LEGACY_CODE_RE.match(c))
 
 
 def _generate_code(conn: sqlite3.Connection) -> str:
-    """Allocate a unique 6-digit pickup code."""
+    """Allocate a unique 8-digit pickup code."""
     for _ in range(64):
-        code = f"{secrets.randbelow(1_000_000):06d}"
+        code = f"{secrets.randbelow(100_000_000):08d}"
         exists = conn.execute(
             "SELECT 1 FROM packages WHERE code = ?", (code,)
         ).fetchone()
@@ -291,12 +295,6 @@ def create_package(
     _, ext = os.path.splitext(name)
     dest_name = f"{pkg_id}{ext}" if ext else pkg_id
     dest = day_dir / dest_name
-    if move_src:
-        # Rename on the same filesystem (O(1)); falls back to copy+delete on
-        # cross-device. Either way the source is consumed.
-        shutil.move(str(src), str(dest))
-    else:
-        shutil.copy2(str(src), str(dest))
     stored_rel = f"{day}/{dest_name}"
 
     created = _now()
@@ -304,33 +302,50 @@ def create_package(
     created_iso = _iso(created)
     expires_iso = _iso(expires)
 
-    with _lock:
-        conn = _get_conn()
-        code = _generate_code(conn)
-        conn.execute(
-            """
-            INSERT INTO packages (
-                id, code, original_name, stored_rel, size_bytes, content_type,
-                created_at, expires_at, max_downloads, download_count, note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-            """,
-            (
-                pkg_id,
-                code,
-                name,
-                stored_rel,
-                size,
-                (content_type or "")[:120],
-                created_iso,
-                expires_iso,
-                max_dl,
-                note_s,
-            ),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM packages WHERE id = ?", (pkg_id,)
-        ).fetchone()
+    try:
+        with _lock:
+            conn = _get_conn()
+            code = _generate_code(conn)
+            conn.execute(
+                """
+                INSERT INTO packages (
+                    id, code, original_name, stored_rel, size_bytes, content_type,
+                    created_at, expires_at, max_downloads, download_count, note
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                """,
+                (
+                    pkg_id,
+                    code,
+                    name,
+                    stored_rel,
+                    size,
+                    (content_type or "")[:120],
+                    created_iso,
+                    expires_iso,
+                    max_dl,
+                    note_s,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM packages WHERE id = ?", (pkg_id,)
+            ).fetchone()
+    except Exception:
+        # DB insert failed → nothing persisted; do not leave an orphan file.
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        raise
+
+    # Persist the payload only after the DB row exists, so a failed insert
+    # cannot leave an untracked file under express/<day>/.
+    if move_src:
+        # Rename on the same filesystem (O(1)); falls back to copy+delete on
+        # cross-device. Either way the source is consumed.
+        shutil.move(str(src), str(dest))
+    else:
+        shutil.copy2(str(src), str(dest))
 
     assert row is not None
     return _row_public(row)
@@ -372,6 +387,8 @@ def claim_download(code: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
 
     Returns ``(info, error_code)`` where error_code is one of:
     ``invalid``, ``expired``, ``exhausted``, ``missing``, or None on success.
+    The increment is a single conditional UPDATE so concurrent processes cannot
+    over-issue downloads past ``max_downloads``.
     """
     c = _normalize_code(code)
     if not is_valid_code_format(c):
@@ -392,11 +409,22 @@ def claim_download(code: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         path = resolve_package_file(info)
         if path is None:
             return info, "missing"
-        conn.execute(
-            "UPDATE packages SET download_count = download_count + 1 WHERE id = ?",
+        # Atomically increment only while the package still has downloads left
+        # (max_downloads=0 means unlimited). rowcount guards the TOCTOU between
+        # the SELECT above and this UPDATE across processes/threads.
+        cur = conn.execute(
+            """
+            UPDATE packages SET download_count = download_count + 1
+            WHERE id = ? AND (max_downloads = 0 OR download_count < max_downloads)
+            """,
             (info["id"],),
         )
         conn.commit()
+        if cur.rowcount == 0:
+            row2 = conn.execute(
+                "SELECT * FROM packages WHERE id = ?", (info["id"],)
+            ).fetchone()
+            return (_row_public(row2, include_path=True) if row2 else info), "exhausted"
         row2 = conn.execute(
             "SELECT * FROM packages WHERE id = ?", (info["id"],)
         ).fetchone()

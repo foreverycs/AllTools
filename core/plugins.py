@@ -30,11 +30,18 @@ import os
 import re
 import shutil
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("toolkit.plugins")
+
+# Serializes hot reload (module purge + import) against concurrent request
+# threads that may be importing a plugin at the same moment. Deleting a module
+# from sys.modules while another thread is mid-import can raise
+# ModuleNotFoundError/ImportError on that thread, so reloads take the lock.
+_reload_lock = threading.Lock()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -185,19 +192,23 @@ def discover_plugins(
     scan_base = base if base is not None else plugins_dir()
 
     if force:
-        pkg_dirs = _candidate_dirs(scan_base)
-        prev_names = (
-            [s.name for s in _discovery.statuses] if _discovery is not None else []
-        )
-        purge_names = sorted(set(prev_names) | {p.name for p in pkg_dirs})
-        _purge_plugin_modules(purge_names)
-        _purge_bytecode(pkg_dirs)
+        # Whole reload under the lock: no request thread should be importing a
+        # plugin while we purge + re-import its modules.
+        with _reload_lock:
+            pkg_dirs = _candidate_dirs(scan_base)
+            prev_names = (
+                [s.name for s in _discovery.statuses] if _discovery is not None else []
+            )
+            purge_names = sorted(set(prev_names) | {p.name for p in pkg_dirs})
+            _purge_plugin_modules(purge_names)
+            _purge_bytecode(pkg_dirs)
 
     for pkg_dir in _candidate_dirs(scan_base):
         name = pkg_dir.name
         st = PluginStatus(name=name)
         try:
-            module = _load_plugin(name, scan_base)
+            with _reload_lock:
+                module = _load_plugin(name, scan_base)
         except Exception as exc:
             st.error = f"import failed: {type(exc).__name__}: {exc}"
             logger.error("plugin import failed name=%s error=%s", name, st.error)

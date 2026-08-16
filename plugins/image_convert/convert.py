@@ -323,6 +323,13 @@ def _load_frames(
             frames.append(fr)
             durations.append(int(im.info.get("duration", 100) or 100))
         else:
+            # Bound the number of decoded frames so a thousands-frame GIF/WebP
+            # cannot pin CPU/memory for a single request.
+            MAX_FRAMES = 200
+            if n > MAX_FRAMES:
+                raise ConvertError(
+                    f"动画帧数过多（{n} > {MAX_FRAMES}），已超出单次处理上限。"
+                )
             for frame in ImageSequence.Iterator(im):
                 fr = _apply_orientation(frame.copy())
                 duration = int(

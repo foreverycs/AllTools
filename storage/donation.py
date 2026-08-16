@@ -135,16 +135,16 @@ def donation_public() -> Dict[str, Any]:
 
 def save_config(*, enabled: bool, title: str = "", subtitle: str = "") -> Path:
     """持久化开关与文案（不影响已上传的二维码）。"""
-    cfg = _read_config()
-    cfg["enabled"] = bool(enabled)
-    title = (title or "").strip()
-    subtitle = (subtitle or "").strip()
-    if title:
-        cfg["title"] = title[:60]
-    if subtitle is not None:
-        cfg["subtitle"] = subtitle[:200]
-    cfg["updated_at"] = _iso_now()
     with _lock:
+        cfg = _read_config()
+        cfg["enabled"] = bool(enabled)
+        title = (title or "").strip()
+        subtitle = (subtitle or "").strip()
+        if title:
+            cfg["title"] = title[:60]
+        if subtitle is not None:
+            cfg["subtitle"] = subtitle[:200]
+        cfg["updated_at"] = _iso_now()
         return _write_config(cfg)
 
 
@@ -160,6 +160,10 @@ def save_qr_image(data: bytes) -> Optional[str]:
         with Image.open(BytesIO(data)) as im:
             im.verify()
         with Image.open(BytesIO(data)) as im:
+            # Bound decoded pixels so a decompression bomb cannot OOM the
+            # admin process; QR codes are small (typically < 4K px total).
+            if (im.size[0] or 0) * (im.size[1] or 0) > 16_000_000:
+                return "图片尺寸过大，请使用 4000×4000 以内的二维码图片"
             im.load()
             # 规范为 RGB/RGBA → PNG，统一前台 Content-Type。
             out = BytesIO()

@@ -266,7 +266,7 @@ async def api_send(
 async def api_lookup(code: str = Form(...)):
     """Query package metadata by code (does not consume a download)."""
     if not is_valid_code_format(code):
-        raise HTTPException(status_code=400, detail="请输入 6 位数字取件码")
+        raise HTTPException(status_code=400, detail="请输入 8 位数字取件码")
     info = get_package_by_code(code)
     if info is None:
         raise HTTPException(status_code=404, detail=_ERROR_MESSAGES["invalid"])
@@ -298,7 +298,7 @@ async def api_lookup(code: str = Form(...)):
 
 def _pickup_response(raw_code: str) -> FileResponse:
     if not is_valid_code_format(raw_code):
-        raise HTTPException(status_code=400, detail="请输入 6 位数字取件码")
+        raise HTTPException(status_code=400, detail="请输入 8 位数字取件码")
 
     info, err = claim_download(raw_code)
     if err:

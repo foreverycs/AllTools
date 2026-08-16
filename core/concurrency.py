@@ -42,11 +42,12 @@ def _get_semaphore() -> asyncio.Semaphore:
 def _get_proc_pool() -> ProcessPoolExecutor:
     global _proc_pool, _proc_pool_size
     limit = get_settings().convert_concurrency
-    if _proc_pool is None or _proc_pool_size != limit:
-        if _proc_pool is not None:
-            _proc_pool.shutdown(wait=False)
+    if _proc_pool is None:
         _proc_pool = ProcessPoolExecutor(max_workers=limit)
         _proc_pool_size = limit
+    # Runtime setting changes are not applied to the pool here: rebuilding an
+    # executor mid-flight (``shutdown(wait=False)`` + recreate) would orphan
+    # in-flight futures. Settings reloads must go through ``reset_semaphore``.
     return _proc_pool
 
 

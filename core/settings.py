@@ -125,11 +125,14 @@ def load_dotenv(path: Optional[os.PathLike | str] = None, *, override: bool = Fa
         if not key:
             continue
         value = value.strip()
+        quoted = False
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+            quoted = True
         # Strip accidental trailing inline comments: KEY=val  # comment
-        # only when value is unquoted and contains " #"
-        if " #" in value:
+        # only when the value is unquoted and contains " #" (a quoted value
+        # like SECRET="a # b" is a literal 'a # b' and must not be truncated).
+        if not quoted and " #" in value:
             value = value.split(" #", 1)[0].rstrip()
         if force or key not in os.environ:
             os.environ[key] = value
@@ -228,6 +231,7 @@ class Settings:
     """Runtime settings snapshot."""
 
     admin_password: str
+    admin_password_hash: str
     admin_secret: str
     admin_session_ttl_sec: int
     allow_insecure_admin: bool
@@ -235,6 +239,7 @@ class Settings:
 
     max_upload_bytes: int
     max_batch_files: int
+    max_batch_bytes: int
     upload_chunk_size: int
     convert_concurrency: int
 
@@ -298,9 +303,10 @@ def _load_settings() -> Settings:
     allow_insecure = _env_bool("ALLOW_INSECURE_ADMIN", False)
 
     password = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+    password_hash = (os.environ.get("ADMIN_PASSWORD_HASH") or "").strip()
     secret = (os.environ.get("ADMIN_SECRET") or "").strip()
 
-    if not password:
+    if not password and not password_hash:
         if allow_insecure:
             password = "admin123"
             warnings.warn(
@@ -317,7 +323,7 @@ def _load_settings() -> Settings:
                 "for local development only."
             )
 
-    if not allow_insecure:
+    if not allow_insecure and password:
         pw_errs = password_strength_errors(password)
         if pw_errs:
             raise RuntimeError(
@@ -366,6 +372,7 @@ def _load_settings() -> Settings:
     )
     return Settings(
         admin_password=password,
+        admin_password_hash=password_hash,
         admin_secret=secret,
         admin_session_ttl_sec=_env_int(
             "ADMIN_SESSION_TTL", 12 * 3600, minimum=300, maximum=7 * 24 * 3600
@@ -374,6 +381,12 @@ def _load_settings() -> Settings:
         admin_cookie_secure=_env_bool("ADMIN_COOKIE_SECURE", False),
         max_upload_bytes=max_upload_bytes_val,
         max_batch_files=_env_int("MAX_BATCH_FILES", 20, minimum=1, maximum=100),
+        max_batch_bytes=_env_int(
+            "MAX_BATCH_BYTES",
+            256 * 1024 * 1024,
+            minimum=1024 * 1024,
+            maximum=2 * 1024 * 1024 * 1024,
+        ),
         upload_chunk_size=_env_int(
             "UPLOAD_CHUNK_SIZE", 1024 * 1024, minimum=64 * 1024, maximum=8 * 1024 * 1024
         ),
@@ -457,10 +470,8 @@ def validate_security_settings() -> Settings:
     s = get_settings()
     st = dotenv_status()
     pw = s.admin_password or ""
-    # Log without revealing the password (length + first/last char only if long).
+    # Log only length — the first/last characters can aid brute-force guessing.
     hint = f"len={len(pw)}"
-    if len(pw) >= 4:
-        hint += f" starts={pw[0]!r} ends={pw[-1]!r}"
     logger.info(
         "Admin auth ready: dotenv=%s ADMIN_PASSWORD=%s (%s) override=%s",
         st.get("dotenv_path"),

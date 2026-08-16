@@ -138,6 +138,26 @@ def test_admin_csrf_bound_to_session(admin_client):
     assert verify_csrf(req2, "C" * 32) is False
 
 
+def test_admin_password_hash_roundtrip():
+    """hash_password produces a verifiable PBKDF2 verifier."""
+    from admin.auth import _verify_password_hash, check_password, hash_password
+
+    h = hash_password("S3cr3t-Pass!")
+    assert h.startswith("pbkdf2_sha256$")
+    assert check_password("S3cr3t-Pass!") is False  # env password differs
+    # Direct verify against the generated verifier.
+    assert _verify_password_hash("S3cr3t-Pass!", h) is True
+    assert _verify_password_hash("wrong", h) is False
+    assert _verify_password_hash("S3cr3t-Pass!", "not-a-valid-hash") is False
+
+
+def test_admin_logout_get_disallowed(admin_client):
+    """GET /admin/logout returns 405 — logout requires POST + CSRF."""
+    client, _, _ = admin_client
+    r = client.get("/admin/logout")
+    assert r.status_code == 405
+
+
 def test_admin_login_rate_limit(admin_client, monkeypatch):
     """After repeated failures the same client is locked out briefly."""
     from urllib.parse import unquote

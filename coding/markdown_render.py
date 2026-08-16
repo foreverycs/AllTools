@@ -91,6 +91,29 @@ _ALLOWED_ATTRIBUTES: Dict[str, List[str]] = {
 
 _ALLOWED_PROTOCOLS = ["http", "https", "mailto", "data"]
 
+# data: URIs are allowed only as base64 raster images; anything else (e.g.
+# data:image/svg+xml,<svg onload=...>) is rejected to avoid an SVG-carrier XSS
+# vector in rendered previews.
+_DATA_IMAGE_RE = re.compile(
+    r"^data:image/(?:png|jpe?g|gif|webp|bmp);base64,",
+    re.IGNORECASE,
+)
+
+
+def _safe_attribute(tag: str, name: str, value: str) -> bool:
+    """Bleach attribute callback: whitelist + gate data: URIs.
+
+    Replaces the plain dict with a callable so ``img src`` data: URIs can be
+    restricted to safe raster payloads while preserving the existing attribute
+    whitelist (``_ALLOWED_ATTRIBUTES``, including bleach's global ``*`` entry).
+    """
+    allowed = _ALLOWED_ATTRIBUTES.get(tag) or _ALLOWED_ATTRIBUTES.get("*")
+    if allowed is not None and name not in allowed:
+        return False
+    if tag == "img" and name == "src" and value.lower().startswith("data:"):
+        return bool(_DATA_IMAGE_RE.match(value))
+    return True
+
 _CSS_SANITIZER = CSSSanitizer(
     allowed_css_properties=[
         "color",
@@ -158,7 +181,7 @@ def render_markdown(
         html = bleach.clean(
             html,
             tags=_ALLOWED_TAGS,
-            attributes=_ALLOWED_ATTRIBUTES,
+            attributes=_safe_attribute,
             protocols=_ALLOWED_PROTOCOLS,
             css_sanitizer=_CSS_SANITIZER,
             strip=True,

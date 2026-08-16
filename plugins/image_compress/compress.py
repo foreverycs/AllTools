@@ -374,6 +374,11 @@ def _compress_gif(
         disposals: List[int] = []
         loop = im.info.get("loop", 0)
 
+        # Bound the number of decoded frames so a thousands-frame GIF cannot
+        # pin CPU/memory for a single request.
+        if frames_in > 200:
+            raise CompressError(f"动画帧数过多（{frames_in} > 200），已超出单次处理上限。")
+
         for frame in ImageSequence.Iterator(im):
             fr = frame.copy()
             duration = int(fr.info.get("duration", im.info.get("duration", 100)) or 100)

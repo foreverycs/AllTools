@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from core.rate_limit_base import SlidingWindow, client_key_from_request
 

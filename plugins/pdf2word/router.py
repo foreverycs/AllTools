@@ -31,6 +31,7 @@ from core.jobs import (
 from tools.common import (
     DOCX_MEDIA,
     ZIP_MEDIA,
+    check_batch_total,
     check_upload_size_header,
     max_batch_files,
     safe_stem,
@@ -42,6 +43,18 @@ from tools.common import (
 from tools.pipeline import TempWorkspace, archive_input, job_urls, map_conversion_error
 
 router = APIRouter(prefix="/tools/pdf2word", tags=["pdf2word"])
+
+# Single-file cap on processed pages (mirrors pdf_tools.MAX_PAGES): prevents a
+# malicious/large PDF from pinning CPU/memory for a long time.
+MAX_PAGES = 300
+
+
+def _check_pages_limit(pages: Optional[int], *, label: str = "PDF") -> None:
+    if pages is not None and pages > MAX_PAGES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{label} 页数过多（{pages} > {MAX_PAGES}），已超出单次处理上限。",
+        )
 
 
 @router.get("", response_class=HTMLResponse)
@@ -99,6 +112,11 @@ def _count_pages(pdf_path: str) -> Optional[int]:
         return count_pdf_pages(pdf_path)
     except Exception:
         return None
+
+
+async def _count_pages_async(pdf_path: str) -> Optional[int]:
+    """Run ``_count_pages`` off the event loop (pdfplumber.open blocks)."""
+    return await asyncio.to_thread(_count_pages, pdf_path)
 
 
 def _stats_headers(stats: dict) -> dict:
@@ -161,7 +179,8 @@ async def _run_single_async_job(
     # when OCR forces the process pool anyway. ``pages`` may be precomputed by
     # the route to avoid a second header read.
     if pages is None and not should_use_process_pool(file_size) and not use_ocr:
-        pages = _count_pages(pdf_path)
+        pages = await _count_pages_async(pdf_path)
+        _check_pages_limit(pages)
 
     def on_page(done: int, total: int) -> None:
         frac = 0.1 + 0.85 * (done / max(total, 1))
@@ -245,7 +264,11 @@ async def _run_batch_async_job(
         idx: int, name: str, pdf_path: str, docx_path: str
     ) -> Tuple[int, str, str, str, dict]:
         file_size = os.path.getsize(pdf_path)
-        pages = None if should_use_process_pool(file_size) else _count_pages(pdf_path)
+        if should_use_process_pool(file_size):
+            pages = None
+        else:
+            pages = await _count_pages_async(pdf_path)
+            _check_pages_limit(pages, label=f"{name}")
         stats = await run_heavy(
             _convert_one,
             pdf_path,
@@ -369,7 +392,11 @@ async def convert(
     try:
         await save_upload(file, pdf_path)
         file_size = os.path.getsize(pdf_path)
-        pages = None if should_use_process_pool(file_size) else _count_pages(pdf_path)
+        if should_use_process_pool(file_size):
+            pages = None
+        else:
+            pages = await _count_pages_async(pdf_path)
+            _check_pages_limit(pages)
         stats = await run_heavy(
             _convert_one,
             pdf_path,
@@ -430,11 +457,11 @@ async def convert_async(
     try:
         await save_upload(file, pdf_path)
         file_size = os.path.getsize(pdf_path)
-        pages = (
-            None
-            if (should_use_process_pool(file_size) or use_ocr)
-            else _count_pages(pdf_path)
-        )
+        if should_use_process_pool(file_size) or use_ocr:
+            pages = None
+        else:
+            pages = await _count_pages_async(pdf_path)
+            _check_pages_limit(pages)
     except Exception as exc:
         ws.cleanup_now()
         raise map_conversion_error(exc) from exc
@@ -489,11 +516,13 @@ async def convert_batch(
             status_code=400,
             detail=f"Too many files (max {batch_limit})",
         )
+    await check_batch_total(files)
 
     use_ocr = to_bool(ocr)
     _require_ocr_if_requested(use_ocr)
 
     range_spec = (page_range or "").strip() or None
+    ws = TempWorkspace("pdf2word_batch_")
     ws = TempWorkspace("pdf2word_batch_")
     ws.create()
     zip_path = ws.join("output.zip")
@@ -519,11 +548,11 @@ async def convert_batch(
         ) -> Tuple[int, str, str, str, dict]:
             try:
                 file_size = os.path.getsize(pdf_path)
-                pages = (
-                    None
-                    if should_use_process_pool(file_size)
-                    else _count_pages(pdf_path)
-                )
+                if should_use_process_pool(file_size):
+                    pages = None
+                else:
+                    pages = await _count_pages_async(pdf_path)
+                    _check_pages_limit(pages, label=name)
                 stats = await run_heavy(
                     _convert_one,
                     pdf_path,
@@ -619,6 +648,7 @@ async def convert_batch_async(
             status_code=400,
             detail=f"Too many files (max {batch_limit})",
         )
+    await check_batch_total(files)
 
     use_ocr = to_bool(ocr)
     _require_ocr_if_requested(use_ocr)

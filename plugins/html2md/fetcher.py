@@ -14,11 +14,12 @@ looks like navigation / comments / footer), and falls back to the whole page.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import re
 import socket
 from typing import Optional
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlunsplit, urlsplit
 
 import httpx
 
@@ -94,18 +95,58 @@ def _check_host(host: str) -> None:
         _reject_ip(ip)
         return
     # Resolve the domain and require every address to be public.
+    _resolve_public_ips(lowered)
+
+
+def _resolve_public_ips(host: str) -> list[str]:
+    """Resolve ``host`` and require every address to be public.
+
+    Returns the resolved addresses. The caller should pin the connection to one
+    of these IPs (see :func:`_pin_address`) so a second DNS lookup performed by
+    the HTTP client cannot race to an internal address (DNS-rebinding / TOCTOU).
+    """
     try:
-        infos = socket.getaddrinfo(lowered, None, proto=socket.IPPROTO_TCP)
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except OSError as exc:
-        raise FetchError(f"unresolvable host: {lowered}") from exc
+        raise FetchError(f"unresolvable host: {host}") from exc
     addrs = {info[4][0].split("%")[0] for info in infos}
     if not addrs:
-        raise FetchError(f"unresolvable host: {lowered}")
+        raise FetchError(f"unresolvable host: {host}")
     for addr in addrs:
         try:
             _reject_ip(ipaddress.ip_address(addr))
         except ValueError as exc:
             raise FetchError(f"blocked address: {addr}") from exc
+    return sorted(addrs)
+
+
+def _pin_address(current: str, ip: str) -> tuple[str, str, Optional[str]]:
+    """Return ``(request_url, host_header, sni_host)`` pinned to a public IP.
+
+    ``current`` must already pass :func:`check_url`; ``ip`` is a validated
+    public address from :func:`_resolve_public_ips`. The returned request URL
+    uses the IP directly so the HTTP client never re-resolves the hostname (no
+    DNS-rebinding window). The original hostname is preserved via the ``Host``
+    header (and SNI for https) so routing and TLS verification behave as if the
+    hostname were used.
+    """
+    parts = urlsplit(current)
+    host = parts.hostname or ""
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    netloc = f"[{ip}]" if ":" in ip else ip
+    if port:
+        netloc = f"{netloc}:{port}"
+    request_url = urlunsplit(
+        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+    )
+    host_header = host
+    if port and not (
+        (parts.scheme == "https" and port == 443)
+        or (parts.scheme == "http" and port == 80)
+    ):
+        host_header = f"{host}:{port}"
+    sni = host if parts.scheme == "https" else None
+    return request_url, host_header, sni
 
 
 def check_url(url: str) -> str:
@@ -137,6 +178,12 @@ async def _read_capped(resp: httpx.Response) -> str:
         raise FetchError(f"decode failed: {exc}") from exc
 
 
+async def _dns_resolve(host: str) -> str:
+    """Resolve ``host`` in a worker thread and return one validated public IP."""
+    ips = await asyncio.to_thread(_resolve_public_ips, host)
+    return ips[0]
+
+
 async def fetch_page(url: str) -> dict:
     """Fetch a public web page and return its (main) HTML.
 
@@ -156,11 +203,31 @@ async def fetch_page(url: str) -> dict:
     }
     async with _client_factory() as client:
         current = target
+        last_resp = None
         for hop in range(MAX_REDIRECTS + 1):
+            # Resolve the host once and pin the connection to a validated
+            # public IP so the client never re-resolves (DNS-rebinding guard).
+            parts = urlsplit(current)
+            ip = await _dns_resolve(parts.hostname or "")
+            request_url, host_header, sni = _pin_address(current, ip)
+            req_headers = dict(headers)
+            req_headers["Host"] = host_header
+            request_extensions = {}
+            if sni:
+                request_extensions["sni_hostname"] = sni
             try:
-                resp = await client.get(current, headers=headers)
+                resp = await client.get(
+                    request_url,
+                    headers=req_headers,
+                    extensions=request_extensions,
+                )
             except httpx.RequestError as exc:
                 raise FetchError(f"请求失败: {exc.__class__.__name__}") from exc
+            finally:
+                # Close the previous hop's response so its connection is
+                # returned to the pool instead of leaking.
+                if last_resp is not None and last_resp is not resp:
+                    await last_resp.aclose()
             if resp.status_code in (301, 302, 303, 307, 308):
                 loc = resp.headers.get("location")
                 if not loc:
@@ -168,11 +235,14 @@ async def fetch_page(url: str) -> dict:
                 current = check_url(urljoin(current, loc))  # SSRF check per hop
                 if hop == MAX_REDIRECTS:
                     raise FetchError("too many redirects")
+                last_resp = resp
                 continue
             if resp.status_code >= 400:
                 raise FetchError(f"HTTP {resp.status_code}")
+            last_resp = resp
             break
 
+        resp = last_resp
         ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
         if ctype and ctype not in ("text/html", "application/xhtml+xml"):
             raise FetchError(f"非 HTML 内容类型: {ctype or 'unknown'}")
@@ -182,7 +252,7 @@ async def fetch_page(url: str) -> dict:
     title = re.sub(r"\s+", " ", title_match.group(1)).strip() if title_match else ""
     main, extracted = _main_content(body)
     return {
-        "url": str(resp.url),
+        "url": current,
         "title": title[:200],
         "html": main,
         "main": extracted,

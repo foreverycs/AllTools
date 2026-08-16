@@ -201,7 +201,7 @@
         <div class="icon" aria-hidden="true">📦</div>
         <div>
           <h1>文件快递</h1>
-          <p>上传文件生成 6 位取件码，对方输入取件码即可下载。适合临时传文件，无需账号。</p>
+          <p>上传文件生成 8 位取件码，对方输入取件码即可下载。适合临时传文件，无需账号。</p>
         </div>
       </div>
 
@@ -265,8 +265,8 @@
       <div class="pane" id="pane-pickup" role="tabpanel">
         <div class="field" style="margin-bottom:14px">
           <label for="pickupCode">取件码</label>
-          <input class="code-input" type="text" id="pickupCode" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" value="{{ prefill_code or '' }}" />
-          <div class="hint">输入寄件方提供的 6 位数字</div>
+          <input class="code-input" type="text" id="pickupCode" inputmode="numeric" maxlength="8" placeholder="00000000" autocomplete="one-time-code" value="{{ prefill_code or '' }}" />
+          <div class="hint">输入寄件方提供的 8 位取件码</div>
         </div>
         <div class="actions">
           <button type="button" class="btn" id="lookupBtn">查询</button>
@@ -541,15 +541,15 @@
       var pickupInfo = document.getElementById('pickupInfo');
       var pickupMeta = document.getElementById('pickupMeta');
       pickupCode.addEventListener('input', function () {
-        pickupCode.value = pickupCode.value.replace(/\D/g, '').slice(0, 6);
+        pickupCode.value = pickupCode.value.replace(/\D/g, '').slice(0, 8);
       });
 
       document.getElementById('lookupBtn').addEventListener('click', async function () {
         hideMsg(pickupMsg);
         pickupInfo.classList.remove('show');
         var code = pickupCode.value.trim();
-        if (code.length !== 6) {
-          showMsg(pickupMsg, '请输入 6 位取件码', 'err');
+        if (code.length !== 8 && code.length !== 6) {
+          showMsg(pickupMsg, '请输入 8 位取件码', 'err');
           return;
         }
         try {
@@ -589,8 +589,8 @@
       document.getElementById('pickupBtn').addEventListener('click', async function () {
         hideMsg(pickupMsg);
         var code = pickupCode.value.trim();
-        if (code.length !== 6) {
-          showMsg(pickupMsg, '请输入 6 位取件码', 'err');
+        if (code.length !== 8 && code.length !== 6) {
+          showMsg(pickupMsg, '请输入 8 位取件码', 'err');
           return;
         }
         var btn = document.getElementById('pickupBtn');

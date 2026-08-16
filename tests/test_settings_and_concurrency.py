@@ -44,6 +44,30 @@ def test_strong_credentials_accepted(monkeypatch):
     assert s.convert_concurrency >= 1
 
 
+def test_dotenv_quoted_value_keeps_inline_hash(monkeypatch, tmp_path):
+    """A quoted value like SECRET="a # b" must not be truncated at the '#'.
+
+    Regression: the old parser stripped inline comments even on quoted values.
+    """
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        'ADMIN_PASSWORD="Str0ng-Passw0rd!"\n'
+        'ADMIN_SECRET="a # b # c"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DOTENV_OVERRIDE", "1")
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("ADMIN_SECRET", raising=False)
+    settings_mod.clear_settings_cache()
+    try:
+        ok = settings_mod.load_dotenv(env_file)
+        assert ok is True
+        assert settings_mod.dotenv_status()["dotenv_path"] == str(env_file.resolve())
+        assert settings_mod.os.environ.get("ADMIN_SECRET") == "a # b # c"
+    finally:
+        settings_mod.clear_settings_cache()
+
+
 def test_insecure_mode_allows_defaults(monkeypatch):
     monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
     s = settings_mod.validate_security_settings()

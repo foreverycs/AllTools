@@ -82,15 +82,15 @@
             <div class="es-body">
               <div class="es-kicker">特色功能 · 文件快递</div>
               <h2>临时传文件，无需账号</h2>
-              <p>上传生成 6 位取件码，对方输入即可下载；可设有效期与下载次数，文件到期自动过期。</p>
+              <p>上传生成 8 位取件码，对方输入即可下载；可设有效期与下载次数，文件到期自动过期。</p>
               <div class="es-actions">
                 <a class="es-btn-primary" href="{{ url_path('/tools/express') }}">
                   <i aria-hidden="true">✉</i>寄送文件
                 </a>
                 <form class="es-pickup" id="es-pickup" action="{{ url_path('/tools/express') }}" method="get">
                   <label for="es-code" class="es-pickup-label">取件码</label>
-                  <input id="es-code" name="code" inputmode="numeric" maxlength="6" autocomplete="off"
-                         placeholder="6 位取件码" aria-label="输入取件码" />
+                  <input id="es-code" name="code" inputmode="numeric" maxlength="8" autocomplete="off"
+                         placeholder="8 位取件码" aria-label="输入取件码" />
                   <button type="submit" class="es-btn-ghost">取件</button>
                 </form>
               </div>

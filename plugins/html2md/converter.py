@@ -41,7 +41,9 @@ _BLOCK_TAGS = {
 _HEADING_RE = re.compile(r"^h([1-6])$")
 _CODE_CLASS_RE = re.compile(r"(?:language|lang|highlight)[-:]?([\w+.-]+)", re.I)
 _SPACE_RE = re.compile(r"[ \t\r\n\f]+")
-_DANGEROUS_SCHEME_RE = re.compile(r"^\s*(javascript|vbscript|data:text/html):", re.I)
+# Scheme whitelist for hrefs/srcs that carry a scheme (relative URLs are kept).
+_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*):")
+_ALLOWED_SCHEMES = {"http", "https", "mailto", "tel", "ftp"}
 
 
 def _attr(attrs, name: str, default: str = "") -> str:
@@ -53,7 +55,12 @@ def _attr(attrs, name: str, default: str = "") -> str:
 
 def _safe_url(url: str) -> str:
     u = (url or "").strip()
-    if not u or _DANGEROUS_SCHEME_RE.match(u):
+    if not u:
+        return ""
+    m = _SCHEME_RE.match(u)
+    if m and m.group(1).lower() not in _ALLOWED_SCHEMES:
+        # Block javascript:, vbscript:, data:, file: ... — including
+        # data:image/svg+xml which can smuggle an XSS payload into the output.
         return ""
     return u
 

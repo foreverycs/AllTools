@@ -75,6 +75,25 @@ async def test_job_error_status():
 
 
 @pytest.mark.asyncio
+async def test_job_public_error_is_redacted():
+    """job_public_dict strips filesystem paths / internals from the error."""
+    job = await create_job("word2pdf")
+    await update_job(
+        job.id,
+        status=JobStatus.error,
+        error="Error: failed to open C:\\Users\\me\\file\\input.docx "
+        "(UnicodeDecodeError) /var/tmp/jobs/abc123/out.pdf",
+    )
+    got = await get_job(job.id)
+    pub = job_public_dict(got)
+    err = pub["error"]
+    assert isinstance(err, str)
+    assert "C:" not in err
+    assert "/var/tmp/jobs" not in err
+    assert "input.docx" not in err
+
+
+@pytest.mark.asyncio
 async def test_update_job_fields():
     job = await create_job("pdf-merge")
     await update_job(job.id, progress=0.5, message="halfway")
@@ -252,12 +271,11 @@ async def test_active_progress_keeps_running_job_alive():
 async def test_sweep_orphan_job_dirs(tmp_path, monkeypatch):
     monkeypatch.setenv("JOB_OUTPUT_DIR", str(tmp_path))
     monkeypatch.setenv("JOB_SWEEP_GRACE_SEC", "3600")
-    orphan = tmp_path / "orphan"
+    orphan = tmp_path / "word2pdf_async_orphan"
     orphan.mkdir()
     (orphan / "leak.tmp").write_bytes(b"x")
-    (tmp_path / "loose.bin").write_bytes(b"y")
 
-    live = tmp_path / "live"
+    live = tmp_path / "pdf2word_async_live"
     live.mkdir()
     job = await create_job(
         "pdf2word",
@@ -265,18 +283,38 @@ async def test_sweep_orphan_job_dirs(tmp_path, monkeypatch):
         output_path=str(live / "out.docx"),
     )
 
-    # Backdate the orphans so they fall outside the grace period deterministically.
+    # Backdate the orphan so it falls outside the grace period deterministically.
     old = time.time() - 99999
     os.utime(orphan, (old, old))
     os.utime(orphan / "leak.tmp", (old, old))
-    os.utime(tmp_path / "loose.bin", (old, old))
 
     removed = await jobs_mod.sweep_orphan_job_dirs()
-    assert removed == 2
+    assert removed == 1
     assert not orphan.exists()
-    assert not (tmp_path / "loose.bin").exists()
     assert live.exists()
     assert await get_job(job.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_sweep_never_touches_unrelated_entries(tmp_path, monkeypatch):
+    """Entries that do not look like job work dirs are never swept."""
+    monkeypatch.setenv("JOB_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("JOB_SWEEP_GRACE_SEC", "0")
+    (tmp_path / "unrelated").mkdir()
+    (tmp_path / "unrelated" / "keep.txt").write_bytes(b"x")
+    (tmp_path / "loose.bin").write_bytes(b"y")
+    (tmp_path / "word2pdf_async_recent").mkdir()
+
+    old = time.time() - 99999
+    os.utime(tmp_path / "unrelated", (old, old))
+    os.utime(tmp_path / "loose.bin", (old, old))
+    os.utime(tmp_path / "word2pdf_async_recent", (old, old))
+
+    removed = await jobs_mod.sweep_orphan_job_dirs()
+    assert removed == 1
+    assert not (tmp_path / "word2pdf_async_recent").exists()
+    assert (tmp_path / "unrelated").exists()
+    assert (tmp_path / "loose.bin").exists()
 
 
 @pytest.mark.asyncio

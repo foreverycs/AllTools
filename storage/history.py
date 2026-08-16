@@ -24,6 +24,7 @@ import secrets
 import shutil
 import sqlite3
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -222,13 +223,14 @@ def _remove_record_files(record: Dict[str, Any]) -> None:
 def cleanup_expired() -> int:
     """Delete records/files older than retention. Returns removed count."""
     global _last_cleanup_ts
-    import time
-
     now_ts = time.monotonic()
     if now_ts - _last_cleanup_ts < _CLEANUP_INTERVAL:
         return 0
-    _last_cleanup_ts = now_ts
-    return _do_cleanup()
+    # Only stamp the timestamp on success: a failed cleanup must be retried on
+    # the next call rather than being skipped for the whole interval.
+    removed = _do_cleanup()
+    _last_cleanup_ts = time.monotonic()
+    return removed
 
 
 def _do_cleanup() -> int:
@@ -388,21 +390,29 @@ def _archive_conversion(
             else:
                 extra_fields[k] = str(v)
 
-    with _lock:
-        conn = _get_conn()
-        _migrate_json_if_needed(conn)
-        conn.execute(
-            "INSERT INTO records "
-            "(id, tool, original_name, created_at, input_rel, input_bytes, extra_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                uid, tool, record["original_name"], record["created_at"],
-                record["input_rel"], record["input_bytes"],
-                json.dumps(extra_fields, ensure_ascii=False),
-            ),
-        )
-        conn.commit()
-        clear_storage_stats_cache()
+    try:
+        with _lock:
+            conn = _get_conn()
+            _migrate_json_if_needed(conn)
+            conn.execute(
+                "INSERT INTO records "
+                "(id, tool, original_name, created_at, input_rel, input_bytes, extra_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    uid, tool, record["original_name"], record["created_at"],
+                    record["input_rel"], record["input_bytes"],
+                    json.dumps(extra_fields, ensure_ascii=False),
+                ),
+            )
+            conn.commit()
+            clear_storage_stats_cache()
+    except Exception:
+        # Roll back the copied file so a failed archive never leaves an orphan.
+        try:
+            dest_in.unlink()
+        except OSError:
+            pass
+        raise
 
     try:
         # Unified cleanup: drop expired records/files and empty day dirs.
@@ -555,6 +565,7 @@ def delete_records(record_ids: List[str]) -> int:
 
 
 _stats_cache: Optional[tuple[float, Dict[str, Any]]] = None
+_stats_cache_lock = threading.Lock()
 _STATS_TTL_SEC = 15.0
 
 
@@ -565,7 +576,6 @@ def storage_stats(*, force: bool = False) -> Dict[str, Any]:
     Cleanup is rate-limited via ``cleanup_expired``; disk walks reuse the cache.
     """
     global _stats_cache
-    import time
 
     now = time.monotonic()
     if (
@@ -650,7 +660,8 @@ def storage_stats(*, force: bool = False) -> Dict[str, Any]:
         "by_tool": by_tool,
         "latest": _row_to_dict(latest_row) if latest_row is not None else None,
     }
-    _stats_cache = (now, result)
+    with _stats_cache_lock:
+        _stats_cache = (now, result)
     return dict(result)
 
 

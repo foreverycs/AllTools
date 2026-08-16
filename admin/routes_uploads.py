@@ -20,6 +20,7 @@ from admin._common import (
     admin_post,
 )
 from admin.auth import require_admin
+from tools.common import content_disposition
 from storage import (
     cleanup_expired,
     delete_record,
@@ -128,7 +129,10 @@ async def uploads_download(request: Request, record_id: str):
     if path is None:
         raise HTTPException(status_code=404, detail="File missing")
     name = rec.get("original_name") or path.name
-    return FileResponse(path, filename=str(name))
+    return FileResponse(
+        path,
+        headers={"Content-Disposition": content_disposition(str(name))},
+    )
 
 
 @router.get("/uploads/{record_id}/preview")

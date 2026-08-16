@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 from admin._common import _admin_url, _redirect, _tpl, admin_post
 from admin.auth import require_admin
+from tools.common import content_disposition
 from storage.express import (
     cleanup_express,
     delete_package,
@@ -112,7 +113,10 @@ async def express_download(request: Request, package_id: str):
     if path is None:
         raise HTTPException(status_code=404, detail="File missing")
     name = pkg.get("original_name") or path.name
-    return FileResponse(path, filename=str(name))
+    return FileResponse(
+        path,
+        headers={"Content-Disposition": content_disposition(str(name))},
+    )
 
 
 @router.post("/express/{package_id}/delete")

@@ -135,7 +135,7 @@ async def tools_save(
     save_assignments(assignments)
 
     # Bust caches so dashboard / health / public catalog refresh immediately.
-    bust_health_cache()
+    # (_bust_public_and_health already includes bust_health_cache.)
     from admin._common import _bust_public_and_health
 
     _bust_public_and_health()

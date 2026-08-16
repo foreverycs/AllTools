@@ -15,6 +15,7 @@ from core.errors import PDFParseError, ValidationError
 from tools.common import (
     PDF_MEDIA,
     ZIP_MEDIA,
+    check_batch_total,
     check_upload_size_header,
     max_batch_files,
     safe_stem,
@@ -105,6 +106,7 @@ async def api_process(
         )
     if act == "merge" and len(files) < 2:
         raise HTTPException(status_code=400, detail="Merge requires at least 2 PDF files")
+    await check_batch_total(files)
     for idx, f in enumerate(files):
         _reject_non_pdf(f.filename, label=f"file {idx + 1}")
         check_upload_size_header(f, label=f.filename)

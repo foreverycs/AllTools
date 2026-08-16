@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import secrets
@@ -18,9 +19,42 @@ from core.settings import get_settings
 # Cookie name for signed admin session.
 COOKIE_NAME = "toolkit_admin"
 
+# PBKDF2 parameters for ADMIN_PASSWORD_HASH (opaque string; see hash_password).
+_HASH_ITERATIONS = 310_000
+_HASH_ALGO = "sha256"
+
 
 def admin_password() -> str:
     return get_settings().admin_password
+
+
+def hash_password(password: str, *, iterations: int = _HASH_ITERATIONS) -> str:
+    """Return ``pbkdf2_sha256$<iterations>$<salt>$<digest>`` for .env use."""
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac(
+        _HASH_ALGO, password.encode("utf-8"), salt, iterations
+    )
+    return "pbkdf2_sha256${}${}${}".format(
+        iterations,
+        base64.urlsafe_b64encode(salt).decode("ascii"),
+        base64.urlsafe_b64encode(dk).decode("ascii"),
+    )
+
+
+def _verify_password_hash(password: str, stored: str) -> bool:
+    try:
+        algo, iter_s, salt_b64, digest_b64 = stored.split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        iterations = int(iter_s)
+        salt = base64.urlsafe_b64decode(salt_b64.encode("ascii"))
+        expected = base64.urlsafe_b64decode(digest_b64.encode("ascii"))
+    except Exception:
+        return False
+    dk = hashlib.pbkdf2_hmac(
+        _HASH_ALGO, password.encode("utf-8"), salt, iterations
+    )
+    return hmac.compare_digest(dk, expected)
 
 
 def _secret() -> bytes:
@@ -56,7 +90,14 @@ def verify_session_token(token: Optional[str]) -> bool:
 
 
 def check_password(password: str) -> bool:
-    """Constant-time compare; never raises on length mismatch."""
+    """Constant-time compare; never raises on length mismatch.
+
+    Prefers a PBKDF2 ``ADMIN_PASSWORD_HASH`` when configured; otherwise falls
+    back to comparing against the plaintext ``ADMIN_PASSWORD``.
+    """
+    stored_hash = get_settings().admin_password_hash
+    if stored_hash:
+        return _verify_password_hash(password, stored_hash)
     a = (password or "").encode("utf-8")
     b = (admin_password() or "").encode("utf-8")
     if len(a) != len(b):

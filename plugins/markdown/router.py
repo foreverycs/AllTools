@@ -63,9 +63,10 @@ async def api_export_html(
             status_code=413,
             detail=f"输入过长（最多 {MAX_INPUT_CHARS} 字符）",
         )
-    do_sanitize = str(sanitize).strip().lower() in ("1", "true", "yes", "on", "")
+    # Exported documents are opened by users and can run scripts; always
+    # sanitize the export regardless of the preview flag (raw HTML with
+    # <script> belongs only in the in-page JSON preview at best).
     safe_title = (title or "Markdown").strip()[:120] or "Markdown"
-    # Escape title for HTML context (minimal).
     safe_title = (
         safe_title.replace("&", "&amp;")
         .replace("<", "&lt;")
@@ -73,7 +74,7 @@ async def api_export_html(
         .replace('"', "&quot;")
     )
     try:
-        result = render_markdown(text or "", sanitize=do_sanitize)
+        result = render_markdown(text or "", sanitize=True)
     except MarkdownError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

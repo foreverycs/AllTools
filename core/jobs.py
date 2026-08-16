@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import threading
@@ -55,16 +56,27 @@ class Job:
     downloaded_at: Optional[float] = None
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return float(str(raw).strip())
+    except ValueError:
+        logger.warning("%s=%r is not a number; using default %s", name, raw, default)
+        return default
+
+
 # Drop finished jobs after this many seconds.
-_JOB_TTL_SEC = float(os.environ.get("JOB_TTL_SEC") or "3600")
+_JOB_TTL_SEC = _env_float("JOB_TTL_SEC", 3600.0)
 # How long after download before reclaim can drop the job entry (seconds).
-_DOWNLOAD_GRACE_SEC = float(os.environ.get("JOB_DOWNLOAD_GRACE_SEC") or "30")
+_DOWNLOAD_GRACE_SEC = _env_float("JOB_DOWNLOAD_GRACE_SEC", 30.0)
 # A queued/running job whose liveness heartbeat (``updated_at``, refreshed by
 # every progress update) has not advanced past this many seconds is considered
 # stuck (worker crash, OOM, kill) and is reclaimed so its memory/temp files are
 # not leaked. Healthy long-running conversions keep updating progress and so
 # stay below the threshold regardless of elapsed wall-clock time.
-_STALE_JOB_TIMEOUT_SEC = float(os.environ.get("JOB_STALE_TIMEOUT_SEC") or "3600")
+_STALE_JOB_TIMEOUT_SEC = _env_float("JOB_STALE_TIMEOUT_SEC", 3600.0)
 # Track background tasks so they are not GC'd mid-flight.
 _bg_tasks: set[asyncio.Task] = set()
 
@@ -485,7 +497,10 @@ async def update_job_progress(
             ):
                 return None
         _last_progress[job_id] = (progress, now)
-    _prune_progress_watermark(now)
+        # Prune under the lock: another worker thread may be mutating the dict
+        # at the same time (prune outside the lock would raise on concurrent
+        # modification during iteration).
+        _prune_progress_watermark(now)
     fields: Dict[str, Any] = {"progress": progress}
     if message is not None:
         fields["message"] = message
@@ -619,6 +634,24 @@ def schedule_job(
     task.add_done_callback(_done)
 
 
+def _redact_error(error: Optional[str]) -> str:
+    """Strip filesystem paths / env hints from a job error for client display.
+
+    Full exception detail (with paths) stays in the server logs via
+    ``_set_error``'s ``logger.exception``; only a safe summary is returned to
+    the poll/download API.
+    """
+    if not error:
+        return ""
+    text = (error or "").strip()
+    # Keep only the first line (tracebacks/multi-line internals are internal).
+    text = text.splitlines()[0].strip() if text else ""
+    # Drop Windows drive paths and POSIX absolute paths.
+    text = re.sub(r"[A-Za-z]:\\[^\s\"']*", "…", text)
+    text = re.sub(r"(?:/[A-Za-z0-9_./-]+)+/", "…/", text)
+    return (text or "转换失败")[:500]
+
+
 def job_public_dict(job: Job) -> Dict[str, Any]:
     """JSON-safe view for clients (no absolute paths)."""
     has_file = (
@@ -632,7 +665,7 @@ def job_public_dict(job: Job) -> Dict[str, Any]:
         "status": job.status.value,
         "progress": job.progress,
         "message": job.message,
-        "error": job.error,
+        "error": _redact_error(job.error),
         "created_at": job.created_at,
         "updated_at": job.updated_at,
         "has_result": has_file,
@@ -674,13 +707,31 @@ def _norm_path(p: str) -> str:
     return os.path.normcase(os.path.abspath(p))
 
 
+# TempWorkspace prefixes used by job plugins to create work dirs under
+# ``JOB_OUTPUT_DIR``. Sweeping only these prevents ``sweep_orphan_job_dirs``
+# from deleting unrelated data if ``JOB_OUTPUT_DIR`` is misconfigured.
+_JOB_WORK_PREFIXES = (
+    "word2pdf_async_",
+    "word2pdf_batch_async_",
+    "pdf2word_async_",
+    "pdf2word_batch_async_",
+)
+
+
+def _is_job_work_entry(name: str) -> bool:
+    """True when ``name`` looks like a job work dir (``<prefix><random>``)."""
+    return any(name.startswith(p) for p in _JOB_WORK_PREFIXES)
+
+
 async def sweep_orphan_job_dirs() -> int:
     """Remove orphaned entries under ``JOB_OUTPUT_DIR`` at startup.
 
-    Entries still referenced by a live job (in-memory dict or Redis keys) are
-    kept. Entries touched within ``JOB_SWEEP_GRACE_SEC`` (default 600s) are also
-    kept: in multi-instance (Redis) deployments a worker on another instance may
-    be streaming an upload into a work dir before its job record lands in Redis.
+    Only entries that look like job work dirs (see :func:`_is_job_work_entry`)
+    are considered; anything else under the directory is never touched. Entries
+    still referenced by a live job (in-memory dict or Redis keys) are kept.
+    Entries touched within ``JOB_SWEEP_GRACE_SEC`` (default 600s) are also kept:
+    in multi-instance (Redis) deployments a worker on another instance may be
+    streaming an upload into a work dir before its job record lands in Redis.
     """
     grace = float(os.environ.get("JOB_SWEEP_GRACE_SEC") or "600")
     referenced: set = set()
@@ -689,22 +740,32 @@ async def sweep_orphan_job_dirs() -> int:
             for job in _store._jobs.values():
                 _job_ref_paths(job, referenced)
     elif isinstance(_store, _RedisJobStore):
-        client = _redis()
-        async for key in client.scan_iter(match=f"{_REDIS_PREFIX}*", count=100):
-            raw = await client.get(key)
-            if not raw:
-                continue
-            try:
-                job = _job_from_dict(json.loads(raw))
-            except (ValueError, TypeError, KeyError):
-                continue
-            _job_ref_paths(job, referenced)
+        try:
+            client = _redis()
+            async for key in client.scan_iter(match=f"{_REDIS_PREFIX}*", count=100):
+                raw = await client.get(key)
+                if not raw:
+                    continue
+                try:
+                    job = _job_from_dict(json.loads(raw))
+                except (ValueError, TypeError, KeyError):
+                    continue
+                _job_ref_paths(job, referenced)
+        except Exception:
+            # Redis unreachable at startup: skip the reference scan and keep all
+            # entries (grace period still applies) instead of failing startup.
+            logger.warning(
+                "sweep_orphan_job_dirs: redis unreachable; skipping reference scan",
+                exc_info=True,
+            )
     root = jobs_output_dir()
     if not os.path.isdir(root):
         return 0
     now = time.time()
     removed = 0
     for entry in Path(root).iterdir():
+        if not _is_job_work_entry(entry.name):
+            continue
         if _norm_path(str(entry)) in referenced:
             continue
         try:
@@ -731,11 +792,11 @@ def reset_jobs() -> None:
         _store.clear_sync()
     else:
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(_store.clear())
-        except (RuntimeError, Exception):
-            pass
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None:
+            loop.create_task(_store.clear())
     for t in list(_bg_tasks):
         t.cancel()
     _bg_tasks.clear()

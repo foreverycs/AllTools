@@ -227,6 +227,7 @@ def register_middleware(app: FastAPI) -> None:
     """Register the app's reusable HTTP middlewares (see core.middleware)."""
     from core.middleware import (
         AccessLogMiddleware,
+        MaxRequestBodySizeMiddleware,
         PublicRateLimitMiddleware,
         RequestIdMiddleware,
         SecurityHeadersMiddleware,
@@ -234,6 +235,10 @@ def register_middleware(app: FastAPI) -> None:
     )
 
     app.add_middleware(SecurityHeadersMiddleware)
+    # Global request-body cap (defense in depth): endpoint checks rely on
+    # Content-Length, which chunked bodies can bypass. Register early so this
+    # runs before the rate limiter reads the body.
+    app.add_middleware(MaxRequestBodySizeMiddleware)
     app.add_middleware(PublicRateLimitMiddleware)
     app.add_middleware(ToolFlagGateMiddleware)
     # Access log sits just inside RequestId so it sees rid + final status.

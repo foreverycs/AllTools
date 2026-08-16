@@ -8,11 +8,14 @@ and small utilities used by the per-domain route modules under
 
 from __future__ import annotations
 
+import logging
 from functools import wraps
 from pathlib import Path
 from typing import Optional, Tuple
 
 from fastapi import HTTPException, Request
+
+logger = logging.getLogger("toolkit.admin")
 from fastapi.responses import FileResponse, RedirectResponse
 
 from admin.auth import COOKIE_NAME as SESSION_COOKIE
@@ -212,11 +215,13 @@ async def _word_preview_pdf_response(
             raise HTTPException(
                 status_code=exc.status_code, detail=exc.detail
             ) from exc
-        except Exception as exc:
+        except Exception:
+            # Do not echo internal exception text (paths, engine errors) back
+            # to the page; log it and show a generic message instead.
+            logger.exception("word preview failed path=%s", path)
             raise HTTPException(
-                status_code=500,
-                detail=f"Word preview failed: {exc}",
-            ) from exc
+                status_code=500, detail="Word preview failed"
+            ) from None
     if not cache.is_file():
         raise HTTPException(status_code=500, detail="Word preview cache missing")
 

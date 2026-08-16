@@ -331,6 +331,11 @@ def max_batch_files() -> int:
     return get_settings().max_batch_files
 
 
+def max_batch_bytes() -> int:
+    """Cumulative byte cap for batch upload endpoints."""
+    return get_settings().max_batch_bytes
+
+
 def upload_chunk_size() -> int:
     return get_settings().upload_chunk_size
 
@@ -397,20 +402,28 @@ async def save_upload(
     limit = max_bytes if max_bytes is not None else max_upload_bytes()
     chunk_size = upload_chunk_size()
     total = 0
-    with open(dest, "wb") as out:
-        while True:
-            chunk = await file.read(chunk_size)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > limit:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"File too large (max {limit // (1024 * 1024)} MB)",
-                )
-            out.write(chunk)
-    if total == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
+    try:
+        with open(dest, "wb") as out:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > limit:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large (max {limit // (1024 * 1024)} MB)",
+                    )
+                out.write(chunk)
+        if total == 0:
+            raise HTTPException(status_code=400, detail="Empty file")
+    except HTTPException:
+        # Do not leave a partially-written file behind on the limit path.
+        try:
+            os.unlink(dest)
+        except OSError:
+            pass
+        raise
     return total
 
 
@@ -430,6 +443,31 @@ def check_upload_size_header(
         )
 
 
+async def check_batch_total(
+    files: List[UploadFile],
+    *,
+    max_bytes: Optional[int] = None,
+    label: str = "批量上传",
+) -> int:
+    """Enforce a cumulative size cap across a batch of uploads.
+
+    Uses each file's declared ``size`` (Content-Length); returns the declared
+    total. Endpoints that later stream files to disk should also track the
+    streamed total (see ``save_upload``) in case a spool reports a smaller size.
+    """
+    limit = max_bytes if max_bytes is not None else max_batch_bytes()
+    total = 0
+    for f in files or []:
+        if f.size is not None:
+            total += f.size
+    if total > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{label}总大小超出上限（{limit // (1024 * 1024)} MB）",
+        )
+    return total
+
+
 # ---------------------------------------------------------------------------
 # Cross-plugin image helpers (replaces the former ``media`` package)
 # ---------------------------------------------------------------------------
@@ -437,8 +475,9 @@ def check_upload_size_header(
 # App-level raster dimension cap (pixels). Pillow's built-in decompression
 # bomb threshold is much higher (~179M) — decoding an image up to that limit
 # can still allocate hundreds of MB per request, so bound it earlier.
-# ~ 8000x8000, safely below common printable/browser sizes.
-MAX_IMAGE_PIXELS = 64_000_000
+# ~ 8000x4000 / 5657x5657 — bounded well below Pillow's decompression-bomb
+# threshold (~179M px) so decoding a single image stays under ~128MB RGBA.
+MAX_IMAGE_PIXELS = 32_000_000
 
 # Common raster formats accepted by the shared detector.
 IMAGE_INPUT_FORMATS = ("jpeg", "png", "gif", "webp", "bmp", "tiff", "ico")

@@ -87,4 +87,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
 
 # Single worker: async jobs live in process memory (see README / JOBS_BACKEND).
+# Request-body caps are enforced by MaxRequestBodySizeMiddleware (see app.py).
 CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

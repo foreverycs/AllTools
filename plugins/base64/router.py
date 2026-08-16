@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from coding import DecodeError, decode_base64, encode_base64, probe_base64
-from tools.common import check_max_chars, templates, with_nav
+from tools.common import check_max_chars, check_upload_size_header, templates, with_nav
 
 router = APIRouter(prefix="/tools/base64", tags=["base64"])
 
@@ -43,12 +43,8 @@ async def api_encode(
     """Encode plain text or an uploaded file to Base64."""
     try:
         if file is not None and file.filename:
+            check_upload_size_header(file, max_bytes=MAX_FILE_BYTES)
             raw = await file.read()
-            if len(raw) > MAX_FILE_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"File too large (max {MAX_FILE_BYTES // (1024 * 1024)} MB)",
-                )
             if not raw:
                 raise HTTPException(status_code=400, detail="Empty file")
             result = encode_base64(
