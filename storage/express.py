@@ -33,10 +33,8 @@ from storage.sqlite_pool import ConnCache
 
 logger = logging.getLogger("toolkit.express")
 
-# Pickup codes: 8 digits for new packages (10^8 space); 6-digit codes from
-# before the entropy bump remain valid so existing packages keep working.
-_CODE_RE = re.compile(r"^\d{8}$")
-_LEGACY_CODE_RE = re.compile(r"^\d{6}$")
+# Pickup codes use six digits (10^6 space).
+_CODE_RE = re.compile(r"^\d{6}$")
 _lock = threading.RLock()
 _last_cleanup_ts: float = 0.0
 _CLEANUP_INTERVAL = 120.0
@@ -147,13 +145,13 @@ def _normalize_code(code: str) -> str:
 
 def is_valid_code_format(code: str) -> bool:
     c = _normalize_code(code)
-    return bool(_CODE_RE.match(c) or _LEGACY_CODE_RE.match(c))
+    return bool(_CODE_RE.match(c))
 
 
 def _generate_code(conn: sqlite3.Connection) -> str:
-    """Allocate a unique 8-digit pickup code."""
+    """Allocate a unique 6-digit pickup code."""
     for _ in range(64):
-        code = f"{secrets.randbelow(100_000_000):08d}"
+        code = f"{secrets.randbelow(1_000_000):06d}"
         exists = conn.execute(
             "SELECT 1 FROM packages WHERE code = ?", (code,)
         ).fetchone()
