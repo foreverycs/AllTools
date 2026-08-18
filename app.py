@@ -2,6 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
+
+# Disable .pyc bytecode cache writes. Setting os.environ alone is not enough:
+# Python only reads PYTHONDONTWRITEBYTECODE at interpreter startup to set
+# sys.dont_write_bytecode, so we must set the runtime flag directly.
+sys.dont_write_bytecode = True
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
@@ -709,4 +717,6 @@ async def download_upload(request: Request, record_id: str):
 if __name__ == "__main__":
     import uvicorn
 
+    # Propagate to the uvicorn reloader child process so it also skips .pyc.
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
