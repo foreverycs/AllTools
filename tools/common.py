@@ -88,6 +88,50 @@ _VER_CACHE_TTL = 5.0  # seconds
 _ver_cache: dict = {}
 _ver_cache_lock = threading.Lock()
 
+# When True, ``static_url`` rewrites ``foo.css`` → ``foo.min.css`` if the
+# minified sibling exists on disk. Disabled by default in dev (no min files);
+# production images run ``scripts/minify_static.py`` so the rewrite kicks in
+# automatically without touching templates.
+_USE_MIN_ASSETS = (os.environ.get("USE_MIN_ASSETS") or "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+
+def _min_rel(rel: str) -> str:
+    """Return the ``.min.<ext>`` sibling path for ``rel`` (no existence check)."""
+    stem, dot, ext = rel.rpartition(".")
+    if not dot or not ext or rel.endswith(f".min.{ext}"):
+        return rel
+    return f"{stem}.min.{ext}"
+
+
+def _resolve_static(rel: str) -> str:
+    """Return the rel path to serve: ``.min`` sibling if it exists, else ``rel``.
+
+    Cached alongside the mtime lookup so repeated renders do not re-stat the
+    min sibling on every request. Returns ``rel`` unchanged when minification
+    is disabled or the sibling is absent.
+    """
+    if not _USE_MIN_ASSETS:
+        return rel
+    now = time.monotonic()
+    with _ver_cache_lock:
+        hit = _ver_cache.get(("rel", rel))
+        if hit is not None and now - hit[0] < _VER_CACHE_TTL:
+            return hit[1]
+    candidate = _min_rel(rel)
+    if candidate != rel:
+        full = os.path.join(STATIC_DIR, candidate.replace("/", os.sep))
+        resolved = candidate if os.path.isfile(full) else rel
+    else:
+        resolved = rel
+    with _ver_cache_lock:
+        _ver_cache[("rel", rel)] = (now, resolved)
+    return resolved
+
 
 def _static_file_version(rel_path: str) -> str:
     """Return a short cache-buster for a static file under /static/.
@@ -116,12 +160,21 @@ def static_url(path: str, request: Optional[Request] = None) -> str:
     """URL for a static asset with ``?v=`` cache buster.
 
     ``path`` may be ``/static/css/layout.css`` or ``css/layout.css``.
+
+    When ``USE_MIN_ASSETS`` is on and a ``.min.<ext>`` sibling exists next to
+    the requested file, the URL is rewritten to the minified variant — so
+    templates keep referencing the source filename and production automatically
+    serves the compressed version produced by ``scripts/minify_static.py``.
     """
     p = path.strip()
     if not p.startswith("/"):
         p = "/" + p
     if not p.startswith("/static/"):
         p = "/static" + p
+    rel = p.lstrip("/").removeprefix("static/").lstrip("/")
+    rel = _resolve_static(rel)
+    if rel:
+        p = "/static/" + rel
     base = url_path(p, request)
     ver = _static_file_version(p)
     sep = "&" if "?" in base else "?"

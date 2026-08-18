@@ -14,3 +14,7 @@ file/**
 .env
 .env.local
 
+# Generated minified static assets (built by scripts/minify_static.py)
+static/**/*.min.css
+static/**/*.min.js
+
