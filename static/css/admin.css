@@ -1130,6 +1130,10 @@ html[data-theme="dark"] .admin-link:hover { color: #a5b4fc; }
 }
 .admin-cat-row:last-child { border-bottom: 0; }
 .admin-cat-row.is-off { opacity: 0.5; }
+.admin-cat-row.is-hidden-cat .admin-toggle-label {
+  color: var(--muted-2);
+  text-decoration: line-through;
+}
 .admin-cat-row.is-off .admin-cat-remove .admin-badge {
   background: var(--danger-bg, #fee2e2);
   color: var(--danger-ink, #b91c1c);
@@ -1146,6 +1150,18 @@ html[data-theme="dark"] .admin-link:hover { color: #a5b4fc; }
   align-items: center;
   gap: 6px;
   cursor: pointer;
+}
+.admin-cat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.admin-toggle-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1;
 }
 .admin-cat-remove-input { width: 16px; height: 16px; accent-color: #dc2626; }
 .admin-cat-assign { display: flex; align-items: center; min-width: 180px; }

@@ -33,6 +33,7 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "icon": "📕",
         "accent": "rose",
         "route": "/#col-pdf",
+        "visible": True,
         "lead": "PDF ↔ Word 转换、发票合并与版式还原，适合日常办公文档处理。",
     },
     {
@@ -43,6 +44,7 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "icon": "🖼️",
         "accent": "sky",
         "route": "/#col-image",
+        "visible": True,
         "lead": "图片常用操作：压缩、格式互转、九宫格切图与批量转 PDF。",
     },
     {
@@ -53,6 +55,7 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "icon": "🎬",
         "accent": "violet",
         "route": "/#col-video",
+        "visible": True,
         "lead": "视频处理工具。",
     },
     {
@@ -63,6 +66,7 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "icon": "🎵",
         "accent": "emerald",
         "route": "/#col-audio",
+        "visible": True,
         "lead": "音频处理工具。",
     },
     {
@@ -73,6 +77,7 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "icon": "✏️",
         "accent": "amber",
         "route": "/#col-text",
+        "visible": True,
         "lead": "开发调试与日常文本处理：编解码、格式化、时间戳、正则、金额大写。",
     },
 ]
@@ -150,7 +155,12 @@ def tools_by_category(
         source = list(TOOL_REGISTRY)
     else:
         source = enabled_tools(include_featured=include_featured)
-    by_id = {c["id"]: {**c, "tools": []} for c in get_categories()}
+    cats = get_categories()
+    # Hidden categories stay in the admin view but are dropped from public
+    # category grids / nav (their tools still show under 全部工具).
+    if not include_disabled:
+        cats = [c for c in cats if c.get("visible", True)]
+    by_id = {c["id"]: {**c, "tools": []} for c in cats}
     for tool in source:
         # Public category grids never list featured tools unless asked.
         if is_featured_tool(tool) and not include_disabled and not include_featured:
@@ -194,7 +204,10 @@ def nav_categories(*, include_disabled: bool = False) -> List[Dict[str, Any]]:
         )
     }
     items = []
-    for c in get_categories():
+    all_cats = get_categories()
+    if not include_disabled:
+        all_cats = [c for c in all_cats if c.get("visible", True)]
+    for c in all_cats:
         filled = by_id.get(c["id"])
         tools = list((filled or {}).get("tools") or [])
         items.append(

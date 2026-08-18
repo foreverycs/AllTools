@@ -70,6 +70,7 @@ def _default_categories() -> List[Dict[str, Any]]:
             **dict(c),
             "builtin": True,
             "synthetic": False,
+            "visible": True,
         }
         for c in TOOL_CATEGORIES
     ]
@@ -104,6 +105,7 @@ def _read_store(path: Path):
                         "route": str(c.get("route") or f"/#col-{c['id']}"),
                         "builtin": bool(c.get("builtin")),
                         "synthetic": False,
+                        "visible": bool(c.get("visible", True)),
                     }
                 )
         if normalized:
@@ -187,6 +189,7 @@ def save_catalog(categories: List[Dict[str, Any]], assignments: Dict[str, str]) 
                 "accent": c.get("accent") or "indigo",
                 "route": c.get("route") or f"/#col-{c['id']}",
                 "builtin": bool(c.get("builtin")),
+                "visible": bool(c.get("visible", True)),
             }
             for c in categories
             if c.get("id")

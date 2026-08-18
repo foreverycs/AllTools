@@ -29,7 +29,7 @@
     </div>
     <div class="admin-cats">
       {% for cat in categories %}
-      <div class="admin-cat-row">
+      <div class="admin-cat-row{% if not cat.visible %} is-hidden-cat{% endif %}">
         <input type="hidden" name="cat_id" value="{{ cat.id }}" />
         <span class="admin-cat-grip" aria-hidden="true">⠿</span>
         <div class="admin-field">
@@ -56,6 +56,14 @@
           <button type="button" class="admin-btn admin-cat-move" data-dir="-1" title="上移">↑</button>
           <button type="button" class="admin-btn admin-cat-move" data-dir="1" title="下移">↓</button>
         </div>
+        <label class="admin-cat-toggle" title="前台是否展示该分类（导航、栏目与页脚）">
+          <input type="hidden" name="cat_visible" value="" />
+          <span class="admin-tool-switch" style="width:44px;height:26px">
+            <input type="checkbox" name="cat_visible" value="{{ cat.id }}" class="admin-switch-input" {% if cat.visible %}checked{% endif %} />
+            <span class="admin-switch-ui"></span>
+          </span>
+          <span class="admin-toggle-label">展示</span>
+        </label>
         <label class="admin-cat-remove">
           <input type="checkbox" name="cat_remove" value="{{ cat.id }}" class="admin-cat-remove-input" />
           <span class="admin-badge">删除</span>
@@ -98,6 +106,14 @@
       <button type="button" class="admin-btn admin-cat-move" data-dir="-1" title="上移">↑</button>
       <button type="button" class="admin-btn admin-cat-move" data-dir="1" title="下移">↓</button>
     </div>
+    <label class="admin-cat-toggle" title="前台是否展示该分类（导航、栏目与页脚）">
+      <input type="hidden" name="cat_visible" value="" />
+      <span class="admin-tool-switch" style="width:44px;height:26px">
+        <input type="checkbox" name="cat_visible" value="" class="admin-switch-input" checked />
+        <span class="admin-switch-ui"></span>
+      </span>
+      <span class="admin-toggle-label">展示</span>
+    </label>
     <label class="admin-cat-remove">
       <input type="checkbox" name="cat_remove" value="" class="admin-cat-remove-input" />
       <span class="admin-badge">删除</span>

@@ -59,6 +59,11 @@ async def categories_save(
     accents = [str(v).strip() for v in form.getlist("cat_accent")]
     descs = [str(v).strip() for v in form.getlist("cat_desc")]
     to_remove = {str(v).strip() for v in form.getlist("cat_remove") if str(v).strip()}
+    # Each row carries an empty hidden input plus the real checkbox (if checked),
+    # so an unchecked box still posts as hidden (not visible on the front end).
+    visible_ids = {
+        str(v).strip() for v in form.getlist("cat_visible") if str(v).strip()
+    }
     previous = {c["id"]: c for c in get_categories()}
 
     cats = []
@@ -81,6 +86,7 @@ async def categories_save(
                 ),
                 "route": f"/#col-{cid}",
                 "builtin": bool((previous.get(cid) or {}).get("builtin")),
+                "visible": cid in visible_ids,
             }
         )
 
