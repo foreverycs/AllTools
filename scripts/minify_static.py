@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Build-time minifier for static CSS/JS assets.
 
 Produces ``<name>.min.<ext>`` next to each source file. The app's
@@ -51,7 +52,11 @@ _NOLINT_RE = re.compile(r"^\s*(?:/\*.*nolint.*\*/|//.*nolint)", re.IGNORECASE)
 
 _CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _CSS_WS_RE = re.compile(r"\s+")
-_CSS_LEADING_RE = re.compile(r"\s*([{}:;,>~+])\s*")
+# NOTE: ``+``/``-`` are deliberately NOT in the class. CSS ``calc()`` requires
+# whitespace around addition/subtraction operators (``calc(1px + 2px)``); if the
+# space before ``+`` is stripped the expression becomes e.g. ``.../ 2+8px`` and
+# the browser drops the whole declaration (number + length is invalid in calc).
+_CSS_LEADING_RE = re.compile(r"\s*([{}:;,>~])\s*")
 _CSS_TRAILING_SEMI_RE = re.compile(r";\s*}")
 _CSS_EMPTY_BLOCK_RE = re.compile(r"[^{}]+\{\s*\}")
 _CSS_DUP_SEMI_RE = re.compile(r";{2,}")
@@ -234,6 +239,10 @@ def _candidates() -> list[Path]:
             if path.name in SKIP_NAMES:
                 continue
             if path.name.startswith("."):
+                continue
+            # Never treat an already-generated ``.min.<ext>`` as a source — it
+            # would otherwise be re-minified into ``.min.min.<ext>`` on every run.
+            if path.name.lower().endswith(f".min{path.suffix.lower()}"):
                 continue
             if path in seen:
                 continue
