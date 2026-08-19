@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS packages (
     download_count  INTEGER NOT NULL DEFAULT 0,
     note            TEXT NOT NULL DEFAULT '',
     burn_after      INTEGER NOT NULL DEFAULT 0,
-    file_count      INTEGER NOT NULL DEFAULT 1
+    file_count      INTEGER NOT NULL DEFAULT 1,
+    text_payload    TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_express_code ON packages(code);
 CREATE INDEX IF NOT EXISTS idx_express_expires ON packages(expires_at);
@@ -73,6 +74,10 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     if "file_count" not in cols:
         conn.execute(
             "ALTER TABLE packages ADD COLUMN file_count INTEGER NOT NULL DEFAULT 1"
+        )
+    if "text_payload" not in cols:
+        conn.execute(
+            "ALTER TABLE packages ADD COLUMN text_payload TEXT NOT NULL DEFAULT ''"
         )
 
 
@@ -195,6 +200,11 @@ def _row_public(row: sqlite3.Row | Dict[str, Any], *, include_path: bool = False
     exhausted = max_dl > 0 and used >= max_dl
     burn = bool(int(d.get("burn_after") or 0))
     file_count = max(1, int(d.get("file_count") or 1))
+    is_text = bool(d.get("text_payload") or "")
+    text_payload = str(d.get("text_payload") or "")
+    text_preview = ""
+    if is_text:
+        text_preview = text_payload if len(text_payload) <= 100 else text_payload[:100]
     out: Dict[str, Any] = {
         "id": d.get("id"),
         "code": d.get("code"),
@@ -209,6 +219,8 @@ def _row_public(row: sqlite3.Row | Dict[str, Any], *, include_path: bool = False
         "note": d.get("note") or "",
         "burn_after": burn,
         "file_count": file_count,
+        "is_text": is_text,
+        "text_preview": text_preview if is_text else "",
         "expired": expired,
         "exhausted": exhausted,
         "available": (not expired) and (not exhausted),
@@ -385,6 +397,81 @@ def create_package(
     return _row_public(row)
 
 
+# 小纸条：纯文本包裹（不落文件，正文存 text_payload 列）。
+MAX_TEXT_CHARS = 5000
+
+
+def max_text_chars() -> int:
+    return MAX_TEXT_CHARS
+
+
+def create_text_package(
+    text: str,
+    *,
+    ttl_hours: Optional[int] = None,
+    max_downloads: int = 0,
+    note: str = "",
+    burn_after: bool = False,
+) -> Dict[str, Any]:
+    """Store a text-only package (小纸条); returns public package info.
+
+    The picker reads the text via ``claim_text`` which consumes a download in
+    the same atomic way as ``claim_download``. No payload file is written.
+    """
+    body = (text or "").strip()
+    if not body:
+        raise ValueError("empty or missing text")
+    if len(body) > MAX_TEXT_CHARS:
+        raise ValueError(f"text too long (max {MAX_TEXT_CHARS} chars)")
+
+    max_ttl = express_max_ttl_hours()
+    default_ttl = express_default_ttl_hours()
+    hours = int(ttl_hours if ttl_hours is not None else default_ttl)
+    hours = max(1, min(max_ttl, hours))
+    burn = bool(burn_after)
+    max_dl = max(0, min(1000, int(max_downloads or 0)))
+    if burn:
+        max_dl = 1
+    note_s = (note or "").strip()[:200]
+    size = len(body.encode("utf-8"))
+
+    pkg_id = uuid.uuid4().hex[:16]
+    created = _now()
+    expires = created + timedelta(hours=hours)
+    created_iso = _iso(created)
+    expires_iso = _iso(expires)
+
+    with _lock:
+        conn = _get_conn()
+        code = _generate_code(conn)
+        conn.execute(
+            """
+            INSERT INTO packages (
+                id, code, original_name, stored_rel, size_bytes, content_type,
+                created_at, expires_at, max_downloads, download_count, note,
+                burn_after, file_count, text_payload
+            ) VALUES (?, ?, '', '', ?, 'text/plain', ?, ?, ?, 0, ?, ?, 1, ?)
+            """,
+            (
+                pkg_id,
+                code,
+                size,
+                created_iso,
+                expires_iso,
+                max_dl,
+                note_s,
+                1 if burn else 0,
+                body,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM packages WHERE id = ?", (pkg_id,)
+        ).fetchone()
+    assert row is not None
+    return _row_public(row)
+
+
 def get_package_by_code(code: str) -> Optional[Dict[str, Any]]:
     """Lookup by pickup code (does not consume a download)."""
     c = _normalize_code(code)
@@ -478,6 +565,62 @@ def claim_download(code: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
             out["stored_rel"] = ""
             # Unlink after releasing path for this response.
             out["_burn_rel"] = rel
+        return out, None
+
+
+def claim_text(code: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Atomically claim a text-only package (小纸条) and return its full text.
+
+    Same availability / counter semantics as ``claim_download`` but for the
+    ``text_payload`` column; there is no stored file. On success the dict has
+    ``_text`` holding the full message. When ``burn_after`` is set the payload
+    is cleared immediately so a second claim cannot read it again.
+    """
+    c = _normalize_code(code)
+    if not is_valid_code_format(c):
+        return None, "invalid"
+
+    with _lock:
+        conn = _get_conn()
+        row = conn.execute(
+            "SELECT * FROM packages WHERE code = ?", (c,)
+        ).fetchone()
+        if row is None:
+            return None, "invalid"
+        info = _row_public(row, include_path=True)
+        if info["expired"]:
+            return info, "expired"
+        if info["exhausted"]:
+            return info, "exhausted"
+        body = str(row["text_payload"] or "")
+        if not body:
+            return info, "missing"
+        cur = conn.execute(
+            """
+            UPDATE packages SET download_count = download_count + 1
+            WHERE id = ? AND (max_downloads = 0 OR download_count < max_downloads)
+            """,
+            (info["id"],),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            row2 = conn.execute(
+                "SELECT * FROM packages WHERE id = ?", (info["id"],)
+            ).fetchone()
+            return (_row_public(row2, include_path=True) if row2 else info), "exhausted"
+        out = _row_public(
+            conn.execute(
+                "SELECT * FROM packages WHERE id = ?", (info["id"],)
+            ).fetchone() or row,
+            include_path=True,
+        )
+        out["_text"] = body
+        if out.get("burn_after"):
+            conn.execute(
+                "UPDATE packages SET text_payload = '' WHERE id = ?",
+                (out["id"],),
+            )
+            conn.commit()
         return out, None
 
 

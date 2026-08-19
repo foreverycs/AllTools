@@ -15,7 +15,9 @@ from starlette.requests import Request
 
 from storage.express import (
     claim_download,
+    claim_text,
     create_package,
+    create_text_package,
     ensure_express_dir,
     express_default_ttl_hours,
     express_max_bytes,
@@ -23,6 +25,7 @@ from storage.express import (
     express_stats,
     get_package_by_code,
     is_valid_code_format,
+    max_text_chars,
 )
 from tools.common import (
     check_upload_size_header,
@@ -89,6 +92,7 @@ def _tool_ctx(request: Request) -> dict:
             "default_ttl_hours": express_default_ttl_hours(),
             "max_ttl_hours": express_max_ttl_hours(),
             "max_files": _MAX_SEND_FILES,
+            "max_text_chars": max_text_chars(),
         },
         "prefill_code": (request.query_params.get("code") or "").strip(),
     }
@@ -111,6 +115,7 @@ async def api_limits():
             "default_ttl_hours": express_default_ttl_hours(),
             "max_ttl_hours": express_max_ttl_hours(),
             "max_files": _MAX_SEND_FILES,
+            "max_text_chars": max_text_chars(),
             **{k: v for k, v in express_stats().items() if k in ("package_count",)},
         }
     )
@@ -380,6 +385,7 @@ async def api_send(
             "note": pkg["note"],
             "burn_after": bool(pkg.get("burn_after")),
             "file_count": int(pkg.get("file_count") or file_count),
+            "is_text": False,
             "pickup_url": pickup_path,
             "message": (
                 f"寄送成功，取件码 {pkg['code']}"
@@ -387,6 +393,76 @@ async def api_send(
             ),
         }
     )
+
+
+def _package_pickup_info(pkg: dict) -> dict:
+    """Common response fields shared by send / send-text."""
+    return {
+        "ok": True,
+        "code": pkg["code"],
+        "id": pkg["id"],
+        "original_name": pkg["original_name"],
+        "size_bytes": pkg["size_bytes"],
+        "created_at": pkg["created_at"],
+        "expires_at": pkg["expires_at"],
+        "seconds_remaining": pkg["seconds_remaining"],
+        "max_downloads": pkg["max_downloads"],
+        "downloads_left": pkg["downloads_left"],
+        "note": pkg["note"],
+        "burn_after": bool(pkg.get("burn_after")),
+        "file_count": int(pkg.get("file_count") or 1),
+        "is_text": bool(pkg.get("is_text")),
+    }
+
+
+@router.post("/send-text")
+async def api_send_text(
+    request: Request,
+    text: str = Form(...),
+    ttl_hours: str | None = Form(None),
+    max_downloads: str | None = Form(None),
+    note: str | None = Form(None),
+    burn_after: str | None = Form(None),
+):
+    """小纸条：发送一段文字，对方输入取件码即可查看。"""
+    hours = _parse_ttl(ttl_hours)
+    burn = to_bool(burn_after, False)
+    max_dl = 1 if burn else _parse_max_downloads(max_downloads)
+    note_s = (note or "").strip()[:200]
+
+    body = (text or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="请输入要发送的内容")
+    if len(body) > max_text_chars():
+        raise HTTPException(
+            status_code=413,
+            detail=f"内容过长（上限 {max_text_chars()} 字）",
+        )
+
+    try:
+        pkg = create_text_package(
+            body,
+            ttl_hours=hours,
+            max_downloads=max_dl,
+            note=note_s,
+            burn_after=burn,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if "empty or missing" in msg.lower():
+            msg = "请输入要发送的内容"
+        elif "too long" in msg.lower():
+            msg = f"内容过长（上限 {max_text_chars()} 字）"
+        raise HTTPException(status_code=400, detail=msg) from exc
+
+    pickup_path = url_path(f"/tools/express?code={pkg['code']}", request)
+    info = _package_pickup_info(pkg)
+    info["pickup_url"] = pickup_path
+    info["message"] = (
+        f"小纸条已生成，取件码 {pkg['code']}"
+        + ("（阅后即焚）" if pkg.get("burn_after") else "")
+    )
+    return JSONResponse(info)
 
 
 @router.post("/lookup")
@@ -418,10 +494,56 @@ async def api_lookup(code: str = Form(...)):
             "seconds_remaining",
             "burn_after",
             "file_count",
+            "is_text",
+            "text_preview",
         )
         if k in info
     }
     return JSONResponse({"ok": True, **safe})
+
+
+def _read_response(raw_code: str) -> JSONResponse:
+    if not is_valid_code_format(raw_code):
+        raise HTTPException(status_code=400, detail="请输入 6 位数字取件码")
+    info, err = claim_text(raw_code)
+    if err:
+        status = 404 if err in ("invalid", "missing") else 410
+        raise HTTPException(
+            status_code=status,
+            detail=_ERROR_MESSAGES.get(err, "读取失败"),
+        )
+    assert info is not None
+    if not info.get("is_text"):
+        raise HTTPException(status_code=400, detail="该取件码对应的是文件，请使用「下载文件」")
+    safe = {
+        k: info[k]
+        for k in (
+            "code",
+            "original_name",
+            "note",
+            "burn_after",
+            "is_text",
+            "download_count",
+            "downloads_left",
+            "max_downloads",
+            "text_preview",
+        )
+        if k in info
+    }
+    safe["text"] = info.get("_text") or ""
+    return JSONResponse({"ok": True, **safe})
+
+
+@router.post("/read")
+async def api_read_post(code: str = Form(...)):
+    """Read a 小纸条 by code (consumes one download if limited)."""
+    return _read_response(code)
+
+
+@router.get("/read/{code}")
+async def api_read_get(code: str):
+    """Read a 小纸条 by path code."""
+    return _read_response(code)
 
 
 def _burn_unlink(rel: str) -> None:

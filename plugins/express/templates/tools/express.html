@@ -192,6 +192,22 @@
   line-height: 1.55;
 }
 .tool-page .tips strong{ color: var(--ink-2); }
+.tool-page .note-body{
+  margin-top: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--surface-solid, #fff);
+  border: 1px solid var(--tool-accent-border, #c7d2fe);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-page #noteText{
+  min-height: 120px;
+  resize: vertical;
+}
 </style>
 {% endblock %}
 
@@ -201,12 +217,13 @@
         <div class="icon" aria-hidden="true">📦</div>
         <div>
           <h1>文件快递</h1>
-          <p>上传文件生成 6 位取件码，对方输入即可下载。支持多文件自动打包、下载次数与阅后即焚。</p>
+          <p>上传文件生成 6 位取件码，对方输入即可下载；也可以发一段「小纸条」用取件码查看。支持阅后即焚。</p>
         </div>
       </div>
 
       <div class="tabs" role="tablist">
         <button type="button" class="tab active" data-tab="send" role="tab" aria-selected="true">寄送文件</button>
+        <button type="button" class="tab" data-tab="note" role="tab" aria-selected="false">小纸条</button>
         <button type="button" class="tab" data-tab="pickup" role="tab" aria-selected="false">取件下载</button>
       </div>
 
@@ -265,6 +282,56 @@
         </div>
       </div>
 
+      <!-- NOTE (小纸条) -->
+      <div class="pane" id="pane-note" role="tabpanel">
+        <div class="field" style="margin-bottom:12px">
+          <label for="noteText">内容</label>
+          <textarea id="noteText" maxlength="{{ limits.max_text_chars|default(5000) }}" placeholder="对方输入取件码即可查看这段话…"></textarea>
+          <div class="hint">最多 {{ limits.max_text_chars|default(5000) }} 字；支持换行。</div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="noteTtlHours">有效期</label>
+            <select id="noteTtlHours">
+              <option value="1">1 小时</option>
+              <option value="6">6 小时</option>
+              <option value="24" {% if limits.default_ttl_hours == 24 %}selected{% endif %}>24 小时</option>
+              <option value="72" {% if limits.default_ttl_hours == 72 %}selected{% endif %}>3 天</option>
+              <option value="168" {% if limits.default_ttl_hours == 168 %}selected{% endif %}>7 天</option>
+            </select>
+            <div class="hint">最长 {{ limits.max_ttl_hours }} 小时</div>
+          </div>
+          <div class="field">
+            <label for="noteMaxDownloads">可查看次数</label>
+            <select id="noteMaxDownloads">
+              <option value="0" selected>不限制</option>
+              <option value="1">1 次</option>
+              <option value="3">3 次</option>
+              <option value="5">5 次</option>
+              <option value="10">10 次</option>
+            </select>
+            <div class="hint">阅后即焚时固定 1 次</div>
+          </div>
+        </div>
+        <label class="field" style="margin-bottom:12px;flex-direction:row;align-items:center;gap:8px;display:flex">
+          <input type="checkbox" id="noteBurn" style="width:auto" />
+          <span style="font-size:13px;font-weight:650;color:var(--ink-2)">阅后即焚（查看一次后销毁内容）</span>
+        </label>
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="sendNoteBtn">生成取件码</button>
+        </div>
+        <div class="msg" id="noteMsg"></div>
+        <div class="result" id="noteResult">
+          <div class="result-kicker">取件码</div>
+          <div class="result-code" id="noteResultCode">------</div>
+          <div class="result-meta" id="noteResultMeta"></div>
+          <div class="result-actions">
+            <button type="button" class="btn btn-primary" id="noteCopyBtn">复制取件码</button>
+            <button type="button" class="btn" id="noteCopyLinkBtn">复制取件链接</button>
+          </div>
+        </div>
+      </div>
+
       <!-- PICKUP -->
       <div class="pane" id="pane-pickup" role="tabpanel">
         <div class="field" style="margin-bottom:14px">
@@ -275,8 +342,13 @@
         <div class="actions">
           <button type="button" class="btn" id="lookupBtn">查询</button>
           <button type="button" class="btn btn-primary" id="pickupBtn">下载文件</button>
+          <button type="button" class="btn btn-primary" id="readNoteBtn">查看小纸条</button>
         </div>
         <div class="msg" id="pickupMsg"></div>
+        <div class="result" id="noteReader">
+          <div class="result-meta" id="noteReaderMeta"></div>
+          <div class="note-body" id="noteReaderBody"></div>
+        </div>
         <div class="result" id="pickupInfo">
           <div class="result-meta" id="pickupMeta" style="text-align:left"></div>
         </div>
@@ -378,6 +450,7 @@
             t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
           });
           document.getElementById('pane-send').classList.toggle('active', id === 'send');
+          document.getElementById('pane-note').classList.toggle('active', id === 'note');
           document.getElementById('pane-pickup').classList.toggle('active', id === 'pickup');
         });
       });
@@ -387,7 +460,6 @@
       if (prefill) {
         document.querySelector('.tab[data-tab="pickup"]').click();
       }
-
       // Drop zone (multi-file)
       var drop = document.getElementById('dropZone');
       var fileInput = document.getElementById('fileInput');
@@ -573,6 +645,84 @@
         }
       });
 
+      // ---- 小纸条发送 ----
+      var noteText = document.getElementById('noteText');
+      var sendNoteBtn = document.getElementById('sendNoteBtn');
+      var noteMsg = document.getElementById('noteMsg');
+      var noteResult = document.getElementById('noteResult');
+      var noteResultCode = document.getElementById('noteResultCode');
+      var noteResultMeta = document.getElementById('noteResultMeta');
+      var noteBurn = document.getElementById('noteBurn');
+      var noteMaxDownloads = document.getElementById('noteMaxDownloads');
+      noteBurn.addEventListener('change', function () {
+        if (noteBurn.checked) {
+          noteMaxDownloads.value = '1';
+          noteMaxDownloads.disabled = true;
+        } else {
+          noteMaxDownloads.disabled = false;
+        }
+      });
+      var maxTextChars = {{ limits.max_text_chars|default(5000)|int }};
+      sendNoteBtn.addEventListener('click', async function () {
+        hideMsg(noteMsg);
+        noteResult.classList.remove('show');
+        var content = (noteText.value || '').trim();
+        if (!content) {
+          showMsg(noteMsg, '请输入要发送的内容', 'err');
+          return;
+        }
+        if (content.length > maxTextChars) {
+          showMsg(noteMsg, '内容过长（上限 ' + maxTextChars + ' 字）', 'err');
+          return;
+        }
+        sendNoteBtn.disabled = true;
+        sendNoteBtn.textContent = '生成中…';
+        try {
+          var fd = new FormData();
+          fd.append('text', content);
+          fd.append('ttl_hours', document.getElementById('noteTtlHours').value);
+          fd.append('max_downloads', noteMaxDownloads.value);
+          fd.append('burn_after', noteBurn.checked ? '1' : '0');
+          var res = await fetch(api('/tools/express/send-text'), { method: 'POST', body: fd, credentials: 'same-origin' });
+          var rawText = await res.text();
+          var data = {};
+          if (rawText) { try { data = JSON.parse(rawText); } catch (e) { data = rawText; } }
+          if (!res.ok) {
+            showMsg(noteMsg, errDetail(data, res.status, '生成失败'), 'err', { toast: true });
+            return;
+          }
+          if (!data || !data.code) { showMsg(noteMsg, '服务器响应异常', 'err'); return; }
+          noteResultCode.textContent = data.code;
+          var lines = [
+            '过期：' + (data.expires_at || '') + '（约 ' + fmtRemain(data.seconds_remaining) + '）',
+          ];
+          if (data.burn_after) lines.push('阅后即焚：查看 1 次后销毁');
+          else if (data.max_downloads > 0) lines.push('可查看：' + data.max_downloads + ' 次');
+          else lines.push('查看次数：不限制');
+          noteResultMeta.innerHTML = lines.map(function (l) { return '<div>' + l + '</div>'; }).join('');
+          noteResult.classList.add('show');
+          showMsg(noteMsg, data.message || '小纸条已生成，请复制取件码', 'ok', { toast: true });
+        } catch (e) {
+          showMsg(noteMsg, '网络错误：' + (e.message || e), 'err', { toast: true });
+        } finally {
+          sendNoteBtn.disabled = false;
+          sendNoteBtn.textContent = '生成取件码';
+        }
+      });
+      function copyNoteCode() {
+        var c = (noteResultCode.textContent || '').trim();
+        if (!c || c === '------') { if (UX) UX.toast('还没有取件码', 'warn'); return; }
+        if (UX) UX.copyText(c, '已复制取件码 ' + c);
+        else showMsg(noteMsg, '已复制取件码 ' + c, 'ok');
+      }
+      document.getElementById('noteCopyBtn').addEventListener('click', copyNoteCode);
+      document.getElementById('noteCopyLinkBtn').addEventListener('click', function () {
+        var link = (window.location.origin || '') + api('/tools/express?code=' + (noteResultCode.textContent || '').trim());
+        if (!link || link.indexOf('------') !== -1) { if (UX) UX.toast('还没有取件链接', 'warn'); return; }
+        if (UX) UX.copyText(link, '已复制取件链接');
+        else showMsg(noteMsg, '已复制取件链接', 'ok');
+      });
+
       // Pickup
       var pickupCode = document.getElementById('pickupCode');
       var pickupMsg = document.getElementById('pickupMsg');
@@ -585,6 +735,7 @@
       document.getElementById('lookupBtn').addEventListener('click', async function () {
         hideMsg(pickupMsg);
         pickupInfo.classList.remove('show');
+        hideNoteReader();
         var code = pickupCode.value.trim();
         if (code.length !== 6) {
           showMsg(pickupMsg, '请输入 6 位取件码', 'err');
@@ -674,6 +825,47 @@
           showMsg(pickupMsg, '开始下载：' + filename, 'ok');
         } catch (e) {
           showMsg(pickupMsg, '网络错误：' + (e.message || e), 'err');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      // Note reader
+      var noteReader = document.getElementById('noteReader');
+      var noteReaderMeta = document.getElementById('noteReaderMeta');
+      var noteReaderBody = document.getElementById('noteReaderBody');
+      function hideNoteReader() { noteReader.classList.remove('show'); noteReaderBody.textContent = ''; }
+      document.getElementById('readNoteBtn').addEventListener('click', async function () {
+        hideMsg(pickupMsg);
+        pickupInfo.classList.remove('show');
+        var code = pickupCode.value.trim();
+        if (code.length !== 6) {
+          showMsg(pickupMsg, '请输入 6 位取件码', 'err');
+          return;
+        }
+        var btn = document.getElementById('readNoteBtn');
+        btn.disabled = true;
+        try {
+          var res = await fetch(api('/tools/express/read/' + encodeURIComponent(code)), { method: 'GET' });
+          var data = {};
+          var rawText = await res.text();
+          if (rawText) { try { data = JSON.parse(rawText); } catch (e) { data = rawText; } }
+          if (!res.ok) {
+            var d = data.detail || '读取失败';
+            if (Array.isArray(d)) d = d.map(function (x) { return x.msg || x; }).join('; ');
+            showMsg(pickupMsg, d, 'err');
+            hideNoteReader();
+            return;
+          }
+          noteReaderMeta.innerHTML = [
+            '<strong>备注</strong>：' + (data.note || '（无）'),
+            data.burn_after ? '<strong>阅后即焚</strong>：内容已销毁' : '<strong>剩余次数</strong>：' + (data.downloads_left == null ? '不限制' : data.downloads_left),
+          ].map(function (l) { return '<div style="text-align:left;margin:2px 0">' + l + '</div>'; }).join('');
+          noteReaderBody.textContent = data.text || '';
+          noteReader.classList.add('show');
+          showMsg(pickupMsg, '小纸条内容如上', 'ok');
+        } catch (e) {
+          showMsg(pickupMsg, '网络错误：' + (e.message || e), 'err');
+          hideNoteReader();
         } finally {
           btn.disabled = false;
         }

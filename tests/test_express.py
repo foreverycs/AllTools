@@ -371,7 +371,6 @@ def test_list_delete_packages_admin_api(express_env, tmp_path):
     src2 = _touch(tmp_path / "b.txt", b"bbb")
     p1 = ex.create_package(src1, "a.txt", note="alpha", max_downloads=1)
     p2 = ex.create_package(src2, "b.txt", note="beta")
-
     listed = ex.list_packages(limit=50)
     ids = {p["id"] for p in listed}
     assert p1["id"] in ids and p2["id"] in ids
@@ -390,3 +389,92 @@ def test_list_delete_packages_admin_api(express_env, tmp_path):
     assert ex.delete_packages([p2["id"], "missing"]) == 1
     assert ex.get_package_by_id(p2["id"]) is None
     assert ex.delete_packages([]) == 0
+
+
+def test_text_package_create_and_claim(express_env):
+    ex, _ = express_env
+    pkg = ex.create_text_package(
+        "你好，小纸条", note="问候", max_downloads=2
+    )
+    assert pkg["is_text"] is True
+    assert pkg["file_count"] == 1
+    assert pkg["original_name"] == ""
+    code = pkg["code"]
+
+    info, err = ex.claim_text(code)
+    assert err is None and info is not None
+    assert info["_text"] == "你好，小纸条"
+    assert info["download_count"] == 1
+
+    info2, err2 = ex.claim_text(code)
+    assert err2 is None and info2["_text"] == "你好，小纸条"
+    # exhausted now
+    _, err3 = ex.claim_text(code)
+    assert err3 == "exhausted"
+
+    # lookup exposes preview, not full text
+    pub = ex.get_package_by_code(code)
+    assert pub["is_text"] is True
+    assert pub["text_preview"]
+
+
+def test_text_package_burn_after(express_env):
+    ex, _ = express_env
+    pkg = ex.create_text_package("阅后即焚正文", burn_after=True)
+    assert pkg["max_downloads"] == 1
+    code = pkg["code"]
+    info, err = ex.claim_text(code)
+    assert err is None and info["_text"] == "阅后即焚正文"
+    # second claim: payload cleared -> missing (already burned)
+    _, err2 = ex.claim_text(code)
+    assert err2 in ("missing", "exhausted")
+
+
+def test_api_send_text_and_read(express_client):
+    client, _, _ = express_client
+
+    r = client.post(
+        "/tools/express/send-text",
+        data={
+            "text": "第一行\n第二行",
+            "ttl_hours": "24",
+            "max_downloads": "2",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["is_text"] is True
+    code = body["code"]
+
+    lookup = client.post("/tools/express/lookup", data={"code": code})
+    assert lookup.status_code == 200
+    meta = lookup.json()
+    assert meta["is_text"] is True
+    assert "text" not in meta  # full body not leaked via lookup
+
+    read = client.get(f"/tools/express/read/{code}")
+    assert read.status_code == 200
+    read_body = read.json()
+    assert read_body["text"] == "第一行\n第二行"
+
+    read2 = client.post("/tools/express/read", data={"code": code})
+    assert read2.status_code == 200
+    assert read2.json()["text"] == "第一行\n第二行"
+
+    # exhausted (max_downloads=2)
+    read3 = client.get(f"/tools/express/read/{code}")
+    assert read3.status_code in (404, 410)
+
+
+def test_api_text_burn(express_client):
+    client, _, _ = express_client
+    r = client.post(
+        "/tools/express/send-text",
+        data={"text": "阅后即焚内容", "burn_after": "1"},
+    )
+    assert r.status_code == 200, r.text
+    code = r.json()["code"]
+    r1 = client.get(f"/tools/express/read/{code}")
+    assert r1.status_code == 200 and r1.json()["text"] == "阅后即焚内容"
+    r2 = client.get(f"/tools/express/read/{code}")
+    assert r2.status_code in (404, 410)
