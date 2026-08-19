@@ -59,76 +59,63 @@
     <section id="tools-section">
       <div id="tools-shell">
         <div id="tools-head">
-          <canvas id="hero-flow-canvas" aria-hidden="true"></canvas>
-          <div class="hero-demo-copy">
-            <div id="hero-demo-kicker"><i aria-hidden="true">✦</i> {{ tool_count }} 个免费在线工具</div>
-            <h1 id="hero-demo-heading"><span class="hero-main">日常办公，</span><span class="grad">一步到位</span></h1>
-            <div class="hero-demo-desc" id="hero-demo-description">PDF ↔ Word、发票合并、编码调试与文件快递。浏览器直达、无需安装客户端，文件在服务端安全处理，可私有化部署。</div>
-          </div>
-          <div id="tools-meta" aria-label="工具库概览">
-            <div class="tools-stat"><b id="total-tools-count">{{ tool_count }}</b><span id="hero-stat-total">免费工具</span><small id="hero-stat-total-note">即开即用</small></div>
-            <div class="tools-stat"><b>{{ module_count }}</b><span>业务模块</span><small>按栏目归类</small></div>
-            <div class="tools-stat"><b>{{ featured_count }}</b><span>特色功能</span><small>独立入口</small></div>
-            <div class="tools-stat tools-stat-live"><b><i aria-hidden="true"></i>在线</b><span>服务状态</span><small>随时可用</small></div>
-          </div>
-        </div>
-
-        <!-- ===== 常用功能快捷入口 ===== -->
-        <section class="home-recent" aria-labelledby="recent-tools-title">
-          <div class="home-recent-head">
-            <div>
-              <div class="home-recent-kicker">QUICK ACCESS</div>
-              <h2 id="recent-tools-title">常用功能</h2>
-              <p id="recent-tools-hint">最近使用的工具会显示在这里</p>
-            </div>
-            <button id="recent-clear" class="home-recent-clear" type="button">清除记录</button>
-          </div>
-          <div id="recent-tools" class="recent-tools-grid" aria-live="polite"></div>
-        </section>
-
-        {% if express_enabled %}
-        <!-- ===== 文件快递 Spotlight (特色功能横幅) ===== -->
-        <section class="express-spotlight" aria-label="文件快递">
-          <div class="es-card">
-            <div class="es-glow" aria-hidden="true"></div>
-            <div class="es-icon" aria-hidden="true">📦</div>
-            <div class="es-body">
-              <div class="es-kicker">特色功能 · 文件快递</div>
-              <h2>临时传文件，无需账号</h2>
-               <p>上传生成 6 位取件码，对方输入即可下载；可设有效期与下载次数，文件到期自动过期。</p>
-              <div class="es-actions">
-                <a class="es-btn-primary" href="{{ url_path('/tools/express') }}">
-                  <i aria-hidden="true">✉</i>寄送文件
-                </a>
-                <form class="es-pickup" id="es-pickup" action="{{ url_path('/tools/express') }}" method="get">
-                  <label for="es-code" class="es-pickup-label">取件码</label>
-                   <input id="es-code" name="code" inputmode="numeric" maxlength="6" autocomplete="off"
-                          placeholder="6 位取件码" aria-label="输入取件码" />
-                  <button type="submit" class="es-btn-ghost">取件</button>
-                </form>
+              <canvas id="hero-flow-canvas" aria-hidden="true"></canvas>
+              <div class="hero-demo-copy">
+                <div id="hero-demo-kicker"><i aria-hidden="true">✦</i> {{ tool_count }} 个免费在线工具</div>
+                <h1 id="hero-demo-heading"><span class="hero-main">日常办公，</span><span class="grad">一步到位</span></h1>
+                <div class="hero-demo-desc" id="hero-demo-description">PDF ↔ Word、发票合并、编码调试与文件快递。浏览器直达、无需安装客户端，文件在服务端安全处理，可私有化部署。</div>
+              </div>
+              <div id="tools-meta" aria-label="工具库概览">
+                <div class="tools-stat"><b id="total-tools-count">{{ tool_count }}</b><span id="hero-stat-total">免费工具</span><small id="hero-stat-total-note">即开即用</small></div>
+                <div class="tools-stat"><b>{{ module_count }}</b><span>业务模块</span><small>按栏目归类</small></div>
+                <div class="tools-stat"><b>{{ featured_count }}</b><span>特色功能</span><small>独立入口</small></div>
+                <div class="tools-stat tools-stat-live"><b><i aria-hidden="true"></i>在线</b><span>服务状态</span><small>随时可用</small></div>
               </div>
             </div>
-            <div class="es-steps" aria-hidden="true">
-              <span>① 上传得码</span><i>→</i><span>② 分享取件码</span><i>→</i><span>③ 对方下载</span>
-            </div>
-          </div>
-        </section>
-        {% endif %}
-      </div>
 
-      <div id="tools-catalog">
-        <div id="filter-wrap">
-          <div id="filter-strip">
-            <div id="filter-tabs" role="tablist">
-              <button class="ft active" data-filter="" data-label="全部工具" type="button" role="tab"><i aria-hidden="true">◇</i><span>全部工具</span><span class="ft-count">{{ tool_count }}</span></button>
-              {% for item in nav_items %}
-              <button class="ft" id="col-{{ item.id }}" data-filter="{{ item.id }}" data-label="{{ item.name }}" type="button" role="tab"><i aria-hidden="true">{{ item.icon }}</i><span>{{ item.name }}</span><span class="ft-count">{{ item.tool_count }}</span></button>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
+            <!-- ===== 常用功能快捷入口 ===== -->
+            <section class="home-recent" aria-labelledby="recent-tools-title">
+              <div class="home-recent-head">
+                <div>
+                  <div class="home-recent-kicker">QUICK ACCESS</div>
+                  <h2 id="recent-tools-title">常用功能</h2>
+                  <p id="recent-tools-hint">最近使用的工具会显示在这里</p>
+                </div>
+                <button id="recent-clear" class="home-recent-clear" type="button">清除记录</button>
+              </div>
+              <div id="recent-tools" class="recent-tools-grid" aria-live="polite"></div>
+            </section>
 
-        <div id="catalog-main">
+            {% if express_enabled %}
+            <!-- ===== 文件快递 Spotlight (特色功能横幅) ===== -->
+            <section class="express-spotlight" aria-label="文件快递">
+              <div class="es-card">
+                <div class="es-glow" aria-hidden="true"></div>
+                <div class="es-icon" aria-hidden="true">📦</div>
+                <div class="es-body">
+                  <div class="es-kicker">特色功能 · 文件快递</div>
+                  <h2>临时传文件，无需账号</h2>
+                   <p>上传生成 6 位取件码，对方输入即可下载；可设有效期与下载次数，文件到期自动过期。</p>
+                  <div class="es-actions">
+                    <a class="es-btn-primary" href="{{ url_path('/tools/express') }}">
+                      <i aria-hidden="true">✉</i>寄送文件
+                    </a>
+                    <form class="es-pickup" id="es-pickup" action="{{ url_path('/tools/express') }}" method="get">
+                      <label for="es-code" class="es-pickup-label">取件码</label>
+                       <input id="es-code" name="code" inputmode="numeric" maxlength="6" autocomplete="off"
+                              placeholder="6 位取件码" aria-label="输入取件码" />
+                      <button type="submit" class="es-btn-ghost">取件</button>
+                    </form>
+                  </div>
+                </div>
+                <div class="es-steps" aria-hidden="true">
+                  <span>① 上传得码</span><i>→</i><span>② 分享取件码</span><i>→</i><span>③ 对方下载</span>
+                </div>
+              </div>
+            </section>
+            {% endif %}
+          </div>
+
           <div id="tools-search-wrap">
             <div id="tools-search-wrapper" role="search">
               <svg class="ph-magnifying-glass" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -140,7 +127,20 @@
           </div>
           <div id="search-overlay"><div class="so-inner"><div class="so-spinner"></div><div class="so-text">搜索中…</div></div></div>
 
-          <div id="tools-grid">
+          <div id="tools-catalog">
+            <div id="filter-wrap">
+              <div id="filter-strip">
+                <div id="filter-tabs" role="tablist">
+                  <button class="ft active" data-filter="" data-label="全部工具" type="button" role="tab"><i aria-hidden="true">◇</i><span>全部工具</span><span class="ft-count">{{ tool_count }}</span></button>
+                  {% for item in nav_items %}
+                  <button class="ft" id="col-{{ item.id }}" data-filter="{{ item.id }}" data-label="{{ item.name }}" type="button" role="tab"><i aria-hidden="true">{{ item.icon }}</i><span>{{ item.name }}</span><span class="ft-count">{{ item.tool_count }}</span></button>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+
+<div id="catalog-main">
+              <div id="tools-grid">
             {% for t in tools_catalog %}
             <a href="{{ url_path(t.route) }}" class="tc" data-cat="{{ t.category }}" data-accent="{{ t.accent or 'indigo' }}">
               <div class="tc-i"><i aria-hidden="true">{{ t.icon }}</i></div>

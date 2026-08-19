@@ -1035,4 +1035,23 @@ html.light-mode footer a:hover,html:not(.light-mode) footer a:hover{color:var(--
   .es-pickup input{ width: 92px; }
 }
 
+/* ============================================================
+   首页布局优化：搜索框置于特色功能块下方；侧边栏"全部工具"
+   仅覆盖工具网格区域，顶部与第一个工具卡片（PDF 转 Word）对齐
+   ============================================================ */
+@media (min-width: 761px){
+  /* 搜索框全宽置于特色功能块下方，与上方 Hero/特色功能块同宽 */
+  #tools-search-wrap{
+    max-width: 1320px;
+    margin: 0 auto 34px;
+    padding: 0 40px;
+  }
+  /* 侧边栏仅覆盖工具网格区域，滚动时吸附，顶部与第一个工具卡片对齐 */
+  #filter-wrap{
+    position: sticky;
+    top: 96px;
+    z-index: 5;
+  }
+}
+
 
