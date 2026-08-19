@@ -74,11 +74,20 @@ def _render_qr_data_uri(payload: str) -> str:
 
 
 def _absolute_pickup_url(pickup_path: str, request: Request) -> str:
-    """Convert a (possibly prefixed) pickup path into an absolute URL for QR."""
-    base = str(request.base_url).rstrip("/")
-    if pickup_path.startswith("/"):
-        return base + pickup_path
-    return base + "/" + pickup_path
+    """Public absolute pickup URL honoring ``SITE_ORIGIN`` + ROOT_PATH.
+
+    The QR must point at the configured public domain, never at the
+    reverse-proxy's internal host / container IP. ``pickup_path`` is already
+    fully-prefixed by ``url_path`` (applies ROOT_PATH); we just prepend the
+    public origin. When ``SITE_ORIGIN`` is unset there is no public host, so we
+    return the relative path (frontend keeps using ``pickup_url``).
+    """
+    from core.seo import site_origin
+
+    origin = site_origin()
+    if not origin:
+        return pickup_path
+    return origin.rstrip("/") + "/" + pickup_path.lstrip("/")
 
 
 def _sync_save_upload(src, dest: str, limit: int, chunk_size: int) -> int:

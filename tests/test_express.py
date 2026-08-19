@@ -24,6 +24,7 @@ def express_env(tmp_path, monkeypatch):
     monkeypatch.setenv("DOTENV_OVERRIDE", "0")
     monkeypatch.setenv("EXPRESS_DEFAULT_TTL_HOURS", "24")
     monkeypatch.setenv("EXPRESS_MAX_TTL_HOURS", "168")
+    monkeypatch.setenv("SITE_ORIGIN", "http://express.test")
 
     import core.settings as settings_mod
     import storage.express as ex
