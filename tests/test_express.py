@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import io
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -36,11 +38,11 @@ def express_env(tmp_path, monkeypatch):
 @pytest.fixture()
 def express_client(express_env, monkeypatch):
     ex, d = express_env
+    import app as app_mod
     import core.api_rate_limit as rl
     import core.concurrency as concurrency_mod
     import core.settings as settings_mod
     import core.tool_flags as flags_mod
-    import app as app_mod
 
     settings_mod.clear_settings_cache()
     concurrency_mod.reset_semaphore()
@@ -271,7 +273,7 @@ def test_api_send_lookup_pickup(express_client):
     assert "空" in empty.json().get("detail", "")
 
     missing = client.post("/tools/express/send", data={"ttl_hours": "24"})
-    assert missing.status_code == 422
+    assert missing.status_code in (400, 422)
 
     send = client.post(
         "/tools/express/send",
@@ -307,6 +309,43 @@ def test_api_send_lookup_pickup(express_client):
     # max_downloads=2 exhausted
     dl3 = client.get(f"/tools/express/pickup/{code}")
     assert dl3.status_code == 410
+
+
+def test_api_multi_file_and_burn(express_client):
+    client, ex, _ = express_client
+
+    multi = client.post(
+        "/tools/express/send",
+        files=[
+            ("files", ("a.txt", b"aaa", "text/plain")),
+            ("files", ("b.txt", b"bbb", "text/plain")),
+        ],
+        data={"ttl_hours": "24", "max_downloads": "3"},
+    )
+    assert multi.status_code == 200, multi.text
+    body = multi.json()
+    assert body["file_count"] == 2
+    assert body["original_name"].endswith(".zip")
+    code = body["code"]
+    dl = client.get(f"/tools/express/pickup/{code}")
+    assert dl.status_code == 200
+    assert zipfile.is_zipfile(io.BytesIO(dl.content))
+
+    burn = client.post(
+        "/tools/express/send",
+        files={"file": ("once.txt", b"secret", "text/plain")},
+        data={"ttl_hours": "24", "burn_after": "1"},
+    )
+    assert burn.status_code == 200, burn.text
+    bbody = burn.json()
+    assert bbody["burn_after"] is True
+    assert bbody["max_downloads"] == 1
+    bcode = bbody["code"]
+    dl1 = client.get(f"/tools/express/pickup/{bcode}")
+    assert dl1.status_code == 200
+    assert dl1.content == b"secret"
+    dl2 = client.get(f"/tools/express/pickup/{bcode}")
+    assert dl2.status_code in (404, 410)
 
 
 def test_api_bad_code_and_ttl(express_client):

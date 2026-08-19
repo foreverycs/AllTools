@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .router import router
+from .router import router as router
 
 PLUGIN_VERSION = "1.0.0"
 
@@ -12,11 +12,11 @@ TOOL = {
     "category": "text",
     # Featured: shown as a homepage highlight, not listed under module grids.
     "featured": True,
-    "description": "上传文件生成 6 位取件码，对方输入取件码即可下载；可设有效期与下载次数。",
+    "description": "上传文件生成 6 位取件码，对方输入即可下载；支持多文件打包、有效期、下载次数与阅后即焚。",
     "icon": "📦",
     "route": "/tools/express",
     "badge": "特色 · 取件码分享",
-    "features": ["6 位取件码", "有效期", "下载次数", "一键复制"],
+    "features": ["6 位取件码", "多文件打包", "阅后即焚", "有效期 / 次数"],
     "cta": "开始寄送",
     "accent": "indigo",
     "lead": "临时传文件无需账号：生成取件码，对方输入即可下载。",

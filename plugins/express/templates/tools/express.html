@@ -201,7 +201,7 @@
         <div class="icon" aria-hidden="true">📦</div>
         <div>
           <h1>文件快递</h1>
-          <p>上传文件生成 6 位取件码，对方输入取件码即可下载。适合临时传文件，无需账号。</p>
+          <p>上传文件生成 6 位取件码，对方输入即可下载。支持多文件自动打包、下载次数与阅后即焚。</p>
         </div>
       </div>
 
@@ -214,9 +214,9 @@
       <div class="pane active" id="pane-send" role="tabpanel">
         <div class="drop" id="dropZone">
           <strong>点击或拖拽文件到这里</strong>
-          <span>单文件，最大 {{ limits.max_mb }} MB</span>
+          <span>可多选，最多 {{ limits.max_files|default(20) }} 个 · 合计 ≤ {{ limits.max_mb }} MB · 多文件自动打 ZIP</span>
           <div class="file-name" id="fileLabel" hidden></div>
-          <input type="file" id="fileInput" />
+          <input type="file" id="fileInput" multiple />
         </div>
         <div class="row">
           <div class="field">
@@ -239,13 +239,17 @@
               <option value="5">5 次</option>
               <option value="10">10 次</option>
             </select>
-            <div class="hint">用完后自动失效</div>
+            <div class="hint">用完后自动失效；阅后即焚时固定 1 次</div>
           </div>
         </div>
         <div class="field" style="margin-bottom:12px">
           <label for="note">备注（可选）</label>
           <input type="text" id="note" maxlength="200" placeholder="给对方的提示，如「合同扫描件」" />
         </div>
+        <label class="field" style="margin-bottom:12px;flex-direction:row;align-items:center;gap:8px;display:flex">
+          <input type="checkbox" id="burnAfter" style="width:auto" />
+          <span style="font-size:13px;font-weight:650;color:var(--ink-2)">阅后即焚（下载一次后立即销毁文件）</span>
+        </label>
         <div class="actions">
           <button type="button" class="btn btn-primary" id="sendBtn">生成取件码</button>
         </div>
@@ -384,16 +388,22 @@
         document.querySelector('.tab[data-tab="pickup"]').click();
       }
 
-      // Drop zone
+      // Drop zone (multi-file)
       var drop = document.getElementById('dropZone');
       var fileInput = document.getElementById('fileInput');
       var fileLabel = document.getElementById('fileLabel');
-      var chosenFile = null;
-      function setFile(f) {
-        chosenFile = f || null;
-        if (f) {
+      var chosenFiles = [];
+      var maxFiles = {{ limits.max_files|default(20)|int }};
+      function setFiles(list) {
+        chosenFiles = Array.prototype.slice.call(list || []).filter(Boolean);
+        if (chosenFiles.length) {
           fileLabel.hidden = false;
-          fileLabel.textContent = f.name + ' · ' + fmtBytes(f.size);
+          if (chosenFiles.length === 1) {
+            fileLabel.textContent = chosenFiles[0].name + ' · ' + fmtBytes(chosenFiles[0].size);
+          } else {
+            var total = chosenFiles.reduce(function (s, f) { return s + (f.size || 0); }, 0);
+            fileLabel.textContent = chosenFiles.length + ' 个文件 · 合计 ' + fmtBytes(total);
+          }
         } else {
           fileLabel.hidden = true;
           fileLabel.textContent = '';
@@ -401,7 +411,7 @@
       }
       drop.addEventListener('click', function () { fileInput.click(); });
       fileInput.addEventListener('change', function () {
-        setFile(fileInput.files && fileInput.files[0]);
+        setFiles(fileInput.files);
       });
       ['dragenter', 'dragover'].forEach(function (ev) {
         drop.addEventListener(ev, function (e) {
@@ -417,17 +427,26 @@
       });
       drop.addEventListener('drop', function (e) {
         var files = e.dataTransfer && e.dataTransfer.files;
-        var f = files && files[0];
-        if (f) {
-          setFile(f);
-          // Keep <input> in sync when the browser allows it (helps some mobile WebViews).
+        if (files && files.length) {
+          setFiles(files);
           try {
             if (typeof DataTransfer !== 'undefined') {
               var dt = new DataTransfer();
-              dt.items.add(f);
+              Array.prototype.forEach.call(files, function (f) { dt.items.add(f); });
               fileInput.files = dt.files;
             }
           } catch (err) { /* ignore */ }
+        }
+      });
+
+      var burnAfter = document.getElementById('burnAfter');
+      var maxDownloadsEl = document.getElementById('maxDownloads');
+      burnAfter.addEventListener('change', function () {
+        if (burnAfter.checked) {
+          maxDownloadsEl.value = '1';
+          maxDownloadsEl.disabled = true;
+        } else {
+          maxDownloadsEl.disabled = false;
         }
       });
 
@@ -442,27 +461,41 @@
       sendBtn.addEventListener('click', async function () {
         hideMsg(sendMsg);
         sendResult.classList.remove('show');
-        // Prefer in-memory choice; fall back to input (e.g. after page restore).
-        var file = chosenFile || (fileInput.files && fileInput.files[0]) || null;
-        if (!file) {
+        var files = chosenFiles.length
+          ? chosenFiles
+          : Array.prototype.slice.call((fileInput.files && fileInput.files) || []);
+        if (!files.length) {
           showMsg(sendMsg, '请先选择要寄送的文件', 'err');
           return;
         }
-        if (file.size === 0) {
-          showMsg(sendMsg, '文件为空，请重新选择', 'err');
+        if (files.length > maxFiles) {
+          showMsg(sendMsg, '一次最多 ' + maxFiles + ' 个文件', 'err');
           return;
         }
-        if (maxBytes > 0 && file.size > maxBytes) {
-          showMsg(sendMsg, '文件过大（上限 ' + Math.max(1, Math.floor(maxBytes / (1024 * 1024))) + ' MB）', 'err');
+        var totalSize = 0;
+        for (var i = 0; i < files.length; i++) {
+          if (files[i].size === 0) {
+            showMsg(sendMsg, '存在空文件，请重新选择', 'err');
+            return;
+          }
+          totalSize += files[i].size || 0;
+        }
+        if (maxBytes > 0 && totalSize > maxBytes) {
+          showMsg(sendMsg, '合计过大（上限 ' + Math.max(1, Math.floor(maxBytes / (1024 * 1024))) + ' MB）', 'err');
           return;
         }
         sendBtn.disabled = true;
         sendBtn.textContent = '上传中…';
         try {
           var fd = new FormData();
-          fd.append('file', file, file.name || 'file');
+          if (files.length === 1) {
+            fd.append('file', files[0], files[0].name || 'file');
+          } else {
+            files.forEach(function (f) { fd.append('files', f, f.name || 'file'); });
+          }
           fd.append('ttl_hours', document.getElementById('ttlHours').value);
-          fd.append('max_downloads', document.getElementById('maxDownloads').value);
+          fd.append('max_downloads', maxDownloadsEl.value);
+          fd.append('burn_after', burnAfter.checked ? '1' : '0');
           var note = document.getElementById('note').value || '';
           if (note) fd.append('note', note);
           var res = await fetch(api('/tools/express/send'), {
@@ -490,7 +523,12 @@
             '大小：' + fmtBytes(data.size_bytes),
             '过期：' + (data.expires_at || '') + '（约 ' + fmtRemain(data.seconds_remaining) + '）',
           ];
-          if (data.max_downloads > 0) {
+          if (data.file_count && data.file_count > 1) {
+            lines.push('包含：' + data.file_count + ' 个文件（ZIP）');
+          }
+          if (data.burn_after) {
+            lines.push('阅后即焚：下载 1 次后销毁');
+          } else if (data.max_downloads > 0) {
             lines.push('可下载：' + data.max_downloads + ' 次');
           } else {
             lines.push('下载次数：不限制');
@@ -574,7 +612,12 @@
             '<strong>大小</strong>：' + fmtBytes(data.size_bytes),
             '<strong>剩余有效</strong>：' + fmtRemain(data.seconds_remaining),
           ];
-          if (data.max_downloads > 0) {
+          if (data.file_count && data.file_count > 1) {
+            lines.push('<strong>包含</strong>：' + data.file_count + ' 个文件');
+          }
+          if (data.burn_after) {
+            lines.push('<strong>阅后即焚</strong>：下载后立即销毁');
+          } else if (data.max_downloads > 0) {
             lines.push('<strong>剩余次数</strong>：' + (data.downloads_left == null ? '—' : data.downloads_left));
           }
           if (data.note) lines.push('<strong>备注</strong>：' + data.note);

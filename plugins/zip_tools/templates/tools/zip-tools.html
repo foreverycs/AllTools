@@ -1,0 +1,352 @@
+{% extends "tools/base.html" %}
+{% set page_title = "ZIP 工具" %}
+{% set page_description = "ZIP 打包、目录预览与安全解压" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/#col-text") %}
+{% set back_label = "文本工具" %}
+{% set chip = "工具 · ZIP" %}
+
+{% block head_styles %}
+<style>
+.tool-page .opts{
+  margin-top: 16px; display: grid; gap: 14px;
+  padding: 16px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 16px;
+}
+.tool-page .action-row{
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+@media (max-width: 640px){ .tool-page .action-row{ grid-template-columns: 1fr; } }
+.tool-page .a-card{
+  position: relative; border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 8px 10px; background: var(--surface-solid); cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background .15s; text-align: center;
+}
+.tool-page .a-card:hover{ border-color: var(--c-border); }
+.tool-page .a-card.active{
+  border-color: var(--c); background: var(--c-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent);
+}
+.tool-page .a-card input{ position: absolute; opacity: 0; pointer-events: none; }
+.tool-page .a-card .fl{ font-size: 13px; font-weight: 750; color: var(--ink); }
+.tool-page .a-card .fh{ font-size: 10px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+.tool-page label.field{
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.tool-page label.field input, .tool-page label.field select{
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px;
+  font-size: 13px; font-weight: 500; outline: none; background: var(--surface-solid); color: var(--ink);
+}
+.tool-page .hint{ color: var(--muted-2); font-size: 11px; font-weight: 500; }
+.tool-page .zip-table{
+  width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 12px;
+}
+.tool-page .zip-table th, .tool-page .zip-table td{
+  border-bottom: 1px solid var(--line); padding: 8px 6px; text-align: left;
+}
+.tool-page .zip-table th{ color: var(--muted); font-weight: 700; }
+.tool-page .zip-table td.name{ word-break: break-all; font-family: var(--mono); font-size: 11.5px; }
+.tool-page .preview-box{
+  display: none; margin-top: 12px; padding: 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface-solid); max-height: 320px; overflow: auto;
+}
+.tool-page .preview-box.show{ display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">📁</div>
+        <div>
+          <h1>ZIP 工具</h1>
+          <p>多文件打包为 ZIP、查看压缩包目录、安全解压（防路径穿越与过度膨胀）。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">多文件打包</span>
+        <span class="feat">目录预览</span>
+        <span class="feat">安全解压</span>
+        <span class="feat">压缩级别</span>
+      </div>
+
+      <div class="opts">
+        <div class="opts-title">选择操作</div>
+        <div class="action-row" id="actionRow" role="radiogroup">
+          <label class="a-card active" data-a="pack">
+            <input type="radio" name="action" value="pack" checked />
+            <div class="fl">打包</div>
+            <div class="fh">多文件 → ZIP</div>
+          </label>
+          <label class="a-card" data-a="list">
+            <input type="radio" name="action" value="list" />
+            <div class="fl">预览</div>
+            <div class="fh">查看 ZIP 目录</div>
+          </label>
+          <label class="a-card" data-a="extract">
+            <input type="radio" name="action" value="extract" />
+            <div class="fl">解压</div>
+            <div class="fh">解压并下载</div>
+          </label>
+        </div>
+        <label class="field" id="fieldLevel">
+          压缩级别（0=仅存储，9=最强）
+          <input type="number" id="level" min="0" max="9" value="6" />
+          <span class="hint">仅打包时生效。6 为均衡默认。</span>
+        </label>
+      </div>
+
+      {% with
+  accept='*/*',
+  multiple=true,
+  title_html='点击或拖拽文件到此处',
+  hint='打包可多选；预览/解压请选单个 .zip'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
+      <ul class="file-list" id="list"></ul>
+      <div class="preview-box" id="previewBox">
+        <table class="zip-table" id="zipTable">
+          <thead><tr><th>名称</th><th>大小</th><th>压缩后</th></tr></thead>
+          <tbody id="zipBody"></tbody>
+        </table>
+      </div>
+
+      <button id="btn" disabled>开始处理</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div class="stats" id="stats">
+        <div class="stat"><div class="k">文件数</div><div class="v" id="statFiles">—</div></div>
+        <div class="stat"><div class="k">输入</div><div class="v" id="statIn">—</div></div>
+        <div class="stat"><div class="k">输出</div><div class="v" id="statOut">—</div></div>
+      </div>
+      <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const MAX_BATCH = {{ max_files|default(20) }};
+    const fileInput = document.getElementById("file");
+    const drop = document.getElementById("drop");
+    const list = document.getElementById("list");
+    const btn = document.getElementById("btn");
+    const status = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const UX = window.ToolkitUX || null;
+    const progress = document.getElementById("progress");
+    const bar = document.getElementById("bar");
+    const stats = document.getElementById("stats");
+    const statFiles = document.getElementById("statFiles");
+    const statIn = document.getElementById("statIn");
+    const statOut = document.getElementById("statOut");
+    const actionRow = document.getElementById("actionRow");
+    const fieldLevel = document.getElementById("fieldLevel");
+    const level = document.getElementById("level");
+    const previewBox = document.getElementById("previewBox");
+    const zipBody = document.getElementById("zipBody");
+    /** @type {File[]} */
+    let selected = [];
+
+    const { fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl } = window.ToolkitUpload;
+
+    function currentAction() {
+      return (actionRow.querySelector("input:checked") || {}).value || "pack";
+    }
+    function isZip(f) {
+      if (!f) return false;
+      return /\.zip$/i.test(f.name || "") || (f.type || "") === "application/zip";
+    }
+    function syncPanels() {
+      var a = currentAction();
+      fieldLevel.hidden = a !== "pack";
+      previewBox.classList.remove("show");
+      zipBody.innerHTML = "";
+      if (a === "pack") drop.removeAttribute("data-single");
+      else drop.setAttribute("data-single", "1");
+      // reset accept-ish filter in note
+      renderList();
+    }
+    actionRow.addEventListener("change", function (e) {
+      var input = e.target;
+      if (!input || input.name !== "action") return;
+      actionRow.querySelectorAll(".a-card").forEach(function (c) {
+        c.classList.toggle("active", c.getAttribute("data-a") === input.value);
+      });
+      selected = [];
+      syncPanels();
+      setStatus("");
+      if (UX) UX.hideResult(resultEl);
+    });
+
+    function setProgress(pct) {
+      progress.classList.add("show");
+      bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    }
+    function hideProgress() {
+      progress.classList.remove("show");
+      bar.style.width = "0%";
+    }
+    function setStatus(text, cls) {
+      status.textContent = text || "";
+      status.className = cls || "";
+    }
+    function clearStats() {
+      stats.classList.remove("show");
+      statFiles.textContent = "—";
+      statIn.textContent = "—";
+      statOut.textContent = "—";
+    }
+    function renderList() {
+      list.innerHTML = "";
+      selected.forEach(function (f) {
+        var li = document.createElement("li");
+        var icon = document.createElement("span"); icon.className = "fi"; icon.textContent = "📄";
+        var name = document.createElement("span"); name.className = "fname"; name.title = f.name; name.textContent = f.name;
+        var size = document.createElement("span"); size.className = "fsize"; size.textContent = fmtSize(f.size);
+        var rm = document.createElement("button"); rm.type = "button"; rm.textContent = "移除";
+        rm.addEventListener("click", function (e) {
+          e.preventDefault();
+          selected = selected.filter(function (x) { return x !== f; });
+          renderList(); clearStats();
+          if (UX) UX.hideResult(resultEl);
+        });
+        li.append(icon, name, size, rm);
+        list.appendChild(li);
+      });
+      var a = currentAction();
+      var valid = a === "pack" ? selected.length >= 1 : selected.length === 1;
+      btn.disabled = !valid;
+      btn.textContent = a === "pack" ? "打包下载 ZIP" : a === "list" ? "预览目录" : "解压并下载";
+    }
+    function addFiles(fileList) {
+      var incoming = Array.from(fileList || []);
+      var a = currentAction();
+      var errors = [];
+      for (var j = 0; j < incoming.length; j++) {
+        var f = incoming[j];
+        if (f.size > MAX_BYTES) { errors.push(f.name + ": 超过 50 MB"); continue; }
+        if (a === "pack") {
+          if (selected.length >= MAX_BATCH) { errors.push("文件数已达上限 " + MAX_BATCH); break; }
+          selected.push(f);
+        } else {
+          if (!isZip(f)) { errors.push((f.name || "文件") + ": 仅支持 ZIP"); continue; }
+          selected = [f];
+        }
+      }
+      renderList();
+      if (errors.length) {
+        if (UX) UX.showResult(resultEl, { kind: "err", title: "未添加", detail: errors.join("；") });
+        else setStatus(errors.join("；"), "err");
+      } else { setStatus(""); if (UX) UX.hideResult(resultEl); }
+      fileInput.value = "";
+    }
+    bindDropZone({
+      drop: drop, input: fileInput, paste: false,
+      onFiles: addFiles,
+    });
+
+    btn.addEventListener("click", async function () {
+      if (!selected.length) return;
+      var a = currentAction();
+      btn.disabled = true;
+      clearStats();
+      if (UX) UX.hideResult(resultEl);
+      previewBox.classList.remove("show");
+
+      if (a === "list") {
+        setStatus("正在读取目录…", "info");
+        setProgress(20);
+        var fd = new FormData();
+        fd.append("file", selected[0], selected[0].name);
+        try {
+          var res = await fetch(appUrl("/tools/zip-tools/list"), { method: "POST", body: fd, credentials: "same-origin" });
+          var data = await res.json().catch(function () { return {}; });
+          if (!res.ok) {
+            var d = data.detail || "预览失败";
+            if (UX) UX.showResult(resultEl, { kind: "err", title: "预览失败", detail: d });
+            else setStatus(d, "err");
+            return;
+          }
+          zipBody.innerHTML = "";
+          (data.entries || []).forEach(function (e) {
+            var tr = document.createElement("tr");
+            var td1 = document.createElement("td"); td1.className = "name"; td1.textContent = e.name || "";
+            var td2 = document.createElement("td"); td2.textContent = e.is_dir ? "—" : fmtSize(e.size || 0);
+            var td3 = document.createElement("td"); td3.textContent = e.is_dir ? "—" : fmtSize(e.compressed_size || 0);
+            tr.append(td1, td2, td3);
+            zipBody.appendChild(tr);
+          });
+          previewBox.classList.add("show");
+          statFiles.textContent = String(data.count || 0);
+          statIn.textContent = fmtSize(data.total_compressed || 0);
+          statOut.textContent = fmtSize(data.total_uncompressed || 0);
+          stats.classList.add("show");
+          setStatus("共 " + (data.count || 0) + " 个条目", "ok");
+          setProgress(100);
+        } catch (err) {
+          setStatus((err && err.message) || "网络错误", "err");
+        } finally {
+          btn.disabled = false;
+          setTimeout(hideProgress, 400);
+        }
+        return;
+      }
+
+      setStatus(a === "pack" ? "正在打包…" : "正在解压…", "info");
+      setProgress(8);
+      var fd2 = new FormData();
+      fd2.append("action", a);
+      selected.forEach(function (f) { fd2.append("files", f, f.name); });
+      if (a === "pack") fd2.append("compresslevel", level.value || "6");
+      try {
+        var xhr = await xhrPost(appUrl("/tools/zip-tools/convert"), fd2, {
+          processHint: "上传完成，正在处理…",
+          longWaitSec: 30,
+          onProgress: function (pct) { setProgress(pct); },
+          onStatus: function (text, cls) { setStatus(text, cls || "info"); },
+        });
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var blob = xhr.response;
+          var name = downloadName(xhr.getResponseHeader("Content-Disposition"),
+            a === "pack" ? "archive.zip" : "extracted.zip");
+          var nFiles = parseInt(xhr.getResponseHeader("X-Input-Files") || xhr.getResponseHeader("X-Output-Files") || "0", 10);
+          var inB = parseInt(xhr.getResponseHeader("X-Input-Bytes") || "0", 10);
+          var outB = parseInt(xhr.getResponseHeader("X-Output-Bytes") || xhr.getResponseHeader("X-Uncompressed-Bytes") || "0", 10);
+          if (nFiles) statFiles.textContent = String(nFiles);
+          if (inB) statIn.textContent = fmtSize(inB);
+          if (outB) statOut.textContent = fmtSize(outB);
+          stats.classList.add("show");
+          saveBlob(blob, name);
+          var msg = a === "pack" ? "打包完成" : "解压完成";
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, {
+              kind: "ok", title: msg, detail: msg,
+              filename: name, downloadBlob: blob, downloadName: name,
+              againLabel: "继续", onAgain: function () { UX.hideResult(resultEl); },
+            });
+          } else setStatus(msg, "ok");
+          setProgress(100);
+        } else {
+          var em = await xhrErrorMessage(xhr);
+          if (UX) { setStatus("", ""); UX.showResult(resultEl, { kind: "err", title: "失败", detail: em || "失败" }); }
+          else setStatus(em || "失败", "err");
+        }
+      } catch (err) {
+        var em2 = (err && err.message) || "网络错误";
+        if (UX) { setStatus("", ""); UX.showResult(resultEl, { kind: "err", title: "失败", detail: em2 }); }
+        else setStatus(em2, "err");
+      } finally {
+        btn.disabled = false;
+        setTimeout(hideProgress, 400);
+      }
+    });
+    syncPanels();
+</script>
+{% endblock %}

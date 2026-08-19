@@ -1,14 +1,16 @@
-"""文件快递 — 取件码上传 / 取件下载。"""
+"""文件快递 — 取件码上传 / 取件下载（支持多文件打包与阅后即焚）。"""
 
 from __future__ import annotations
 
 import asyncio
 import os
 import tempfile
-from typing import Optional
+import zipfile
+from contextlib import suppress
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.background import BackgroundTask
 from starlette.requests import Request
 
 from storage.express import (
@@ -26,6 +28,7 @@ from tools.common import (
     check_upload_size_header,
     content_disposition,
     templates,
+    to_bool,
     upload_chunk_size,
     url_path,
     with_nav,
@@ -40,14 +43,12 @@ _ERROR_MESSAGES = {
     "missing": "文件已丢失，请重新寄送",
 }
 
+# Multi-file send: hard caps (also bound by express_max_bytes total).
+_MAX_SEND_FILES = 20
+
 
 def _sync_save_upload(src, dest: str, limit: int, chunk_size: int) -> int:
-    """Copy an already-parsed upload spool to ``dest`` in a worker thread.
-
-    Starlette fully parses the request body into ``UploadFile.file`` (a spooled
-    temp file) before this handler runs, so this is a plain disk-to-disk copy.
-    Running it off the event loop keeps large uploads from blocking the server.
-    """
+    """Copy an already-parsed upload spool to ``dest`` in a worker thread."""
     total = 0
     with open(dest, "wb") as out:
         while True:
@@ -66,18 +67,12 @@ def _sync_save_upload(src, dest: str, limit: int, chunk_size: int) -> int:
     return total
 
 
-def _spooled_disk_path(file: UploadFile) -> Optional[str]:
-    """Return the on-disk path of a large upload's spool, if any.
-
-    Small uploads stay in memory (no path); large ones are rolled to a real
-    temp file by Starlette, which we can rename straight into place (no copy).
-    """
+def _spooled_disk_path(file: UploadFile) -> str | None:
     try:
         p = file.file.name
     except Exception:
         return None
     return p if p and os.path.isfile(p) else None
-
 
 
 def _tool_ctx(request: Request) -> dict:
@@ -93,6 +88,7 @@ def _tool_ctx(request: Request) -> dict:
             "max_mb": max(1, max_b // (1024 * 1024)),
             "default_ttl_hours": express_default_ttl_hours(),
             "max_ttl_hours": express_max_ttl_hours(),
+            "max_files": _MAX_SEND_FILES,
         },
         "prefill_code": (request.query_params.get("code") or "").strip(),
     }
@@ -114,12 +110,13 @@ async def api_limits():
             "max_bytes": express_max_bytes(),
             "default_ttl_hours": express_default_ttl_hours(),
             "max_ttl_hours": express_max_ttl_hours(),
+            "max_files": _MAX_SEND_FILES,
             **{k: v for k, v in express_stats().items() if k in ("package_count",)},
         }
     )
 
 
-def _parse_ttl(raw: Optional[str]) -> int:
+def _parse_ttl(raw: str | None) -> int:
     default = express_default_ttl_hours()
     max_h = express_max_ttl_hours()
     if raw is None or str(raw).strip() == "":
@@ -137,7 +134,7 @@ def _parse_ttl(raw: Optional[str]) -> int:
     return hours
 
 
-def _parse_max_downloads(raw: Optional[str]) -> int:
+def _parse_max_downloads(raw: str | None) -> int:
     if raw is None or str(raw).strip() == "":
         return 0
     try:
@@ -151,76 +148,198 @@ def _parse_max_downloads(raw: Optional[str]) -> int:
     return n
 
 
-@router.post("/send")
-async def api_send(
-    request: Request,
-    file: UploadFile = File(...),
-    ttl_hours: Optional[str] = Form(None),
-    max_downloads: Optional[str] = Form(None),
-    note: Optional[str] = Form(None),
-):
-    """Upload a file and receive a 6-digit pickup code."""
-    ensure_express_dir()
-    limit = express_max_bytes()
-    # Express-specific limit (may differ from global MAX_UPLOAD_BYTES).
-    if file.size is not None and file.size > limit:
+def _safe_zip_name(name: str, used: set) -> str:
+    from core.filename import sanitize_filename
+
+    base = sanitize_filename(name or "file", "file", stem_limit=80, ext_limit=20)
+    candidate = base
+    n = 1
+    while candidate.lower() in used:
+        stem, ext = os.path.splitext(base)
+        candidate = f"{stem}_{n}{ext}"
+        n += 1
+    used.add(candidate.lower())
+    return candidate
+
+
+async def _materialize_upload(
+    file: UploadFile, dest_dir: str, limit: int, *, remaining: int
+) -> tuple[str, int]:
+    """Save one upload under dest_dir; return (path, size). Enforces remaining budget."""
+    if remaining <= 0:
         raise HTTPException(
             status_code=413,
             detail=f"文件过大（上限 {limit // (1024 * 1024)} MB）",
         )
-    check_upload_size_header(file, max_bytes=limit)
-
-    hours = _parse_ttl(ttl_hours)
-    max_dl = _parse_max_downloads(max_downloads)
-    note_s = (note or "").strip()[:200]
-
-    # Prefer original name; empty upload filename still allowed.
-    original = (file.filename or "").strip() or "file"
-
-    # Reuse Starlette's on-disk spool (large upload) when possible → the file
-    # is renamed into place with no extra copy. Otherwise materialize a temp
-    # file inside the express dir (same filesystem as the final location) so
-    # create_package can rename it too.
-    src_path = _spooled_disk_path(file)
-    owns_tmp = False
-    tmp_path: Optional[str] = None
-    if not src_path:
-        fd, tmp_path = tempfile.mkstemp(
-            prefix="express_", dir=str(ensure_express_dir())
+    if file.size is not None and file.size > remaining:
+        raise HTTPException(
+            status_code=413,
+            detail=f"文件过大（上限 {limit // (1024 * 1024)} MB）",
         )
-        os.close(fd)
-        owns_tmp = True
-        try:
-            await asyncio.to_thread(
-                _sync_save_upload,
-                file.file,
-                tmp_path,
-                limit,
-                upload_chunk_size(),
+    check_upload_size_header(file, max_bytes=min(limit, remaining))
+
+    src_path = _spooled_disk_path(file)
+    if src_path:
+        size = os.path.getsize(src_path)
+        if size <= 0:
+            raise HTTPException(status_code=400, detail="文件为空，请重新选择")
+        if size > remaining:
+            raise HTTPException(
+                status_code=413,
+                detail=f"文件过大（上限 {limit // (1024 * 1024)} MB）",
             )
-        except HTTPException as exc:
-            # Map common English messages to Chinese for this tool surface.
-            detail = str(exc.detail or "")
-            if "Empty file" in detail or detail == "Empty file":
-                raise HTTPException(status_code=400, detail="文件为空，请重新选择") from exc
-            if "too large" in detail.lower() or "文件过大" in detail:
+        # Copy spool into dest_dir (do not consume Starlette temp across files).
+        dest = os.path.join(dest_dir, f"part_{os.urandom(4).hex()}")
+        await asyncio.to_thread(_copy_file, src_path, dest, remaining)
+        return dest, os.path.getsize(dest)
+
+    fd, tmp_path = tempfile.mkstemp(prefix="express_part_", dir=dest_dir)
+    os.close(fd)
+    try:
+        size = await asyncio.to_thread(
+            _sync_save_upload,
+            file.file,
+            tmp_path,
+            remaining,
+            upload_chunk_size(),
+        )
+    except HTTPException:
+        with suppress(OSError):
+            os.unlink(tmp_path)
+        raise
+    return tmp_path, size
+
+
+def _copy_file(src: str, dest: str, limit: int) -> None:
+    total = 0
+    with open(src, "rb") as inf, open(dest, "wb") as out:
+        while True:
+            buf = inf.read(1024 * 1024)
+            if not buf:
+                break
+            total += len(buf)
+            if total > limit:
                 raise HTTPException(
                     status_code=413,
                     detail=f"文件过大（上限 {limit // (1024 * 1024)} MB）",
-                ) from exc
-            raise
-        src_path = tmp_path
+                )
+            out.write(buf)
+    if total == 0:
+        raise HTTPException(status_code=400, detail="文件为空，请重新选择")
+
+
+def _zip_parts(parts: list[tuple[str, str]], zip_path: str) -> None:
+    """Write (disk_path, arcname) into zip_path."""
+    used: set = set()
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for disk, arc in parts:
+            name = _safe_zip_name(arc, used)
+            zf.write(disk, name)
+
+
+@router.post("/send")
+async def api_send(
+    request: Request,
+    file: UploadFile | None = File(None),
+    files: list[UploadFile] | None = File(None),
+    ttl_hours: str | None = Form(None),
+    max_downloads: str | None = Form(None),
+    note: str | None = Form(None),
+    burn_after: str | None = Form(None),
+):
+    """Upload one or more files and receive a 6-digit pickup code.
+
+    Multiple files are packed into a single ZIP payload. ``burn_after`` forces
+    one download then deletes the stored payload (阅后即焚).
+    """
+    ensure_express_dir()
+    limit = express_max_bytes()
+    hours = _parse_ttl(ttl_hours)
+    burn = to_bool(burn_after, False)
+    max_dl = 1 if burn else _parse_max_downloads(max_downloads)
+    note_s = (note or "").strip()[:200]
+
+    # Normalize file list: accept legacy single ``file`` or multi ``files``.
+    uploads: list[UploadFile] = []
+    if files:
+        uploads.extend([f for f in files if f is not None and f.filename])
+    if file is not None and file.filename and (not uploads or file not in uploads):
+        # Avoid double-counting if client sent both
+        uploads.insert(0, file)
+    # Some clients only use files= repeated
+    if not uploads:
+        # Try form multi without filename filter — empty list
+        form = await request.form()
+        for key in ("files", "file"):
+            for item in form.getlist(key):
+                if hasattr(item, "filename") and item.filename:
+                    uploads.append(item)  # type: ignore[arg-type]
+        # dedupe by identity
+        seen = set()
+        uniq = []
+        for u in uploads:
+            i = id(u)
+            if i not in seen:
+                seen.add(i)
+                uniq.append(u)
+        uploads = uniq
+
+    if not uploads:
+        raise HTTPException(status_code=400, detail="请先选择要寄送的文件")
+    if len(uploads) > _MAX_SEND_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"一次最多寄送 {_MAX_SEND_FILES} 个文件",
+        )
+
+    work_dir = tempfile.mkdtemp(prefix="express_up_", dir=str(ensure_express_dir()))
+    payload_path: str | None = None
+    owns_payload = False
+    file_count = len(uploads)
     try:
+        remaining = limit
+        parts: list[tuple[str, str]] = []
+        for idx, up in enumerate(uploads):
+            path, size = await _materialize_upload(
+                up, work_dir, limit, remaining=remaining
+            )
+            remaining -= size
+            parts.append((path, up.filename or f"file-{idx + 1}"))
+
+        if file_count == 1:
+            # Single file: keep original name/type (move into package).
+            src_path = parts[0][0]
+            original = (uploads[0].filename or "").strip() or "file"
+            content_type = uploads[0].content_type or ""
+            payload_path = src_path
+            owns_payload = True
+        else:
+            zip_path = os.path.join(work_dir, "bundle.zip")
+            await asyncio.to_thread(_zip_parts, parts, zip_path)
+            zsize = os.path.getsize(zip_path)
+            if zsize > limit:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"打包后过大（上限 {limit // (1024 * 1024)} MB）",
+                )
+            original = "files.zip"
+            content_type = "application/zip"
+            payload_path = zip_path
+            owns_payload = True
+
         try:
             pkg = create_package(
-                src_path,
+                payload_path,
                 original,
-                content_type=file.content_type or "",
+                content_type=content_type,
                 ttl_hours=hours,
                 max_downloads=max_dl,
                 note=note_s,
                 move_src=True,
+                burn_after=burn,
+                file_count=file_count,
             )
+            owns_payload = False  # consumed by create_package
         except ValueError as exc:
             msg = str(exc)
             if "empty or missing" in msg.lower():
@@ -234,13 +353,16 @@ async def api_send(
                 detail=f"服务器无法保存文件：{exc}",
             ) from exc
     finally:
-        # create_package(move_src=True) consumed src_path; the temp (if we made
-        # it) is gone, so this is just a best-effort cleanup for error paths.
-        if owns_tmp and tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+        # Best-effort cleanup of work dir leftovers.
+        try:
+            import shutil
+
+            shutil.rmtree(work_dir, ignore_errors=True)
+        except Exception:
+            pass
+        if owns_payload and payload_path:
+            with suppress(OSError):
+                os.unlink(payload_path)
 
     pickup_path = url_path(f"/tools/express?code={pkg['code']}", request)
     return JSONResponse(
@@ -256,8 +378,13 @@ async def api_send(
             "max_downloads": pkg["max_downloads"],
             "downloads_left": pkg["downloads_left"],
             "note": pkg["note"],
+            "burn_after": bool(pkg.get("burn_after")),
+            "file_count": int(pkg.get("file_count") or file_count),
             "pickup_url": pickup_path,
-            "message": f"寄送成功，取件码 {pkg['code']}",
+            "message": (
+                f"寄送成功，取件码 {pkg['code']}"
+                + ("（阅后即焚）" if pkg.get("burn_after") else "")
+            ),
         }
     )
 
@@ -274,7 +401,6 @@ async def api_lookup(code: str = Form(...)):
         raise HTTPException(status_code=410, detail=_ERROR_MESSAGES["expired"])
     if info.get("exhausted"):
         raise HTTPException(status_code=410, detail=_ERROR_MESSAGES["exhausted"])
-    # Never expose stored_rel to clients
     safe = {
         k: info[k]
         for k in (
@@ -290,10 +416,19 @@ async def api_lookup(code: str = Form(...)):
             "note",
             "available",
             "seconds_remaining",
+            "burn_after",
+            "file_count",
         )
         if k in info
     }
     return JSONResponse({"ok": True, **safe})
+
+
+def _burn_unlink(rel: str) -> None:
+    from storage.express import _unlink_package_file
+
+    if rel:
+        _unlink_package_file(rel)
 
 
 def _pickup_response(raw_code: str) -> FileResponse:
@@ -318,9 +453,14 @@ def _pickup_response(raw_code: str) -> FileResponse:
         "Content-Disposition": content_disposition(name),
         "X-Express-Code": str(info.get("code") or ""),
         "X-Express-Downloads": str(info.get("download_count") or 0),
+        "X-Express-Burn": "1" if info.get("burn_after") else "0",
         "Cache-Control": "no-store",
     }
-    return FileResponse(path, media_type=media, headers=headers)
+    bg = None
+    burn_rel = info.get("_burn_rel")
+    if burn_rel:
+        bg = BackgroundTask(_burn_unlink, str(burn_rel))
+    return FileResponse(path, media_type=media, headers=headers, background=bg)
 
 
 @router.post("/pickup")

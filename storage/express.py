@@ -51,11 +51,29 @@ CREATE TABLE IF NOT EXISTS packages (
     expires_at      TEXT NOT NULL DEFAULT '',
     max_downloads   INTEGER NOT NULL DEFAULT 0,
     download_count  INTEGER NOT NULL DEFAULT 0,
-    note            TEXT NOT NULL DEFAULT ''
+    note            TEXT NOT NULL DEFAULT '',
+    burn_after      INTEGER NOT NULL DEFAULT 0,
+    file_count      INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_express_code ON packages(code);
 CREATE INDEX IF NOT EXISTS idx_express_expires ON packages(expires_at);
 """
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after the initial schema (idempotent)."""
+    cols = {
+        str(r[1])
+        for r in conn.execute("PRAGMA table_info(packages)").fetchall()
+    }
+    if "burn_after" not in cols:
+        conn.execute(
+            "ALTER TABLE packages ADD COLUMN burn_after INTEGER NOT NULL DEFAULT 0"
+        )
+    if "file_count" not in cols:
+        conn.execute(
+            "ALTER TABLE packages ADD COLUMN file_count INTEGER NOT NULL DEFAULT 1"
+        )
 
 
 def _now() -> datetime:
@@ -124,7 +142,9 @@ _cache = ConnCache()
 
 def _get_conn() -> sqlite3.Connection:
     """Return a reusable connection for the current express DB file."""
-    return _cache.get(_db_path(), _SCHEMA)
+    conn = _cache.get(_db_path(), _SCHEMA)
+    _migrate_schema(conn)
+    return conn
 
 
 def close_db_connections() -> None:
@@ -173,6 +193,8 @@ def _row_public(row: sqlite3.Row | Dict[str, Any], *, include_path: bool = False
     max_dl = int(d.get("max_downloads") or 0)
     used = int(d.get("download_count") or 0)
     exhausted = max_dl > 0 and used >= max_dl
+    burn = bool(int(d.get("burn_after") or 0))
+    file_count = max(1, int(d.get("file_count") or 1))
     out: Dict[str, Any] = {
         "id": d.get("id"),
         "code": d.get("code"),
@@ -185,6 +207,8 @@ def _row_public(row: sqlite3.Row | Dict[str, Any], *, include_path: bool = False
         "download_count": used,
         "downloads_left": None if max_dl <= 0 else max(0, max_dl - used),
         "note": d.get("note") or "",
+        "burn_after": burn,
+        "file_count": file_count,
         "expired": expired,
         "exhausted": exhausted,
         "available": (not expired) and (not exhausted),
@@ -261,6 +285,8 @@ def create_package(
     max_downloads: int = 0,
     note: str = "",
     move_src: bool = False,
+    burn_after: bool = False,
+    file_count: int = 1,
 ) -> Dict[str, Any]:
     """Store a file and return public package info including pickup code.
 
@@ -268,6 +294,9 @@ def create_package(
     copy) into the package location — use it for disposable upload temp files
     to avoid a second full write of large payloads. When False the source is
     copied (unchanged behavior for callers that keep the original).
+
+    ``burn_after`` forces a single download and deletes the payload file once
+    it has been claimed (阅后即焚).
     """
     src = Path(source_path)
     if not src.is_file() or src.stat().st_size <= 0:
@@ -277,13 +306,17 @@ def create_package(
     default_ttl = express_default_ttl_hours()
     hours = int(ttl_hours if ttl_hours is not None else default_ttl)
     hours = max(1, min(max_ttl, hours))
+    burn = bool(burn_after)
     max_dl = max(0, min(1000, int(max_downloads or 0)))
+    if burn:
+        max_dl = 1
     note_s = (note or "").strip()[:200]
     name = _safe_name(original_name, "file")
     size = int(src.stat().st_size)
     limit = express_max_bytes()
     if size > limit:
         raise ValueError(f"file too large (max {limit // (1024 * 1024)} MB)")
+    fcount = max(1, min(100, int(file_count or 1)))
 
     pkg_id = uuid.uuid4().hex[:16]
     day = _now().strftime("%Y-%m-%d")
@@ -308,8 +341,9 @@ def create_package(
                 """
                 INSERT INTO packages (
                     id, code, original_name, stored_rel, size_bytes, content_type,
-                    created_at, expires_at, max_downloads, download_count, note
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                    created_at, expires_at, max_downloads, download_count, note,
+                    burn_after, file_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
                 """,
                 (
                     pkg_id,
@@ -322,6 +356,8 @@ def create_package(
                     expires_iso,
                     max_dl,
                     note_s,
+                    1 if burn else 0,
+                    fcount,
                 ),
             )
             conn.commit()
@@ -428,6 +464,20 @@ def claim_download(code: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         ).fetchone()
         out = _row_public(row2, include_path=True) if row2 else info
         out["_abs_path"] = str(path)
+        # 阅后即焚: after a successful claim, drop the payload immediately so a
+        # second request cannot re-download even if counters race. The DB row
+        # remains for admin history (file_exists becomes false).
+        if out.get("burn_after"):
+            rel = str(out.get("stored_rel") or "")
+            # Clear stored_rel so resolve fails for further claims.
+            conn.execute(
+                "UPDATE packages SET stored_rel = '' WHERE id = ?",
+                (out["id"],),
+            )
+            conn.commit()
+            out["stored_rel"] = ""
+            # Unlink after releasing path for this response.
+            out["_burn_rel"] = rel
         return out, None
 
 

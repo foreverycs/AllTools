@@ -1,0 +1,296 @@
+{% extends "tools/base.html" %}
+{% set page_title = "PDF 压缩" %}
+{% set page_description = "压缩 PDF 体积，清理冗余并可选重采样图片" %}
+{% set accent = "rose" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/#col-pdf") %}
+{% set back_label = "PDF 工具" %}
+{% set chip = "PDF 工具 · PDF 压缩" %}
+
+{% block head_styles %}
+<style>
+.tool-page .opts{
+  margin-top: 16px; display: grid; gap: 14px;
+  padding: 16px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 16px;
+}
+.tool-page .quality-row{
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+@media (max-width: 640px){ .tool-page .quality-row{ grid-template-columns: 1fr; } }
+.tool-page .q-card{
+  position: relative; border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 10px; background: var(--surface-solid); cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.tool-page .q-card:hover{ border-color: var(--c-border); }
+.tool-page .q-card.active{
+  border-color: var(--c); background: var(--c-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent);
+}
+.tool-page .q-card input{ position: absolute; opacity: 0; pointer-events: none; }
+.tool-page .q-card .ql{ font-size: 13px; font-weight: 750; color: var(--ink); }
+.tool-page .q-card .qh{ font-size: 10px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+.tool-page label.field{
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.tool-page label.field input{
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px;
+  font-size: 13px; font-weight: 500; outline: none; background: var(--surface-solid); color: var(--ink);
+}
+.tool-page .hint{ color: var(--muted-2); font-size: 11px; font-weight: 500; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">🗜️</div>
+        <div>
+          <h1>PDF 压缩</h1>
+          <p>减小 PDF 体积：清理冗余对象；均衡/强压缩会重采样嵌入图片。已很精简的文件可能几乎不降体积。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">轻量清理</span>
+        <span class="feat">图片重采样</span>
+        <span class="feat">三档强度</span>
+        <span class="feat">压缩对比</span>
+      </div>
+
+      {% with
+  accept='.pdf,application/pdf',
+  multiple=false,
+  title_html='点击或拖拽 <strong>PDF 文件</strong> 到此处',
+  hint='单文件 · 建议 ≤ 50 MB'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
+      <ul class="file-list" id="list"></ul>
+
+      <div class="opts">
+        <div class="opts-title">压缩强度</div>
+        <div class="quality-row" id="qualityRow" role="radiogroup" aria-label="压缩强度">
+          <label class="q-card" data-q="light">
+            <input type="radio" name="quality" value="light" />
+            <div class="ql">轻量</div>
+            <div class="qh">清理冗余，不改图片</div>
+          </label>
+          <label class="q-card active" data-q="balanced">
+            <input type="radio" name="quality" value="balanced" checked />
+            <div class="ql">均衡（推荐）</div>
+            <div class="qh">适度压图，体积明显下降</div>
+          </label>
+          <label class="q-card" data-q="strong">
+            <input type="radio" name="quality" value="strong" />
+            <div class="ql">强压缩</div>
+            <div class="qh">更小体积，图片更糊</div>
+          </label>
+        </div>
+        <label class="field">
+          打开密码（加密 PDF 需要）
+          <input type="password" id="password" autocomplete="off" placeholder="无密码可留空" />
+          <span class="hint">仅用于打开加密文件，压缩结果为未加密 PDF。</span>
+        </label>
+      </div>
+
+      <button id="btn" disabled>开始压缩</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div class="stats" id="stats">
+        <div class="stat"><div class="k">原始大小</div><div class="v" id="statOrig">—</div></div>
+        <div class="stat"><div class="k">压缩后</div><div class="v" id="statOut">—</div></div>
+        <div class="stat"><div class="k">节省</div><div class="v good" id="statSaved">—</div></div>
+      </div>
+      <div id="status"></div>
+      <div class="tool-result" id="result" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_BYTES = 50 * 1024 * 1024;
+    const LS_KEY = "pdf_compress_opts_v1";
+    const fileInput = document.getElementById("file");
+    const drop = document.getElementById("drop");
+    const list = document.getElementById("list");
+    const btn = document.getElementById("btn");
+    const status = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const UX = window.ToolkitUX || null;
+    const progress = document.getElementById("progress");
+    const bar = document.getElementById("bar");
+    const stats = document.getElementById("stats");
+    const statOrig = document.getElementById("statOrig");
+    const statOut = document.getElementById("statOut");
+    const statSaved = document.getElementById("statSaved");
+    const qualityRow = document.getElementById("qualityRow");
+    const password = document.getElementById("password");
+    /** @type {File|null} */
+    let selected = null;
+
+    const { fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl } = window.ToolkitUpload;
+
+    function currentQuality() {
+      return (qualityRow.querySelector("input:checked") || {}).value || "balanced";
+    }
+    function isPdf(f) {
+      if (!f) return false;
+      var name = (f.name || "").toLowerCase();
+      return /\.pdf$/i.test(name) || (f.type || "") === "application/pdf";
+    }
+    function persistOpts() {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          quality: currentQuality(),
+        }));
+      } catch (e) { /* ignore */ }
+    }
+    function applySaved() {
+      try {
+        var saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+        if (saved.quality && qualityRow.querySelector('input[value="' + saved.quality + '"]')) {
+          qualityRow.querySelector('input[value="' + saved.quality + '"]').checked = true;
+          qualityRow.querySelectorAll(".q-card").forEach(function (c) {
+            c.classList.toggle("active", c.getAttribute("data-q") === saved.quality);
+          });
+        }
+      } catch (e) { /* ignore */ }
+    }
+    qualityRow.addEventListener("change", function (e) {
+      var input = e.target;
+      if (!input || input.name !== "quality") return;
+      qualityRow.querySelectorAll(".q-card").forEach(function (c) {
+        c.classList.toggle("active", c.getAttribute("data-q") === input.value);
+      });
+      persistOpts();
+    });
+
+    function setProgress(pct) {
+      progress.classList.add("show");
+      bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    }
+    function hideProgress() {
+      progress.classList.remove("show");
+      bar.style.width = "0%";
+    }
+    function setStatus(text, cls) {
+      status.textContent = text || "";
+      status.className = cls || "";
+    }
+    function clearStats() {
+      stats.classList.remove("show");
+      statOrig.textContent = "—";
+      statOut.textContent = "—";
+      statSaved.textContent = "—";
+    }
+    function renderList() {
+      list.innerHTML = "";
+      if (!selected) { btn.disabled = true; return; }
+      var li = document.createElement("li");
+      var icon = document.createElement("span"); icon.className = "fi"; icon.textContent = "📄";
+      var name = document.createElement("span"); name.className = "fname"; name.title = selected.name; name.textContent = selected.name;
+      var size = document.createElement("span"); size.className = "fsize"; size.textContent = fmtSize(selected.size);
+      var rm = document.createElement("button"); rm.type = "button"; rm.textContent = "移除";
+      rm.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        selected = null; renderList(); setStatus(""); clearStats();
+        if (UX) UX.hideResult(resultEl);
+      });
+      li.append(icon, name, size, rm);
+      list.appendChild(li);
+      btn.disabled = false;
+    }
+    function addFiles(fileList) {
+      var f = (fileList && fileList[0]) || null;
+      if (!f) return;
+      if (!isPdf(f)) {
+        if (UX) UX.showResult(resultEl, { kind: "err", title: "未添加", detail: "仅支持 PDF" });
+        else setStatus("仅支持 PDF", "err");
+        return;
+      }
+      if (f.size > MAX_BYTES) {
+        if (UX) UX.showResult(resultEl, { kind: "err", title: "未添加", detail: "超过 50 MB" });
+        else setStatus("超过 50 MB", "err");
+        return;
+      }
+      selected = f;
+      renderList();
+      setStatus("");
+      if (UX) UX.hideResult(resultEl);
+      fileInput.value = "";
+    }
+    bindDropZone({
+      drop: drop,
+      input: fileInput,
+      paste: true,
+      acceptFile: isPdf,
+      rejectMessage: "仅支持 PDF 文件",
+      onFiles: addFiles,
+    });
+    drop.setAttribute("data-single", "1");
+
+    btn.addEventListener("click", async function () {
+      if (!selected) return;
+      persistOpts();
+      btn.disabled = true;
+      clearStats();
+      if (UX) UX.hideResult(resultEl);
+      setStatus("正在压缩…", "info");
+      setProgress(8);
+      var fd = new FormData();
+      fd.append("file", selected, selected.name);
+      fd.append("quality", currentQuality());
+      if (password.value) fd.append("password", password.value);
+      try {
+        var xhr = await xhrPost(appUrl("/tools/pdf-compress/compress"), fd, {
+          processHint: "上传完成，正在压缩…",
+          longWaitSec: 30,
+          onProgress: function (pct) { setProgress(pct); },
+          onStatus: function (text, cls) { setStatus(text, cls || "info"); },
+        });
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var blob = xhr.response;
+          var name = downloadName(xhr.getResponseHeader("Content-Disposition"),
+            selected.name.replace(/\.pdf$/i, "") + "_compressed.pdf");
+          var orig = parseInt(xhr.getResponseHeader("X-Original-Bytes") || "0", 10);
+          var out = parseInt(xhr.getResponseHeader("X-Compressed-Bytes") || "0", 10);
+          var saved = parseInt(xhr.getResponseHeader("X-Saved-Bytes") || "0", 10);
+          var pct = xhr.getResponseHeader("X-Percent-Saved") || "0";
+          if (orig) statOrig.textContent = fmtSize(orig);
+          if (out) statOut.textContent = fmtSize(out);
+          statSaved.textContent = (saved ? fmtSize(saved) : "0 B") + " (" + pct + "%)";
+          stats.classList.add("show");
+          saveBlob(blob, name);
+          var msg = "压缩完成 · 节省 " + pct + "%";
+          if (UX) {
+            setStatus("", "");
+            UX.showResult(resultEl, {
+              kind: "ok", title: msg, detail: msg,
+              filename: name, downloadBlob: blob, downloadName: name,
+              againLabel: "继续压缩",
+              onAgain: function () { UX.hideResult(resultEl); },
+            });
+          } else setStatus(msg, "ok");
+          setProgress(100);
+        } else {
+          var em = await xhrErrorMessage(xhr);
+          if (UX) { setStatus("", ""); UX.showResult(resultEl, { kind: "err", title: "压缩失败", detail: em || "压缩失败" }); }
+          else setStatus(em || "压缩失败", "err");
+        }
+      } catch (err) {
+        var em2 = (err && err.message) || "网络错误";
+        if (UX) { setStatus("", ""); UX.showResult(resultEl, { kind: "err", title: "压缩失败", detail: em2 }); }
+        else setStatus(em2, "err");
+      } finally {
+        btn.disabled = false;
+        setTimeout(hideProgress, 400);
+      }
+    });
+
+    applySaved();
+    renderList();
+</script>
+{% endblock %}
