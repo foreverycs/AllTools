@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import os
 import tempfile
 import zipfile
@@ -48,6 +50,35 @@ _ERROR_MESSAGES = {
 
 # Multi-file send: hard caps (also bound by express_max_bytes total).
 _MAX_SEND_FILES = 20
+
+_QR_SIZE = 320
+
+
+def _render_qr_data_uri(payload: str) -> str:
+    """Render ``payload`` to a PNG data URI for the pickup link QR."""
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_M
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=ERROR_CORRECT_M,
+        box_size=6,
+        border=2,
+    )
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _absolute_pickup_url(pickup_path: str, request: Request) -> str:
+    """Convert a (possibly prefixed) pickup path into an absolute URL for QR."""
+    base = str(request.base_url).rstrip("/")
+    if pickup_path.startswith("/"):
+        return base + pickup_path
+    return base + "/" + pickup_path
 
 
 def _sync_save_upload(src, dest: str, limit: int, chunk_size: int) -> int:
@@ -370,6 +401,7 @@ async def api_send(
                 os.unlink(payload_path)
 
     pickup_path = url_path(f"/tools/express?code={pkg['code']}", request)
+    abs_url = _absolute_pickup_url(pickup_path, request)
     return JSONResponse(
         {
             "ok": True,
@@ -387,6 +419,8 @@ async def api_send(
             "file_count": int(pkg.get("file_count") or file_count),
             "is_text": False,
             "pickup_url": pickup_path,
+            "pickup_url_absolute": abs_url,
+            "qr_image": _render_qr_data_uri(abs_url),
             "message": (
                 f"寄送成功，取件码 {pkg['code']}"
                 + ("（阅后即焚）" if pkg.get("burn_after") else "")
@@ -456,8 +490,11 @@ async def api_send_text(
         raise HTTPException(status_code=400, detail=msg) from exc
 
     pickup_path = url_path(f"/tools/express?code={pkg['code']}", request)
+    abs_url = _absolute_pickup_url(pickup_path, request)
     info = _package_pickup_info(pkg)
     info["pickup_url"] = pickup_path
+    info["pickup_url_absolute"] = abs_url
+    info["qr_image"] = _render_qr_data_uri(abs_url)
     info["message"] = (
         f"小纸条已生成，取件码 {pkg['code']}"
         + ("（阅后即焚）" if pkg.get("burn_after") else "")

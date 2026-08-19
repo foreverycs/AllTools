@@ -204,6 +204,24 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+.tool-page .result-qr{
+  margin: 12px auto 0;
+  width: 132px;
+  text-align: center;
+}
+.tool-page .result-qr img{
+  width: 132px;
+  height: 132px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 4px;
+}
+.tool-page .result-qr .qr-hint{
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
 .tool-page #noteText{
   min-height: 120px;
   resize: vertical;
@@ -275,9 +293,14 @@
           <div class="result-kicker">取件码</div>
           <div class="result-code" id="resultCode">------</div>
           <div class="result-meta" id="resultMeta"></div>
+          <div class="result-qr">
+            <img id="resultQr" alt="取件二维码" />
+            <div class="qr-hint">扫码即打开取件页</div>
+          </div>
           <div class="result-actions">
             <button type="button" class="btn btn-primary" id="copyCodeBtn">复制取件码</button>
             <button type="button" class="btn" id="copyLinkBtn">复制取件链接</button>
+            <button type="button" class="btn" id="downloadQrBtn">下载二维码</button>
           </div>
         </div>
       </div>
@@ -325,9 +348,14 @@
           <div class="result-kicker">取件码</div>
           <div class="result-code" id="noteResultCode">------</div>
           <div class="result-meta" id="noteResultMeta"></div>
+          <div class="result-qr">
+            <img id="noteResultQr" alt="取件二维码" />
+            <div class="qr-hint">扫码即查看小纸条</div>
+          </div>
           <div class="result-actions">
             <button type="button" class="btn btn-primary" id="noteCopyBtn">复制取件码</button>
             <button type="button" class="btn" id="noteCopyLinkBtn">复制取件链接</button>
+            <button type="button" class="btn" id="downloadNoteQrBtn">下载二维码</button>
           </div>
         </div>
       </div>
@@ -607,6 +635,9 @@
           }
           if (data.note) lines.push('备注：' + data.note);
           resultMeta.innerHTML = lines.map(function (l) { return '<div>' + l + '</div>'; }).join('');
+          if (data.qr_image) {
+            document.getElementById('resultQr').src = data.qr_image;
+          }
           sendResult.classList.add('show');
           showMsg(sendMsg, data.message || '寄送成功，请复制取件码发给对方', 'ok', { toast: true });
         } catch (e) {
@@ -700,6 +731,9 @@
           else if (data.max_downloads > 0) lines.push('可查看：' + data.max_downloads + ' 次');
           else lines.push('查看次数：不限制');
           noteResultMeta.innerHTML = lines.map(function (l) { return '<div>' + l + '</div>'; }).join('');
+          if (data.qr_image) {
+            document.getElementById('noteResultQr').src = data.qr_image;
+          }
           noteResult.classList.add('show');
           showMsg(noteMsg, data.message || '小纸条已生成，请复制取件码', 'ok', { toast: true });
         } catch (e) {
@@ -721,6 +755,22 @@
         if (!link || link.indexOf('------') !== -1) { if (UX) UX.toast('还没有取件链接', 'warn'); return; }
         if (UX) UX.copyText(link, '已复制取件链接');
         else showMsg(noteMsg, '已复制取件链接', 'ok');
+      });
+      // 下载二维码（data URI）
+      function downloadQr(src, label) {
+        if (!src || src.indexOf('data:image') !== 0) { if (UX) UX.toast('暂无二维码', 'warn'); return; }
+        var a = document.createElement('a');
+        a.href = src;
+        a.download = label;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      document.getElementById('downloadQrBtn').addEventListener('click', function () {
+        downloadQr(document.getElementById('resultQr').src, 'express_' + (resultCode.textContent || '').trim() + '.png');
+      });
+      document.getElementById('downloadNoteQrBtn').addEventListener('click', function () {
+        downloadQr(document.getElementById('noteResultQr').src, 'express_' + (noteResultCode.textContent || '').trim() + '.png');
       });
 
       // Pickup

@@ -288,6 +288,10 @@ def test_api_send_lookup_pickup(express_client):
     assert body["original_name"] == "hello.txt"
     assert body["max_downloads"] == 2
     assert "pickup_url" in body
+    assert body.get("pickup_url_absolute", "").startswith("http")
+    qr = body.get("qr_image") or ""
+    assert qr.startswith("data:image/png;base64,")
+    assert len(qr) > 100
 
     lookup = client.post("/tools/express/lookup", data={"code": code})
     assert lookup.status_code == 200
@@ -445,6 +449,8 @@ def test_api_send_text_and_read(express_client):
     body = r.json()
     assert body["is_text"] is True
     code = body["code"]
+    assert body.get("qr_image", "").startswith("data:image/png;base64,")
+    assert body.get("pickup_url_absolute", "").startswith("http")
 
     lookup = client.post("/tools/express/lookup", data={"code": code})
     assert lookup.status_code == 200
