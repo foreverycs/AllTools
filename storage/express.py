@@ -641,11 +641,78 @@ def express_stats() -> Dict[str, Any]:
     }
 
 
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+# Common human-readable text / source-code extensions that can be previewed as
+# plain text in the admin console. HTML/SVG are included deliberately: they are
+# served as *plain text* (never executed inline), so there is no stored-XSS.
+_TEXT_FILE_EXTS = {
+    ".txt", ".text", ".md", ".markdown", ".rst",
+    ".c", ".h", ".cc", ".cpp", ".hpp", ".cxx", ".hh",
+    ".py", ".pyw", ".js", ".jsx", ".mjs", ".ts", ".tsx",
+    ".json", ".csv", ".tsv", ".xml", ".yaml", ".yml", ".toml", ".ini",
+    ".cfg", ".conf", ".properties", ".env", ".sql", ".log",
+    ".css", ".scss", ".less", ".html", ".htm", ".svg",
+    ".sh", ".bash", ".zsh", ".bat", ".cmd", ".ps1", ".fish",
+    ".go", ".rs", ".java", ".rb", ".php", ".lua", ".r", ".m", ".pl",
+    ".swift", ".kt", ".kts", ".scala", ".dart", ".vue", ".svelte",
+    ".diff", ".patch",
+}
+
+
+def _is_text_file_package(info: Dict[str, Any], path: Optional[Path]) -> bool:
+    """Detect whether a stored payload is a text-ish file previewable as text."""
+    if path is not None:
+        if (path.suffix or "").lower() in _TEXT_FILE_EXTS:
+            return True
+    ct = (str(info.get("content_type") or "")).lower()
+    return ct.startswith("text/")
+
+
+def _is_pdf_package(info: Dict[str, Any], path: Optional[Path]) -> bool:
+    """Detect PDF payloads (previewable inline in the browser)."""
+    if path is not None:
+        if (path.suffix or "").lower() == ".pdf":
+            return True
+    ct = (str(info.get("content_type") or "")).lower()
+    return ct == "application/pdf"
+
+
+def _is_image_package(info: Dict[str, Any], path: Optional[Path]) -> bool:
+    """Heuristic image detection: image/* content-type or known image suffix."""
+    if path is not None:
+        if (path.suffix or "").lower() in _IMAGE_EXTS:
+            return True
+    ct = (str(info.get("content_type") or "")).lower()
+    return ct.startswith("image/")
+
+
 def _package_with_file(row: sqlite3.Row | Dict[str, Any]) -> Dict[str, Any]:
-    """Public package dict plus admin file-path fields."""
+    """Public package dict plus admin file-path fields.
+
+    For 小纸条 (text) packages there is no payload file — the content lives in
+    the ``text_payload`` column. ``file_exists`` therefore reflects content
+    availability (so text packages are not shown as 缺失 just because they have
+    no file on disk), while ``has_file`` gates the real-file download / image
+    preview actions.
+    """
     info = _row_public(row, include_path=True)
-    path = resolve_package_file(info)
-    info["file_exists"] = path is not None
+    if info.get("is_text"):
+        has_content = bool(row["text_payload"])
+        info["has_file"] = False
+        info["file_exists"] = has_content
+        info["is_image"] = False
+        info["is_text_file"] = False
+        info["is_pdf"] = False
+        if has_content:
+            info["_full_text"] = str(row["text_payload"])
+    else:
+        path = resolve_package_file(info)
+        info["has_file"] = path is not None
+        info["file_exists"] = path is not None
+        info["is_image"] = _is_image_package(info, path)
+        info["is_text_file"] = _is_text_file_package(info, path)
+        info["is_pdf"] = _is_pdf_package(info, path)
     return info
 
 

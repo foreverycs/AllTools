@@ -934,6 +934,20 @@ html.light-mode .admin-body::after  { background: radial-gradient(circle, rgba(2
 .preview-body { flex: 1; overflow: hidden; background: var(--bg); }
 .preview-iframe { width: 100%; height: 100%; border: 0; }
 .preview-img { width: 100%; height: 100%; object-fit: contain; }
+.preview-text {
+  margin: 0;
+  padding: 20px 24px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--ink-1);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
 .preview-loading,
 .preview-error {
   display: flex;

@@ -120,7 +120,7 @@
               <input type="checkbox" class="row-check" name="ids" value="{{ r.id }}" aria-label="选择 {{ r.code }}" />
             </td>
             <td class="admin-mono" style="font-weight:700;letter-spacing:0.12em">{{ r.code }}</td>
-            <td title="{{ r.id }}">{{ r.original_name }}</td>
+            <td title="{{ r.id }}">{% if r.is_text %}<span class="admin-badge" title="小纸条">字</span> 小纸条{% else %}{{ r.original_name }}{% endif %}</td>
             <td class="admin-muted">
               {% if r.size_bytes %}
                 {% if r.size_bytes >= 1048576 %}{{ '%.2f'|format(r.size_bytes / 1048576) }} MB
@@ -137,7 +137,17 @@
               {% endif %}
             </td>
             <td>
-              {% if not r.file_exists %}
+              {% if r.is_text %}
+                {% if r.expired %}
+                <span class="admin-badge err">已过期</span>
+                {% elif r.exhausted %}
+                <span class="admin-badge warn">次数用尽</span>
+                {% elif r.file_exists %}
+                <span class="admin-badge ok">可取</span>
+                {% else %}
+                <span class="admin-badge err">已取</span>
+                {% endif %}
+              {% elif not r.file_exists %}
               <span class="admin-badge err">缺失</span>
               {% elif r.expired %}
               <span class="admin-badge err">已过期</span>
@@ -153,11 +163,32 @@
               {{ r.note or '—' }}
             </td>
             <td style="white-space:nowrap">
-              {% if r.file_exists %}
+              {% if r.has_file %}
               <a class="admin-btn" href="{{ url_path('/admin/express/' ~ r.id ~ '/download') }}">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 下载
               </a>
+              {% endif %}
+              {% if r.is_text and r.file_exists %}
+              <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.code }} 小纸条" data-kind="text">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                查看
+              </button>
+              {% elif r.has_file and r.is_text_file %}
+              <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.original_name }}" data-kind="text">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                预览
+              </button>
+              {% elif r.has_file and r.is_pdf %}
+              <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.original_name }}" data-kind="pdf">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                预览
+              </button>
+              {% elif r.has_file and r.is_image %}
+              <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.original_name }}" data-kind="image">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                预览
+              </button>
               {% endif %}
               <button class="admin-btn admin-btn-danger delete-confirm-btn" type="submit"
                       formaction="{{ url_path('/admin/express/' ~ r.id ~ '/delete') }}"
@@ -184,8 +215,120 @@
   </div>
 </form>
 
+<div class="preview-overlay" id="previewOverlay">
+  <div class="preview-modal" id="previewModal">
+    <div class="preview-header">
+      <span class="preview-title" id="previewTitle"></span>
+      <button class="admin-btn preview-close" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        关闭
+      </button>
+    </div>
+    <div class="preview-body" id="previewBody"></div>
+  </div>
+</div>
+
 <script>
   (function () {
+    var overlay = document.getElementById('previewOverlay');
+    var titleEl = document.getElementById('previewTitle');
+    var bodyEl = document.getElementById('previewBody');
+
+    function showPreviewError(msg) {
+      bodyEl.innerHTML = '';
+      var el = document.createElement('div');
+      el.className = 'preview-error';
+      el.textContent = msg || '预览失败';
+      bodyEl.appendChild(el);
+    }
+
+    function showPreviewLoading(msg) {
+      bodyEl.innerHTML = '';
+      var el = document.createElement('div');
+      el.className = 'preview-loading';
+      el.textContent = msg || '正在加载预览…';
+      bodyEl.appendChild(el);
+    }
+
+    function openPreview(id, name, kind) {
+      titleEl.textContent = name;
+      bodyEl.innerHTML = '';
+      var url = (window.__ROOT__||'') + '/admin/express/' + encodeURIComponent(id) + '/preview';
+      overlay.classList.add('show');
+      document.body.style.overflow = 'hidden';
+
+      if (kind === 'image') {
+        var img = document.createElement('img');
+        img.className = 'preview-img';
+        img.src = url;
+        img.alt = name;
+        bodyEl.appendChild(img);
+        return;
+      }
+
+      if (kind === 'pdf') {
+        var iframe = document.createElement('iframe');
+        iframe.className = 'preview-iframe';
+        iframe.src = url;
+        iframe.title = name;
+        bodyEl.appendChild(iframe);
+        return;
+      }
+
+      // text (小纸条 / text/code file): fetch full content, render as plain text.
+      showPreviewLoading('正在加载内容…');
+      fetch(url, { credentials: 'same-origin' })
+        .then(function (r) {
+          if (!r.ok) {
+            return r.json().then(function (j) {
+              throw new Error((j && j.detail) ? j.detail : ('预览失败 (' + r.status + ')'));
+            });
+          }
+          return r.json();
+        })
+        .then(function (data) {
+          if (!overlay.classList.contains('show')) return;
+          bodyEl.innerHTML = '';
+          var pre = document.createElement('pre');
+          pre.className = 'preview-text';
+          pre.textContent = data.text || '';
+          bodyEl.appendChild(pre);
+        })
+        .catch(function (err) {
+          if (!overlay.classList.contains('show')) return;
+          showPreviewError(err && err.message ? err.message : '预览失败');
+        });
+    }
+
+    function closePreview(e) {
+      if (e && e.target !== overlay) return;
+      overlay.classList.remove('show');
+      bodyEl.innerHTML = '';
+      document.body.style.overflow = '';
+    }
+
+    window.__adminAddDoc('click', function (e) {
+      var btn = e.target.closest && e.target.closest('.preview-btn');
+      if (!btn) return;
+      openPreview(
+        btn.getAttribute('data-id'),
+        btn.getAttribute('data-name'),
+        btn.getAttribute('data-kind')
+      );
+    });
+
+    var closeBtn = document.querySelector('.preview-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () { closePreview(); });
+    }
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closePreview();
+    });
+
+    window.__adminAddDoc('keydown', function (e) {
+      if (e.key === 'Escape' && overlay.classList.contains('show')) closePreview();
+    });
+
     var selectAll = document.getElementById('selectAll');
     var batchCount = document.getElementById('batchCount');
     var batchDeleteBtn = document.getElementById('batchDeleteBtn');
