@@ -124,7 +124,7 @@
 
       <div class="opts">
         <div class="opts-title">页面模式</div>
-        <div class="format-row" id="modeRow" role="radiogroup" aria-label="页面模式">
+        <div class="format-row format-row-3" id="modeRow" role="radiogroup" aria-label="页面模式">
           <label class="f-card active" data-m="fit">
             <input type="radio" name="page_mode" value="fit" checked />
             <div class="fl">原图尺寸</div>
@@ -134,6 +134,11 @@
             <input type="radio" name="page_mode" value="a4" />
             <div class="fl">A4 适配</div>
             <div class="fh">等比缩放进 A4 · 可打印留白</div>
+          </label>
+          <label class="f-card" data-m="2up">
+            <input type="radio" name="page_mode" value="2up" />
+            <div class="fl">横向并排</div>
+            <div class="fh">每两张图并排一张横版 A4 · 保持原比例</div>
           </label>
         </div>
 
@@ -350,9 +355,14 @@
         list.appendChild(li);
       });
       btn.disabled = selected.length === 0;
-      btn.textContent = selected.length > 1
-        ? "生成 PDF（" + selected.length + " 页）"
-        : "生成 PDF";
+      if (selected.length > 1) {
+        var nPages = currentMode() === "2up"
+          ? Math.max(1, Math.ceil(selected.length / 2))
+          : selected.length;
+        btn.textContent = "生成 PDF（" + nPages + " 页）";
+      } else {
+        btn.textContent = "生成 PDF";
+      }
     }
 
     function addFiles(fileList) {

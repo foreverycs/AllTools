@@ -26,8 +26,19 @@ MAX_IMAGES = 50
 A4_W_PT = 595.28
 A4_H_PT = 841.89
 A4_MARGIN_PT = 36.0  # 0.5 inch
+# Gap between the two columns on a 2up (side-by-side) landscape page.
+A4_GAP_PT = 24.0
 
-PAGE_MODES = ("fit", "a4")
+# Render resolution for A4 / 2up pages. 72 DPI makes one canvas pixel equal one
+# PDF point, so a landscape A4 page only holds 842×595 px of data — phone
+# screenshots get squeezed to a few hundred pixels and the PDF looks blurry.
+# Rendering at a higher DPI keeps the physical A4 page size identical but
+# embeds far more pixels, so zoomed / printed output stays sharp.
+A4_RENDER_DPI = 200.0
+# Canvas pixels per PDF point at A4_RENDER_DPI (A4 point = 1/72 inch).
+A4_RENDER_FACTOR = A4_RENDER_DPI / 72.0
+
+PAGE_MODES = ("fit", "a4", "2up")
 
 # A4 orientation when page_mode is a4.
 # auto — per image aspect; portrait — always 210×297; landscape — always 297×210.
@@ -202,10 +213,11 @@ def _place_on_a4(
         raise ImageToPdfError("Invalid image dimensions")
 
     page_w, page_h, resolved = _resolve_a4_size(w, h, orientation)
-    # Pillow PDF uses pixels ≈ points at 72 dpi; build page at point resolution.
-    pw = max(1, int(round(page_w)))
-    ph = max(1, int(round(page_h)))
-    margin = int(round(A4_MARGIN_PT))
+    # Build the canvas at A4_RENDER_DPI: the physical page stays A4, but the
+    # pixel grid is denser so embedded images keep their detail.
+    pw = max(1, int(round(page_w * A4_RENDER_FACTOR)))
+    ph = max(1, int(round(page_h * A4_RENDER_FACTOR)))
+    margin = int(round(A4_MARGIN_PT * A4_RENDER_FACTOR))
     usable_w = max(1, pw - 2 * margin)
     usable_h = max(1, ph - 2 * margin)
 
@@ -222,6 +234,69 @@ def _place_on_a4(
     oy = (ph - nh) // 2
     canvas.paste(resized, (ox, oy))
     return canvas, resolved
+
+
+def _paste_scaled_to_box(
+    canvas: Image.Image,
+    img: Image.Image,
+    box: Tuple[float, float, float, float],
+) -> None:
+    """Scale ``img`` to fit ``box`` (preserving aspect ratio), centered in it."""
+    w, h = img.size
+    if w <= 0 or h <= 0:
+        raise ImageToPdfError("Invalid image dimensions")
+    bw = box[2]
+    bh = box[3]
+    scale = min(bw / float(w), bh / float(h))
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    if (nw, nh) != (w, h):
+        resized = img.resize((nw, nh), Image.Resampling.LANCZOS)
+    else:
+        resized = img
+    ox = int(round(box[0] + (bw - nw) / 2.0))
+    oy = int(round(box[1] + (bh - nh) / 2.0))
+    canvas.paste(resized, (ox, oy))
+
+
+def _place_on_2up_page(
+    pair: Sequence[Image.Image],
+    bg: Tuple[int, int, int],
+) -> Image.Image:
+    """Combine 1-2 images onto one landscape A4 canvas, preserving aspect ratio.
+
+    Two images are placed side by side (left / right) in equal-width columns
+    with a gap between them; a single trailing image is centered. Every image
+    is scaled to fit its box *without cropping*, so the original aspect ratio
+    is always preserved — ideal for two portrait phone screenshots on a
+    landscape A4 sheet.
+    """
+    # Landscape A4 at A4_RENDER_DPI (physical page stays A4; more pixels → sharp).
+    pw = max(1, int(round(A4_H_PT * A4_RENDER_FACTOR)))
+    ph = max(1, int(round(A4_W_PT * A4_RENDER_FACTOR)))
+    margin = int(round(A4_MARGIN_PT * A4_RENDER_FACTOR))
+    gap = int(round(A4_GAP_PT * A4_RENDER_FACTOR))
+    usable_w = max(1, pw - 2 * margin)
+    usable_h = max(1, ph - 2 * margin)
+    canvas = Image.new("RGB", (pw, ph), bg)
+
+    n = len(pair)
+    if n == 1:
+        _paste_scaled_to_box(canvas, pair[0], (float(margin), float(margin), float(usable_w), float(usable_h)))
+        return canvas
+
+    col_w = (usable_w - gap) / 2.0
+    _paste_scaled_to_box(
+        canvas,
+        pair[0],
+        (float(margin), float(margin), col_w, float(usable_h)),
+    )
+    _paste_scaled_to_box(
+        canvas,
+        pair[1],
+        (float(margin + gap) + col_w, float(margin), col_w, float(usable_h)),
+    )
+    return canvas
 
 
 def images_to_pdf(
@@ -241,10 +316,12 @@ def images_to_pdf(
     filenames:
         Optional names (format detection / error messages).
     page_mode:
-        ``fit`` — page size matches each image; ``a4`` — fit into A4 with margin.
+        ``fit`` — page size matches each image; ``a4`` — fit into A4 with margin;
+        ``2up`` — every two images share one landscape A4 page, side by side
+        (preserving each image's aspect ratio; a lone trailing image is centered).
     orientation:
         When ``page_mode`` is ``a4``: ``auto`` / ``portrait`` / ``landscape``.
-        Ignored for ``fit``.
+        Ignored for ``fit`` and ``2up``.
     background:
         Solid color when flattening alpha (and A4 page fill).
 
@@ -272,6 +349,7 @@ def images_to_pdf(
     pages: List[Image.Image] = []
     total_in = 0
     resolved_orients: List[str] = []
+    prepared: List[Image.Image] = []
 
     for data, name in zip(items, names):
         total_in += len(data) if data else 0
@@ -285,7 +363,16 @@ def images_to_pdf(
         if mode == "a4":
             rgb, resolved = _place_on_a4(rgb, bg, orientation=orient)
             resolved_orients.append(resolved)
-        pages.append(rgb)
+            pages.append(rgb)
+        elif mode == "2up":
+            # Combine into landscape A4 sheets afterwards (pairs side by side).
+            prepared.append(rgb)
+        else:
+            pages.append(rgb)
+
+    if mode == "2up":
+        for i in range(0, len(prepared), 2):
+            pages.append(_place_on_2up_page(prepared[i : i + 2], bg))
 
     if mode == "a4":
         notes.append("page_mode_a4")
@@ -297,6 +384,11 @@ def images_to_pdf(
                 notes.append(f"resolved_{uniq[0]}")
             else:
                 notes.append("resolved_mixed")
+    elif mode == "2up":
+        notes.append("page_mode_2up")
+        notes.append("orientation_landscape")
+        if len(prepared) % 2:
+            notes.append("last_page_single")
     else:
         notes.append("page_mode_fit")
 
@@ -306,7 +398,10 @@ def images_to_pdf(
         rest = pages[1:]
         save_kwargs: Dict[str, Any] = {
             "format": "PDF",
-            "resolution": 72.0,
+            # A4 / 2up canvases are built at A4_RENDER_DPI, so the PDF must be
+            # saved at the same DPI to keep the physical page size at A4.
+            # ``fit`` pages remain 72 DPI (1 pixel = 1 point, native size).
+            "resolution": A4_RENDER_DPI if mode in ("a4", "2up") else 72.0,
         }
         if rest:
             save_kwargs["save_all"] = True
@@ -327,7 +422,7 @@ def images_to_pdf(
         "extension": ".pdf",
         "page_count": len(pages),
         "page_mode": mode,
-        "orientation": orient if mode == "a4" else None,
+        "orientation": orient if mode == "a4" else ("landscape" if mode == "2up" else None),
         "background": background if isinstance(background, str) else "#ffffff",
         "notes": list(notes),
         "original_bytes": total_in,

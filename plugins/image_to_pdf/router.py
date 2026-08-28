@@ -144,6 +144,11 @@ async def api_options():
                     "label": "A4 适配",
                     "hint": "等比缩放到 A4 可打印区并居中留白",
                 },
+                {
+                    "id": "2up",
+                    "label": "横向并排",
+                    "hint": "每两张图左右并排放在一张横版 A4 上，保持原比例",
+                },
             ],
             "orientation_options": [
                 {
@@ -253,7 +258,9 @@ async def api_convert(
             extra={
                 "page_count": result.get("page_count"),
                 "page_mode": mode,
-                "orientation": orient if mode == "a4" else None,
+                "orientation": (
+                    orient if mode == "a4" else ("landscape" if mode == "2up" else None)
+                ),
                 "image_count": len(names),
                 "original_bytes": result.get("original_bytes"),
                 "output_bytes": result.get("output_bytes"),

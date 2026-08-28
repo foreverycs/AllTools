@@ -43,6 +43,7 @@ def test_format_and_mode_lists():
     assert "png" in input_formats()
     assert "fit" in page_modes()
     assert "a4" in page_modes()
+    assert "2up" in page_modes()
     assert "auto" in orientations()
     assert "portrait" in orientations()
     assert "landscape" in orientations()
@@ -162,6 +163,49 @@ def test_bad_page_mode():
         images_to_pdf([_png_bytes()], page_mode="letter")
 
 
+def test_2up_even_pair_one_landscape_page():
+    a = _png_bytes(size=(60, 240), color=(200, 30, 30))   # portrait phone shot
+    b = _png_bytes(size=(60, 240), color=(30, 30, 200))   # portrait phone shot
+    out = images_to_pdf(
+        [a, b], filenames=["a.png", "b.png"], page_mode="2up"
+    )
+    assert out["page_mode"] == "2up"
+    assert out["orientation"] == "landscape"
+    assert out["page_count"] == 1
+    assert "page_mode_2up" in out["notes"]
+    assert "orientation_landscape" in out["notes"]
+    assert "last_page_single" not in out["notes"]
+    reader = PdfReader(io.BytesIO(out["data"]))
+    assert len(reader.pages) == 1
+    page = reader.pages[0]
+    # Landscape A4: width > height
+    assert float(page.mediabox.width) > float(page.mediabox.height)
+
+
+def test_2up_odd_pair_two_pages_last_centered():
+    a = _png_bytes(size=(60, 240), color=(200, 30, 30))
+    b = _png_bytes(size=(60, 240), color=(30, 30, 200))
+    c = _png_bytes(size=(80, 80), color=(30, 200, 30))
+    out = images_to_pdf(
+        [a, b, c], filenames=["a.png", "b.png", "c.png"], page_mode="2up"
+    )
+    assert out["page_count"] == 2
+    assert "last_page_single" in out["notes"]
+    reader = PdfReader(io.BytesIO(out["data"]))
+    assert len(reader.pages) == 2
+
+
+def test_2up_single_image_centered_on_landscape():
+    out = images_to_pdf(
+        [_png_bytes(size=(60, 240))], filenames=["a.png"], page_mode="2up"
+    )
+    assert out["page_count"] == 1
+    assert "last_page_single" in out["notes"]
+    reader = PdfReader(io.BytesIO(out["data"]))
+    page = reader.pages[0]
+    assert float(page.mediabox.width) > float(page.mediabox.height)
+
+
 def test_http_options():
     from app import app
 
@@ -174,6 +218,7 @@ def test_http_options():
     assert body["defaults"]["orientation"] == "auto"
     assert "portrait" in body["orientations"]
     assert body["max_images"] == max_images()
+    assert any(m["id"] == "2up" for m in body["modes"])
 
 
 def test_http_convert_single():
@@ -216,6 +261,31 @@ def test_http_convert_multi():
     assert len(reader.pages) == 2
     page = reader.pages[0]
     assert float(page.mediabox.height) > float(page.mediabox.width)
+
+
+def test_http_convert_2up():
+    from app import app
+
+    client = TestClient(app)
+    files = [
+        ("files", ("a.png", _png_bytes(size=(60, 240), color=(1, 2, 3)), "image/png")),
+        ("files", ("b.png", _png_bytes(size=(60, 240), color=(4, 5, 6)), "image/png")),
+    ]
+    r = client.post(
+        "/tools/image-to-pdf/convert",
+        files=files,
+        data={"page_mode": "2up"},
+    )
+    assert r.status_code == 200
+    assert r.content[:4] == b"%PDF"
+    assert int(r.headers.get("X-Page-Count", "0")) == 1
+    assert r.headers.get("X-Page-Mode") == "2up"
+    assert r.headers.get("X-Orientation") == "landscape"
+    reader = PdfReader(io.BytesIO(r.content))
+    assert len(reader.pages) == 1
+    w = float(reader.pages[0].mediabox.width)
+    h = float(reader.pages[0].mediabox.height)
+    assert w > h
 
 
 def test_http_reject_bad_file():
