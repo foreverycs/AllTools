@@ -523,7 +523,6 @@ async def convert_batch(
 
     range_spec = (page_range or "").strip() or None
     ws = TempWorkspace("pdf2word_batch_")
-    ws = TempWorkspace("pdf2word_batch_")
     ws.create()
     zip_path = ws.join("output.zip")
 

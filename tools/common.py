@@ -6,19 +6,20 @@ so image plugins stay self-contained and the ``media`` package can be removed.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import re
 import threading
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any
+from urllib.parse import quote
 
 from fastapi import HTTPException, UploadFile
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 from PIL import Image
 from starlette.requests import Request
-from urllib.parse import quote
 
 from core.settings import get_settings
 
@@ -51,12 +52,13 @@ def set_plugin_template_dirs(dirs) -> None:
                 loaders.append(FileSystemLoader(str(d)))
         templates.env.loader = ChoiceLoader(loaders)
 
+
 # Bump when shipping CSS/JS that must invalidate CDN/browser caches.
 # Also mixed with file mtime so local edits bust cache without code changes.
 _ASSET_BUILD = os.environ.get("STATIC_ASSET_VERSION") or "20260715c"
 
 
-def effective_root_path(request: Optional[Request] = None) -> str:
+def effective_root_path(request: Request | None = None) -> str:
     """App mount prefix for reverse proxies (ROOT_PATH or ASGI root_path)."""
     if request is not None:
         scoped = (request.scope.get("root_path") or "").rstrip("/")
@@ -77,7 +79,7 @@ def join_url(root: str, path: str) -> str:
     return f"{root}{path}" if root else path
 
 
-def url_path(path: str, request: Optional[Request] = None) -> str:
+def url_path(path: str, request: Request | None = None) -> str:
     """Build a browser path that respects reverse-proxy subpath mounts."""
     return join_url(effective_root_path(request), path)
 
@@ -156,7 +158,7 @@ def _static_file_version(rel_path: str) -> str:
     return ver
 
 
-def static_url(path: str, request: Optional[Request] = None) -> str:
+def static_url(path: str, request: Request | None = None) -> str:
     """URL for a static asset with ``?v=`` cache buster.
 
     ``path`` may be ``/static/css/layout.css`` or ``css/layout.css``.
@@ -239,7 +241,9 @@ def _jinja_robots_meta(ctx: Any) -> str:
     """Per-page robots meta (respect global indexability)."""
     from core.seo import is_indexable
 
-    return "index,follow,max-image-preview:large" if is_indexable() else "noindex,follow"
+    return (
+        "index,follow,max-image-preview:large" if is_indexable() else "noindex,follow"
+    )
 
 
 templates.env.globals["seo_url"] = _jinja_seo_absolute_url
@@ -247,16 +251,14 @@ templates.env.globals["og_image_url"] = _jinja_og_image_url
 templates.env.globals["robots_meta"] = _jinja_robots_meta
 
 
-def build_tools_catalog(
-    *, include_featured: bool = True
-) -> list:
+def build_tools_catalog(*, include_featured: bool = True) -> list:
     """Return a flat catalog of enabled tools for homepage / palette.
 
     Merges regular and featured tools, deduped by slug, with a stable
     set of display fields.
     """
-    from tools import enabled_tools, featured_tools
     from core.tool_catalog import get_tool_category
+    from tools import enabled_tools, featured_tools
 
     seen: set = set()
     catalog: list = []
@@ -282,9 +284,9 @@ def build_tools_catalog(
 
 
 def with_nav(
-    context: Optional[dict] = None,
+    context: dict | None = None,
     *,
-    active_nav: Optional[str] = None,
+    active_nav: str | None = None,
 ) -> dict:
     """Merge top-nav context into a tool (or other) page template dict.
 
@@ -368,10 +370,9 @@ def with_nav(
         ctx["sibling_tools"] = []
     return ctx
 
+
 # Media types
-DOCX_MEDIA = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
+DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PDF_MEDIA = "application/pdf"
 ZIP_MEDIA = "application/zip"
 
@@ -393,14 +394,14 @@ def upload_chunk_size() -> int:
     return get_settings().upload_chunk_size
 
 
-def safe_stem(filename: Optional[str], default: str = "output") -> str:
+def safe_stem(filename: str | None, default: str = "output") -> str:
     from core.filename import safe_stem as _core_safe_stem
 
     return _core_safe_stem(filename, default)
 
 
 def content_disposition(
-    name: Optional[str],
+    name: str | None,
     disposition: str = "attachment",
     *,
     fallback: str = "download",
@@ -413,9 +414,12 @@ def content_disposition(
     inline previews (admin).
     """
     raw = (name or fallback).replace("\\", "_").replace("/", "_").replace('"', "")
-    ascii_name = "".join(
-        ch if 32 <= ord(ch) < 127 and ch not in '\\";' else "_" for ch in raw
-    ).strip("._") or fallback
+    ascii_name = (
+        "".join(
+            ch if 32 <= ord(ch) < 127 and ch not in '\\";' else "_" for ch in raw
+        ).strip("._")
+        or fallback
+    )
     while "__" in ascii_name:
         ascii_name = ascii_name.replace("__", "_")
     return (
@@ -434,7 +438,7 @@ def to_bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
-def check_max_chars(text: Optional[str], max_chars: int, *, label: str = "input") -> None:
+def check_max_chars(text: str | None, max_chars: int, *, label: str = "input") -> None:
     """Raise 400/413 when ``text`` is missing or exceeds ``max_chars``."""
     if text is None:
         raise HTTPException(status_code=400, detail=f"Missing {label}")
@@ -449,7 +453,7 @@ async def save_upload(
     file: UploadFile,
     dest: str,
     *,
-    max_bytes: Optional[int] = None,
+    max_bytes: int | None = None,
 ) -> int:
     """Stream an upload to ``dest``, enforcing size limit. Returns byte count."""
     limit = max_bytes if max_bytes is not None else max_upload_bytes()
@@ -472,10 +476,8 @@ async def save_upload(
             raise HTTPException(status_code=400, detail="Empty file")
     except HTTPException:
         # Do not leave a partially-written file behind on the limit path.
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(dest)
-        except OSError:
-            pass
         raise
     return total
 
@@ -483,8 +485,8 @@ async def save_upload(
 def check_upload_size_header(
     file: UploadFile,
     *,
-    label: Optional[str] = None,
-    max_bytes: Optional[int] = None,
+    label: str | None = None,
+    max_bytes: int | None = None,
 ) -> None:
     """Reject early when Content-Length / starlette size exceeds the limit."""
     limit = max_bytes if max_bytes is not None else max_upload_bytes()
@@ -497,9 +499,9 @@ def check_upload_size_header(
 
 
 async def check_batch_total(
-    files: List[UploadFile],
+    files: list[UploadFile],
     *,
-    max_bytes: Optional[int] = None,
+    max_bytes: int | None = None,
     label: str = "批量上传",
 ) -> int:
     """Enforce a cumulative size cap across a batch of uploads.
@@ -547,7 +549,7 @@ class ImageFormatError(ValueError):
 
 def check_image_dimensions(
     path: str, *, head_bytes: int = 16 * 1024
-) -> Optional[Tuple[int, int]]:
+) -> tuple[int, int] | None:
     """Header-only raster dimension check before any heavy decoding.
 
     Reads only the first ``head_bytes`` (dimensions live in the file header for
@@ -567,18 +569,16 @@ def check_image_dimensions(
     except Exception:
         return None
     if (w or 0) * (h or 0) > MAX_IMAGE_PIXELS:
-        raise ValueError(
-            f"image too large ({w}x{h}); max {MAX_IMAGE_PIXELS} pixels"
-        )
+        raise ValueError(f"image too large ({w}x{h}); max {MAX_IMAGE_PIXELS} pixels")
     return int(w or 0), int(h or 0)
 
 
-def image_input_formats() -> List[str]:
+def image_input_formats() -> list[str]:
     """Common raster formats accepted by the shared detector."""
     return list(IMAGE_INPUT_FORMATS)
 
 
-def detect_image_format(data: bytes, filename: Optional[str] = None) -> str:
+def detect_image_format(data: bytes, filename: str | None = None) -> str:
     """Return one of ``IMAGE_INPUT_FORMATS`` or raise ``ImageFormatError``."""
     if not data:
         raise ImageFormatError("Empty file")
