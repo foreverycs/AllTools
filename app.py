@@ -37,9 +37,13 @@ from admin.auth import is_admin
 from tools import (
     get_registry,
     json_legacy_router,
-    nav_categories,
 )
-from tools.common import build_tools_catalog, content_disposition, templates
+from tools.common import (
+    build_tools_catalog,
+    configure_template_autoreload,
+    content_disposition,
+    templates,
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -47,6 +51,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv()
 configure_logging()
 logger = get_logger("toolkit.app")
+
+# Re-apply after load_dotenv: tools.common is imported above (before .env is
+# read), so its import-time default alone would miss a .env-container setting.
+configure_template_autoreload(os.environ.get("TEMPLATE_AUTO_RELOAD"))
 
 
 def _import_root_path() -> str:
@@ -549,11 +557,17 @@ def _jobs_health_note() -> dict:
     }
 
 
-def _health_body(detail: bool) -> dict:
-    """Monitoring payload shared by the JSON probe and the HTML dashboard."""
+def _health_body(detail: bool, snap: dict | None = None) -> dict:
+    """Monitoring payload shared by the JSON probe and the HTML dashboard.
+
+    Pass ``snap`` (from ``public_snapshot()``) when the caller also needs the
+    nav/catalog — that keeps the whole request on one snapshot instead of
+    re-validating the enable/category caches per read.
+    """
     from tools import get_registry, public_snapshot
 
-    snap = public_snapshot()
+    if snap is None:
+        snap = public_snapshot()
     body: dict = {
         "status": "ok",
         "version": app.version,
@@ -589,7 +603,12 @@ async def health(request: Request, format: str = Query("html"), detail: int = Qu
     """
     if format == "json":
         return JSONResponse(_health_body(detail=bool(detail)))
-    body = _health_body(detail=True)
+    # One snapshot for both the payload and the top nav: nav_categories() would
+    # rebuild the category lists and re-validate tool_catalog for every render.
+    from tools import public_snapshot
+
+    snap = public_snapshot()
+    body = _health_body(detail=True, snap=snap)
     cats = body.get("categories") or []
     max_count = max([c["count"] for c in cats] or [1])
     return templates.TemplateResponse(
@@ -613,7 +632,7 @@ async def health(request: Request, format: str = Query("html"), detail: int = Qu
             "api_rate_limit": body.get("api_rate_limit"),
             "api_rate_window_sec": body.get("api_rate_window_sec"),
             "api_rate_backend": body.get("api_rate_backend"),
-            "nav_items": nav_categories(),
+            "nav_items": snap["nav"],
             "active_nav": "",
         },
     )

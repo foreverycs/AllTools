@@ -81,10 +81,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Minify static CSS/JS for production (cuts transfer size ~22%).
+# Minify static CSS/JS for production (cuts transfer size ~22%), then subset the
+# Phosphor icon font to the glyphs the templates actually use (82 KB CSS / 147 KB
+# font → ~1.5 KB / ~3.7 KB for the 22 used icons).
 # Templates auto-detect .min siblings via USE_MIN_ASSETS=1 (set in ENV below);
 # the source files remain so dev mode still works if the env var is unset.
-RUN python scripts/minify_static.py
+# css/phosphor/regular.min.css belongs to the subsetter — minify_static skips it
+# (see SKIP_REL) so the slim @font-face url is not overwritten.
+# fonttools/brotli are build-time only and never imported by the app.
+RUN pip install --no-cache-dir fonttools brotli \
+ && python scripts/minify_static.py \
+ && python scripts/subset_phosphor.py
 
 ENV HOME=/tmp \
     SAL_USE_VCLPLUGIN=svp \
@@ -92,7 +99,8 @@ ENV HOME=/tmp \
     LIBREOFFICE_PATH=/usr/bin/soffice \
     PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PIP_TRUSTED_HOST=mirrors.aliyun.com \
-    USE_MIN_ASSETS=1
+    USE_MIN_ASSETS=1 \
+    TEMPLATE_AUTO_RELOAD=0
 
 EXPOSE 8000
 

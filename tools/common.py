@@ -29,6 +29,33 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+
+def configure_template_autoreload(value: bool | str | None) -> bool:
+    """Set Jinja's ``auto_reload``; returns the effective value.
+
+    With ``auto_reload`` on, every ``get_template`` stats each template in the
+    loader chain to detect edits. The chain is a ``ChoiceLoader`` of the builtin
+    dir plus every plugin dir, so a page that includes a handful of partials
+    pays a stat per partial per loader — over half the homepage render time.
+
+    Production images bake their templates and pick up changes by redeploying,
+    so callers pass ``TEMPLATE_AUTO_RELOAD=0`` there (see ``app.py``, run after
+    ``load_dotenv``). Local dev keeps the default so template edits show up
+    without a restart.
+    """
+    if value is None:
+        flag = True
+    elif isinstance(value, bool):
+        flag = value
+    else:
+        flag = str(value).strip().lower() not in ("0", "false", "off", "no")
+    templates.env.auto_reload = flag
+    return flag
+
+
+configure_template_autoreload(os.environ.get("TEMPLATE_AUTO_RELOAD"))
+
+
 # Guards loader rebuilds (plugin hot reload runs in a background thread while
 # requests render templates concurrently). The swap itself is a single atomic
 # attribute assignment, but rebuilding the loader chain must not interleave
@@ -302,8 +329,12 @@ def with_nav(
     from tools import get_tool_by_slug, public_snapshot
 
     ctx: dict = dict(context or {})
+    # One snapshot per render: nav, palette catalog and siblings all read the
+    # same cached snapshot, and each call re-validates the enable/category
+    # caches (a stat + resolve per check).
+    snap = public_snapshot()
     if "nav_items" not in ctx:
-        ctx["nav_items"] = public_snapshot()["nav"]
+        ctx["nav_items"] = snap["nav"]
 
     tool = ctx.get("tool")
     if not isinstance(tool, dict):
@@ -339,7 +370,7 @@ def with_nav(
 
     # Flat catalog for command palette (same shape as homepage tools_catalog).
     if "tools_catalog" not in ctx:
-        ctx["tools_catalog"] = public_snapshot()["catalog"]
+        ctx["tools_catalog"] = snap["catalog"]
 
     # Sibling tools in the same category (for quick chips under tool_nav).
     if "sibling_tools" not in ctx and tool.get("category") and slug:
@@ -348,7 +379,7 @@ def with_nav(
         # override or registry default) and include featured tools, matching
         # the previous enabled_tools(include_featured=True) scan.
         siblings: list = []
-        for t in public_snapshot()["catalog"]:
+        for t in snap["catalog"]:
             if t.get("category") != cat_id:
                 continue
             if str(t.get("slug") or "") == slug:

@@ -50,6 +50,22 @@ def _build_table(table, page, widx: WordIndex) -> Optional[TableBlock]:
     if ncols < 1 or nrows < 1:
         return None
 
+    # Geometry-only gate for borderless candidates. `_build_table` is the
+    # dominant cost on plain-prose pages (pdfplumber's text strategy reports a
+    # word grid), and every such candidate is rejected by `_accept_table` for
+    # exceeding the borderless size limits. Those limits are decided by ncols /
+    # nrows alone, so bail out before `table.extract()` — which re-derives the
+    # page words and checks every char bbox. Ruled grids keep the same limits
+    # out of the accept path (`_has_drawn_grid` ⇒ shape-only check), so they
+    # must still be built.
+    over_limit = (
+        ncols > TEXT_TABLE_MAX_COLS
+        or nrows > TEXT_TABLE_MAX_ROWS
+        or ncols * nrows > TEXT_TABLE_MAX_CELLS
+    )
+    if over_limit and not _has_drawn_grid(page, table.bbox):
+        return None
+
     # `extract()` gives the text of every (non-covered) cell.
     logical = table.extract()
 

@@ -24,7 +24,8 @@ Usage::
     python scripts/minify_static.py --clean    # remove generated .min files
 
 Skip individual files by adding a ``# nolint`` / ``/* nolint */`` banner on the
-first line.
+first line. Sources whose ``.min`` sibling is produced by another script go in
+``SKIP_REL`` instead (see ``scripts/subset_phosphor.py``).
 """
 
 from __future__ import annotations
@@ -42,6 +43,13 @@ JS_GLOBS = ("js/**/*.js",)
 
 # Files that must NOT be minified (service worker / already-handled / vendored).
 SKIP_NAMES = {"sw.js"}
+
+# Sources whose ``.min`` sibling is owned by another generator. The Phosphor
+# stylesheet is emitted by ``scripts/subset_phosphor.py``, which keeps only the
+# icon rules the templates use and rewrites the ``@font-face`` url to the slim
+# font. Minifying the source here would clobber it and make ``--check`` flag a
+# correct build as stale, so this script leaves it alone entirely.
+SKIP_REL = {"static/css/phosphor/regular.css"}
 
 _NOLINT_RE = re.compile(r"^\s*(?:/\*.*nolint.*\*/|//.*nolint)", re.IGNORECASE)
 
@@ -243,6 +251,8 @@ def _candidates() -> list[Path]:
             # Never treat an already-generated ``.min.<ext>`` as a source — it
             # would otherwise be re-minified into ``.min.min.<ext>`` on every run.
             if path.name.lower().endswith(f".min{path.suffix.lower()}"):
+                continue
+            if path.relative_to(BASE_DIR).as_posix() in SKIP_REL:
                 continue
             if path in seen:
                 continue
