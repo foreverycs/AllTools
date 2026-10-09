@@ -11,10 +11,14 @@ from core.settings import clear_settings_cache
 
 @pytest.fixture(autouse=True)
 def _reset_limiter():
+    from plugins.express.router import reset_code_guard
+
     rl.reset_all()
+    reset_code_guard()
     clear_settings_cache()
     yield
     rl.reset_all()
+    reset_code_guard()
     clear_settings_cache()
 
 
@@ -92,8 +96,8 @@ def test_rate_limit_keys_on_forwarded_client_ip(monkeypatch, tmp_path):
 
     import importlib
 
-    import core.settings as settings_mod
     import app as app_mod
+    import core.settings as settings_mod
 
     settings_mod.clear_settings_cache()
     importlib.reload(app_mod)
@@ -156,3 +160,94 @@ def test_admin_lockouts_sweep_expired():
     assert locked2 is False
     assert key not in al._lockouts
     al.reset_all()
+
+
+class _FakePipe:
+    """Minimal pipeline stand-in matching redis.asyncio usage in _check_redis."""
+
+    def __init__(self, client):
+        self._client = client
+        self._ops = []
+
+    def incr(self, key):
+        self._ops.append(("incr", key))
+
+    def expire(self, key, ttl):
+        self._ops.append(("expire", key, ttl))
+
+    async def execute(self):
+        out = []
+        for op in self._ops:
+            if op[0] == "incr":
+                self._client.data[op[1]] = self._client.data.get(op[1], 0) + 1
+                out.append(self._client.data[op[1]])
+            else:
+                self._client.ttl_calls.append((op[1], op[2]))
+                out.append(True)
+        return out
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.data = {}
+        self.ttl_calls = []
+
+    def pipeline(self):
+        return _FakePipe(self)
+
+
+@pytest.mark.asyncio
+async def test_redis_fixed_window_never_stretches_ttl(monkeypatch):
+    """Per-bucket key + window-end TTL: an active client cannot stretch the
+    window forever (the old bug: single key + EXPIRE refreshed per hit →
+    permanent 429), and the counter rolls over at the bucket boundary."""
+    fake = _FakeRedis()
+    monkeypatch.setattr(rl, "_redis_client", fake)
+    monkeypatch.setattr(rl, "_backend", "redis")
+
+    # t=1000..1019 lie in bucket 16 (960..1020) of a 60s window.
+    ok, _, rem = await rl.check_rate("api:9.9.9.9", limit=2, window_sec=60.0, now=1000.0)
+    assert ok and rem == 1
+    ok2, _, rem2 = await rl.check_rate(
+        "api:9.9.9.9", limit=2, window_sec=60.0, now=1010.0
+    )
+    assert ok2 and rem2 == 0
+    ok3, retry3, _ = await rl.check_rate(
+        "api:9.9.9.9", limit=2, window_sec=60.0, now=1015.0
+    )
+    assert not ok3 and retry3 == 6  # 1020 (window end) - 1015 + 1
+
+    # TTL counts down to the window end instead of being reset per hit.
+    assert [ttl for _, ttl in fake.ttl_calls] == [21, 11, 6]
+
+    # Next bucket gets a fresh counter even though the client kept hammering.
+    ok4, _, rem4 = await rl.check_rate(
+        "api:9.9.9.9", limit=2, window_sec=60.0, now=1021.0
+    )
+    assert ok4 and rem4 == 1
+    assert len([k for k in fake.data if k.endswith(":9.9.9.9")]) == 2
+
+
+def test_read_endpoints_rate_limited(monkeypatch, tmp_path):
+    """GET /tools/express/read/{code} and POST /tools/express/read used to
+    bypass the public limiter entirely, allowing unthrottled code guessing."""
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-pass")
+    monkeypatch.setenv("ADMIN_SECRET", "test-secret-for-unit-tests-only")
+    monkeypatch.setenv("API_RATE_LIMIT", "2")
+    monkeypatch.setenv("API_RATE_WINDOW_SEC", "60")
+    clear_settings_cache()
+    rl.reset_all()
+
+    from app import app
+
+    client = TestClient(app)
+    g = [client.get("/tools/express/read/000000").status_code for _ in range(3)]
+    assert g == [404, 404, 429]
+    rl.reset_all()
+    p = [
+        client.post("/tools/express/read", data={"code": "000000"}).status_code
+        for _ in range(3)
+    ]
+    assert p == [404, 404, 429]
+    rl.reset_all()

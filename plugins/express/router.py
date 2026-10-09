@@ -7,6 +7,8 @@ import base64
 import io
 import os
 import tempfile
+import threading
+import time
 import zipfile
 from contextlib import suppress
 
@@ -15,6 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.background import BackgroundTask
 from starlette.requests import Request
 
+from core.rate_limit_base import SlidingWindow, client_key_from_request
 from storage.express import (
     claim_download,
     claim_text,
@@ -52,6 +55,102 @@ _ERROR_MESSAGES = {
 _MAX_SEND_FILES = 20
 
 _QR_SIZE = 320
+
+# Brute-force guard: the 6-digit code space (10^6) is enumerable, so wrong-code
+# attempts are counted per client IP. Past _CODE_FAIL_MAX misses inside
+# _CODE_FAIL_WINDOW_SEC the client is locked out for _CODE_LOCKOUT_SEC and all
+# code endpoints (lookup / read / pickup) refuse it before touching the DB.
+_CODE_FAIL_MAX = 10
+_CODE_FAIL_WINDOW_SEC = 600.0
+_CODE_LOCKOUT_SEC = 900.0
+
+_guard_lock = threading.Lock()
+_code_failures = SlidingWindow()
+_code_lockouts: dict[str, float] = {}
+_lockout_sweep_ts: float = 0.0
+_LOCKOUT_SWEEP_INTERVAL_SEC = 60.0
+
+
+def _sweep_lockouts(t: float) -> None:
+    """Drop expired lockout entries so the dict cannot grow unbounded.
+
+    Callers hold ``_guard_lock``. Throttled like the admin login limiter so the
+    common (not-locked) request is one dict lookup, not a full scan.
+    """
+    global _lockout_sweep_ts
+    if t - _lockout_sweep_ts < _LOCKOUT_SWEEP_INTERVAL_SEC:
+        return
+    _lockout_sweep_ts = t
+    for k, until in list(_code_lockouts.items()):
+        if until <= t:
+            _code_lockouts.pop(k, None)
+
+
+def reset_code_guard() -> None:
+    """Drop brute-force guard state (tests)."""
+    global _lockout_sweep_ts
+    with _guard_lock:
+        _code_lockouts.clear()
+        _lockout_sweep_ts = 0.0
+    _code_failures.clear()
+
+
+def _guard_key(request: Request) -> str:
+    return f"code:{client_key_from_request(request)}"
+
+
+def _guard_reject_if_locked(key: str) -> None:
+    t = time.monotonic()
+    with _guard_lock:
+        _sweep_lockouts(t)
+        until = _code_lockouts.get(key)
+        if until is None:
+            return
+        if until <= t:
+            _code_lockouts.pop(key, None)
+            return
+        retry = max(1, int(until - t))
+    raise HTTPException(
+        status_code=429,
+        detail=f"尝试次数过多，请 {retry} 秒后再试",
+        headers={"Retry-After": str(retry)},
+    )
+
+
+def _guard_register_failure(key: str) -> None:
+    """Record one wrong-code attempt; lock the client out past the limit."""
+    t = time.monotonic()
+    exceeded, _ = _code_failures.record(
+        key, limit=_CODE_FAIL_MAX, window_sec=_CODE_FAIL_WINDOW_SEC, now=t
+    )
+    if exceeded:
+        with _guard_lock:
+            _sweep_lockouts(t)
+            _code_lockouts[key] = t + _CODE_LOCKOUT_SEC
+        raise HTTPException(
+            status_code=429,
+            detail=f"尝试次数过多，请 {int(_CODE_LOCKOUT_SEC)} 秒后再试",
+            headers={"Retry-After": str(int(_CODE_LOCKOUT_SEC))},
+        )
+
+
+def _guard_clear_failures(key: str) -> None:
+    """Clear failure history after a correct code (like admin login)."""
+    with _guard_lock:
+        _code_lockouts.pop(key, None)
+    _code_failures.discard(key)
+
+
+def _guard_fail_or_clear(key: str, err: str | None) -> None:
+    """Count unknown-code misses; clear the counter once the code is correct.
+
+    Any non-``invalid`` outcome (success, expired, exhausted, missing payload)
+    proves the caller knew a real code, so the miss counter is reset.
+    """
+    if err == "invalid":
+        _guard_register_failure(key)
+    else:
+        _guard_clear_failures(key)
 
 
 def _render_qr_data_uri(payload: str) -> str:
@@ -512,13 +611,17 @@ async def api_send_text(
 
 
 @router.post("/lookup")
-async def api_lookup(code: str = Form(...)):
+async def api_lookup(request: Request, code: str = Form(...)):
     """Query package metadata by code (does not consume a download)."""
+    key = _guard_key(request)
+    _guard_reject_if_locked(key)
     if not is_valid_code_format(code):
         raise HTTPException(status_code=400, detail="请输入 6 位数字取件码")
     info = get_package_by_code(code)
     if info is None:
+        _guard_register_failure(key)
         raise HTTPException(status_code=404, detail=_ERROR_MESSAGES["invalid"])
+    _guard_clear_failures(key)
     if info.get("expired"):
         raise HTTPException(status_code=410, detail=_ERROR_MESSAGES["expired"])
     if info.get("exhausted"):
@@ -548,10 +651,13 @@ async def api_lookup(code: str = Form(...)):
     return JSONResponse({"ok": True, **safe})
 
 
-def _read_response(raw_code: str) -> JSONResponse:
+def _read_response(request: Request, raw_code: str) -> JSONResponse:
+    key = _guard_key(request)
+    _guard_reject_if_locked(key)
     if not is_valid_code_format(raw_code):
         raise HTTPException(status_code=400, detail="请输入 6 位数字取件码")
     info, err = claim_text(raw_code)
+    _guard_fail_or_clear(key, err)
     if err:
         status = 404 if err in ("invalid", "missing") else 410
         raise HTTPException(
@@ -581,15 +687,15 @@ def _read_response(raw_code: str) -> JSONResponse:
 
 
 @router.post("/read")
-async def api_read_post(code: str = Form(...)):
+async def api_read_post(request: Request, code: str = Form(...)):
     """Read a 小纸条 by code (consumes one download if limited)."""
-    return _read_response(code)
+    return _read_response(request, code)
 
 
 @router.get("/read/{code}")
-async def api_read_get(code: str):
+async def api_read_get(request: Request, code: str):
     """Read a 小纸条 by path code."""
-    return _read_response(code)
+    return _read_response(request, code)
 
 
 def _burn_unlink(rel: str) -> None:
@@ -599,11 +705,14 @@ def _burn_unlink(rel: str) -> None:
         _unlink_package_file(rel)
 
 
-def _pickup_response(raw_code: str) -> FileResponse:
+def _pickup_response(request: Request, raw_code: str) -> FileResponse:
+    key = _guard_key(request)
+    _guard_reject_if_locked(key)
     if not is_valid_code_format(raw_code):
         raise HTTPException(status_code=400, detail="请输入 6 位数字取件码")
 
     info, err = claim_download(raw_code)
+    _guard_fail_or_clear(key, err)
     if err:
         status = 404 if err in ("invalid", "missing") else 410
         raise HTTPException(
@@ -632,12 +741,12 @@ def _pickup_response(raw_code: str) -> FileResponse:
 
 
 @router.post("/pickup")
-async def api_pickup_post(code: str = Form(...)):
+async def api_pickup_post(request: Request, code: str = Form(...)):
     """Download by form code (consumes one download if limited)."""
-    return _pickup_response(code)
+    return _pickup_response(request, code)
 
 
 @router.get("/pickup/{code}")
-async def api_pickup_get(code: str):
+async def api_pickup_get(request: Request, code: str):
     """Download by path code (bookmarkable)."""
-    return _pickup_response(code)
+    return _pickup_response(request, code)

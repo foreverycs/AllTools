@@ -44,16 +44,19 @@ def express_client(express_env, monkeypatch):
     import core.concurrency as concurrency_mod
     import core.settings as settings_mod
     import core.tool_flags as flags_mod
+    from plugins.express.router import reset_code_guard
 
     settings_mod.clear_settings_cache()
     concurrency_mod.reset_semaphore()
     rl.reset_all()
+    reset_code_guard()
     flags_mod.clear_tool_flags_cache()
     importlib.reload(app_mod)
 
     client = TestClient(app_mod.app)
     yield client, ex, d
     rl.reset_all()
+    reset_code_guard()
     flags_mod.clear_tool_flags_cache()
     settings_mod.clear_settings_cache()
 
@@ -485,3 +488,96 @@ def test_api_text_burn(express_client):
     assert r1.status_code == 200 and r1.json()["text"] == "阅后即焚内容"
     r2 = client.get(f"/tools/express/read/{code}")
     assert r2.status_code in (404, 410)
+
+
+def test_code_guessing_lockout_blocks_all_endpoints(express_client, monkeypatch):
+    """Too many wrong codes lock the client out of lookup/read/pickup —
+    even the correct code is refused while locked (brute-force defense)."""
+    client, _, _ = express_client
+    express_router = importlib.import_module("plugins.express.router")
+
+    monkeypatch.setattr(express_router, "_CODE_FAIL_MAX", 3)
+    monkeypatch.setattr(express_router, "_CODE_LOCKOUT_SEC", 900.0)
+    express_router.reset_code_guard()
+
+    send = client.post(
+        "/tools/express/send-text", data={"text": "秘密", "ttl_hours": "24"}
+    )
+    assert send.status_code == 200, send.text
+    code = send.json()["code"]
+
+    for _ in range(2):
+        r = client.post("/tools/express/lookup", data={"code": "000000"})
+        assert r.status_code == 404
+    trip = client.post("/tools/express/lookup", data={"code": "111111"})
+    assert trip.status_code == 429
+    assert trip.headers.get("Retry-After")
+
+    assert client.post("/tools/express/lookup", data={"code": code}).status_code == 429
+    assert client.get(f"/tools/express/read/{code}").status_code == 429
+    assert client.post("/tools/express/pickup", data={"code": code}).status_code == 429
+
+    express_router.reset_code_guard()
+    assert client.get(f"/tools/express/read/{code}").status_code == 200
+
+
+def test_code_guess_counter_cleared_by_correct_code(express_client, monkeypatch):
+    """A correct code proves knowledge and restarts the miss counter."""
+    client, _, _ = express_client
+    express_router = importlib.import_module("plugins.express.router")
+
+    monkeypatch.setattr(express_router, "_CODE_FAIL_MAX", 3)
+    express_router.reset_code_guard()
+
+    send = client.post(
+        "/tools/express/send-text", data={"text": "你好", "ttl_hours": "24"}
+    )
+    assert send.status_code == 200, send.text
+    code = send.json()["code"]
+
+    for bad in ("000000", "111111"):
+        assert client.post("/tools/express/lookup", data={"code": bad}).status_code == 404
+    assert client.post("/tools/express/lookup", data={"code": code}).status_code == 200
+
+    # Counter restarted: two more misses must NOT lock the client out.
+    for bad in ("222222", "333333"):
+        assert client.post("/tools/express/lookup", data={"code": bad}).status_code == 404
+    assert client.get(f"/tools/express/read/{code}").status_code == 200
+
+
+def test_code_guard_per_client_isolation(express_client):
+    """Failures are tracked per client key: one locked-out client must not
+    affect another."""
+    from fastapi import HTTPException
+
+    express_router = importlib.import_module("plugins.express.router")
+    express_router.reset_code_guard()
+    try:
+        key_a = "code:1.2.3.4"
+        key_b = "code:5.6.7.8"
+        for _ in range(express_router._CODE_FAIL_MAX - 1):
+            express_router._guard_register_failure(key_a)
+        with pytest.raises(HTTPException) as exc:
+            express_router._guard_register_failure(key_a)
+        assert exc.value.status_code == 429
+
+        with pytest.raises(HTTPException):
+            express_router._guard_reject_if_locked(key_a)
+        express_router._guard_reject_if_locked(key_b)
+    finally:
+        express_router.reset_code_guard()
+
+
+def test_code_guard_lockout_expiry_sweep():
+    """Expired lockout entries are dropped instead of blocking forever."""
+    import time as _time
+
+    express_router = importlib.import_module("plugins.express.router")
+    express_router.reset_code_guard()
+    try:
+        express_router._code_lockouts["code:9.9.9.9"] = _time.monotonic() - 1
+        express_router._lockout_sweep_ts = 0.0
+        express_router._guard_reject_if_locked("code:9.9.9.9")
+        assert "code:9.9.9.9" not in express_router._code_lockouts
+    finally:
+        express_router.reset_code_guard()

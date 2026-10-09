@@ -18,7 +18,6 @@ import logging
 import os
 import re
 import time
-from typing import Optional
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -67,14 +66,14 @@ def _scope_method(scope) -> str:
     return scope.get("method") or ""
 
 
-def _scope_client_host(scope) -> Optional[str]:
+def _scope_client_host(scope) -> str | None:
     client = scope.get("client")
     if client:
         return client[0]
     return None
 
 
-def _header_value(headers, name: bytes) -> Optional[bytes]:
+def _header_value(headers, name: bytes) -> bytes | None:
     """Linear scan of the raw ASGI header list (case-insensitive key match)."""
     for key, value in headers:
         if key == name:
@@ -263,7 +262,7 @@ class ToolFlagGateMiddleware:
                 f"<h1>功能已关闭</h1><p>「{safe_slug}」已被管理员停用。</p>"
                 f"<p><a href='{root or ''}/'>返回首页</a></p>"
                 "</body></html>"
-            ).encode("utf-8")
+            ).encode()
             await _send_response(
                 send,
                 status=403,
@@ -306,6 +305,7 @@ def _is_public_convert_path(path: str) -> bool:
         "/send",  # file express upload
         "/pickup",  # file express download
         "/lookup",  # express metadata query (pickup codes are enumerable)
+        "/read",  # express note read (pickup codes are enumerable)
         "/regex/test",  # user-supplied regex matching is CPU-sensitive (ReDoS)
         "/regex/replace",
     )
@@ -331,11 +331,12 @@ class PublicRateLimitMiddleware:
         method = _scope_method(scope)
         is_download = path.rstrip("/").endswith("/download")
         is_pickup = "/pickup" in path
+        is_read = "/read" in path
         rate_limited = (
             method == "POST" and _is_public_convert_path(path)
         ) or (
             method == "GET"
-            and (is_download or is_pickup)
+            and (is_download or is_pickup or is_read)
             and _is_public_convert_path(path)
         )
         if not rate_limited:
@@ -474,7 +475,7 @@ class MaxRequestBodySizeMiddleware:
     (default 512 MiB — generous enough for batch uploads).
     """
 
-    def __init__(self, app, max_bytes: Optional[int] = None):
+    def __init__(self, app, max_bytes: int | None = None):
         self.app = app
         if max_bytes is None:
             max_bytes = int(os.environ.get("MAX_REQUEST_BODY_BYTES") or str(512 * 1024 * 1024))
@@ -528,7 +529,7 @@ async def _send_response(
     status: int,
     body: bytes,
     content_type: str,
-    extra_headers: Optional[list] = None,
+    extra_headers: list | None = None,
 ) -> None:
     """Emit a short-circuit HTTP response directly on the ASGI ``send``.
 

@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Optional, Tuple
 
 from core.rate_limit_base import SlidingWindow
 
@@ -88,16 +87,17 @@ async def _check_redis(
     *,
     limit: int,
     window_sec: float,
-    now: Optional[float] = None,
-) -> Tuple[bool, int, int]:
+    now: float | None = None,
+) -> tuple[bool, int, int]:
     client = _redis_client
     t = time.time() if now is None else now
     bucket = int(t / window_sec)
-    rkey = f"toolkit:ratelimit:{int(window_sec)}:{key}"
+    window_end = (bucket + 1) * window_sec
+    rkey = f"toolkit:ratelimit:{int(window_sec)}:{bucket}:{key}"
     try:
         pipe = client.pipeline()
         pipe.incr(rkey)
-        pipe.expire(rkey, int(window_sec) + 1)
+        pipe.expire(rkey, max(1, int(window_end - t) + 1))
         count, _ = await pipe.execute()
     except Exception:
         logger.warning(
@@ -105,7 +105,6 @@ async def _check_redis(
         )
         return _hits.check(key, limit=limit, window_sec=window_sec, now=now)
     if count > limit:
-        window_end = (bucket + 1) * window_sec
         retry = max(1, int(window_end - t) + 1)
         return False, retry, 0
     remaining = max(0, limit - count)
@@ -117,8 +116,8 @@ async def check_rate(
     *,
     limit: int,
     window_sec: float,
-    now: Optional[float] = None,
-) -> Tuple[bool, int, int]:
+    now: float | None = None,
+) -> tuple[bool, int, int]:
     """Record one hit and return ``(allowed, retry_after_sec, remaining)``."""
     if limit <= 0:
         return True, 0, -1
