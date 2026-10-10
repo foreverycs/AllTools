@@ -62,6 +62,13 @@ class TextBlock:
     font_name: Optional[str] = None
     align: str = "left"                 # horizontal alignment: left/center/right
     from_ocr: bool = False              # produced by optional OCR on a scan
+    # x0 of the *first* visual line. Merging soft wraps keeps ``x0`` as the
+    # leftmost edge (paragraph left indent) and this one for the 2-em indent.
+    first_x0: Optional[float] = None
+    # Median top-to-top distance between the visual lines merged into this
+    # block (pt). Lets the writer restore the source leading instead of
+    # collapsing every OCR'd paragraph onto Word's single line spacing.
+    line_pitch: Optional[float] = None
 
 
 

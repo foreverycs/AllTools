@@ -1377,3 +1377,200 @@ def test_ruled_grid_table_still_detected(tmp_path):
     assert tables[0].rows == 3 and tables[0].cols == 3
 
 
+# ----- OCR scan pipeline (simulated engine; no Tesseract binary needed) -----
+
+def test_estimate_font_sizes_clusters_and_snaps():
+    from converter.ocr import _estimate_font_sizes
+
+    sizes = _estimate_font_sizes([12.3, 12.5, 12.4, 12.6, 19.5])
+    # Body cluster median 12.45pt ink → /0.95 ≈ 13.1 → snaps to 14.0pt.
+    assert sizes[:4] == [14.0, 14.0, 14.0, 14.0]
+    assert sizes[4] == 20.0
+    # Sub-threshold rows inherit the smallest real class instead of vanishing.
+    inherit = _estimate_font_sizes([2.0, 12.4])
+    assert inherit[0] == inherit[1] == 14.0
+
+
+def test_join_ocr_words_geometry_spacing():
+    from converter.ocr import OcrWord, join_ocr_words
+
+    def w(t, x0, x1):
+        return OcrWord(text=t, x0=x0, x1=x1, top=0.0, bottom=13.0)
+
+    # Tightly-set CJK tokens stay joined; a real gap becomes a space.
+    assert join_ocr_words([w("你", 10, 24), w("好", 24.3, 38)], height=13) == "你好"
+    assert join_ocr_words([w("2025", 10, 40), w("优秀", 44, 72)], height=13) == "2025 优秀"
+    # A gap between two CJK tokens is still not a space.
+    assert join_ocr_words([w("优", 10, 24), w("秀", 28, 42)], height=13) == "优秀"
+
+
+def test_text_h_align_content_relative():
+    from converter.text_blocks import _text_h_align
+
+    # Full-width body line in a symmetric-margin doc must stay left.
+    assert _text_h_align(
+        103.5, 490.6, 595,
+        content_left=102.6, content_right=490.9, content_lines=10,
+    ) == "left"
+    # A title inset on both sides of the content box is a centre.
+    assert _text_h_align(
+        235.0, 357.0, 595,
+        content_left=102.6, content_right=490.9, content_lines=10,
+    ) == "center"
+    # Without content bounds the legacy page-based guess applies — it
+    # mis-centres symmetric-margin body lines, which is why callers pass
+    # content bounds.
+    from converter.text_blocks import _page_h_align
+
+    assert _text_h_align(103.5, 490.6, 595) == _page_h_align(103.5, 490.6, 595)
+
+
+def test_soft_wrap_merge_keeps_first_line_indent_and_pitch():
+    from converter.text_utils import _merge_soft_wrap_text_blocks
+
+    b1 = TextBlock(text="第一行开头", top=100, bottom=113, x0=130, x1=490,
+                   font_size=14.0, align="left", from_ocr=True)
+    b2 = TextBlock(text="第二行继续", top=130, bottom=143, x0=104, x1=490,
+                   font_size=14.0, align="left", from_ocr=True)
+    merged = _merge_soft_wrap_text_blocks([b1, b2], page_right=491.0)
+    assert len(merged) == 1
+    blk = merged[0]
+    assert blk.x0 == 104.0          # paragraph left edge
+    assert blk.first_x0 == 130.0    # 2-em indent of the first visual line
+    assert blk.line_pitch == pytest.approx(30.0)
+
+
+def test_detect_ruled_grid_on_synthetic_image():
+    from PIL import Image, ImageDraw
+
+    from converter.raster import detect_ruled_grid
+
+    img = Image.new("L", (300, 400), 255)
+    d = ImageDraw.Draw(img)
+    xs, ys = [40, 120, 200, 280], [40, 140, 240, 340]
+    for x in xs:
+        d.line([(x, 40), (x, 340)], fill=0, width=2)
+    for y in ys:
+        d.line([(40, y), (280, y)], fill=0, width=2)
+    grid = detect_ruled_grid(img, page_width=300, page_height=400)
+    assert grid is not None
+    assert grid.rows == 3 and grid.cols == 3
+    assert grid.x_lines[0] == pytest.approx(41, abs=3)
+    assert grid.y_lines[0] == pytest.approx(41, abs=3)
+    assert detect_ruled_grid(Image.new("L", (300, 400), 255), 300, 400) is None
+
+
+def test_color_regions_and_cut_exclude_black_text():
+    import io as _io
+
+    from PIL import Image, ImageDraw
+
+    from converter.raster import color_regions, cut_color_png
+
+    img = Image.new("RGB", (200, 200), (250, 250, 245))
+    d = ImageDraw.Draw(img)
+    d.ellipse([50, 50, 150, 150], fill=(200, 40, 40))       # red seal
+    d.line([60, 100, 140, 100], fill=(20, 20, 20), width=6)  # black text on it
+    regions = color_regions(img, 200, 200)
+    assert len(regions) == 1
+    x0, y0, x1, y1 = regions[0]
+    assert 45 <= x0 <= 55 and 45 <= y0 <= 55
+    png = cut_color_png(img, regions[0], 200, 200)
+    assert png and png[:8] == b"\x89PNG\r\n\x1a\n"
+    rgba = Image.open(_io.BytesIO(png))
+    assert rgba.mode == "RGBA"
+    # Centre of the black stroke is transparent (excluded from the stamp).
+    assert rgba.getpixel((int(100 - x0), int(100 - y0)))[3] == 0
+
+
+def test_ocr_layout_splits_table_row_and_keeps_free_lines():
+    from converter.ocr import OcrLine, OcrWord
+    from converter.ocr_layout import _build_ocr_table
+    from converter.raster import RasterGrid
+
+    def mk(text, x0, x1, top=105.0, bottom=120.0):
+        w = OcrWord(text=text, x0=x0, x1=x1, top=top, bottom=bottom)
+        return OcrLine(text=text, x0=x0, x1=x1, top=top, bottom=bottom,
+                       font_size=14.0, align="left", words=[w])
+
+    grid = RasterGrid(x_lines=[100.0, 200.0, 300.0], y_lines=[100.0, 130.0],
+                      thickness=1.0)
+    lines = [
+        mk("甲", 110, 140),                       # cell (0, 0)
+        mk("乙", 210, 250),                       # cell (0, 1)
+        mk("页眉", 120, 180, top=60.0, bottom=75.0),    # above the grid
+        mk("署名", 120, 180, top=140.0, bottom=155.0),  # below the grid
+    ]
+    table, free = _build_ocr_table(grid, lines)
+    assert table is not None
+    assert table.rows == 1 and table.cols == 2
+    assert table.cells[0][0].text == "甲"
+    assert table.cells[0][1].text == "乙"
+    # Off-grid lines must not be clamped into the edge cells.
+    assert [ln.text for ln in free] == ["页眉", "署名"]
+
+
+def test_ocr_layout_grid_without_text_is_not_a_table():
+    from converter.ocr import OcrLine, OcrWord
+    from converter.ocr_layout import _build_ocr_table
+    from converter.raster import RasterGrid
+
+    grid = RasterGrid(x_lines=[100.0, 200.0, 300.0], y_lines=[100.0, 130.0],
+                      thickness=1.0)
+    w = OcrWord(text="页眉", x0=120, x1=180, top=60.0, bottom=75.0)
+    line = OcrLine(text="页眉", x0=120, x1=180, top=60.0, bottom=75.0,
+                   font_size=14.0, align="left", words=[w])
+    table, free = _build_ocr_table(grid, [line])
+    assert table is None
+    assert len(free) == 1
+
+
+def test_tall_image_gets_own_row():
+    from converter.docx_writer import _group_horizontal_rows
+    from converter.models import ImageBlock
+
+    seal = ImageBlock(image_bytes=b"png", top=100, bottom=213, x0=330,
+                      width_pt=110, height_pt=113, page_width=595, align="left")
+    sig = TextBlock(text="公司", top=150, bottom=165, x0=278, x1=447,
+                    font_size=14.0, align="left")
+    rows = _group_horizontal_rows([seal, sig])
+    assert len(rows) == 2
+    assert rows[0] == [seal]
+    assert rows[1] == [sig]
+    # A small inline icon may still share a row with vertically-overlapping text.
+    logo = ImageBlock(image_bytes=b"png", top=140, bottom=160, x0=100,
+                      width_pt=30, height_pt=20, page_width=595, align="left")
+    rows = _group_horizontal_rows([logo, sig])
+    assert len(rows) == 1
+    assert rows[0] == [logo, sig]
+
+
+def test_ocr_paragraph_first_indent_and_exact_spacing(tmp_path):
+    from docx import Document
+    from docx.enum.text import WD_LINE_SPACING
+
+    from converter.docx_writer import write_document
+    from converter.models import PageContent
+
+    block = TextBlock(
+        text="第一行开头后面继续", top=100, bottom=160, x0=104, x1=490,
+        font_size=14.0, font_name="宋体", align="left", from_ocr=True,
+        first_x0=130.0, line_pitch=30.0,
+    )
+    out = str(tmp_path / "ocr.docx")
+    write_document([PageContent(blocks=[block], width=595, height=842)], out)
+
+    pf = Document(out).paragraphs[0].paragraph_format
+    assert pf.first_line_indent is not None
+    assert pf.first_line_indent.pt == pytest.approx(26.0, abs=0.5)
+    assert pf.line_spacing_rule == WD_LINE_SPACING.EXACTLY
+    assert pf.line_spacing.pt == pytest.approx(30.0, abs=0.5)
+
+
+def test_soft_v_gap_larger_cap_for_ocr_rows():
+    from converter.docx_writer import V_GAP_CAP_OCR_PT, _soft_v_gap_pt
+
+    # gap 100pt maps to 32.5pt — above the form cap (28), below the OCR cap.
+    assert _soft_v_gap_pt(100.0, V_GAP_CAP_OCR_PT) > _soft_v_gap_pt(100.0)
+
+

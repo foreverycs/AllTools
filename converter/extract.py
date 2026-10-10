@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 from typing import List, Optional
 
@@ -58,14 +59,14 @@ def _extract_page(page, *, ocr: bool = False, ocr_lang: Optional[str] = None) ->
         isinstance(b, (TextBlock, TableBlock)) for b in blocks
     )
     if not has_text_or_table:
-        ocr_blocks: List[TextBlock] = []
+        ocr_blocks: List = []
         if ocr:
-            ocr_blocks = _ocr_page_to_text_blocks(page, lang=ocr_lang)
+            ocr_blocks = _ocr_page_blocks(page, lang=ocr_lang)
         if ocr_blocks:
             # Prefer editable OCR text; keep a light full-page image behind? No —
             # OCR text alone is the editable output; caller can re-run without OCR
             # for image-only. Still attach page image only when OCR found nothing.
-            blocks = sorted(ocr_blocks, key=lambda b: b.top)
+            blocks = ocr_blocks
         elif not any(isinstance(b, ImageBlock) for b in blocks):
             # Only fall back to a full-page raster when nothing was extracted.
             # Replacing already-decoded native XObjects with a page re-render
@@ -77,23 +78,37 @@ def _extract_page(page, *, ocr: bool = False, ocr_lang: Optional[str] = None) ->
     return PageContent(blocks=blocks, width=page_w, height=page_h)
 
 
-def _ocr_page_to_text_blocks(page, *, lang: Optional[str] = None) -> List[TextBlock]:
-    """Rasterise the page and OCR into TextBlocks (empty list if OCR unavailable)."""
-    from .ocr import ocr_available, ocr_image_to_blocks
+def _ocr_page_blocks(page, *, lang: Optional[str] = None) -> List:
+    """Rasterise the page and compose OCR text + ruled table + seal.
+
+    Returns ``[]`` when OCR is unavailable or the page yields nothing (the
+    caller then falls back to a full-page image).
+    """
+    from .ocr import ocr_available, ocr_image_lines
+    from .ocr_layout import compose_ocr_blocks
 
     if not ocr_available():
         return []
+    w = float(getattr(page, "width", 0) or 0)
+    h = float(getattr(page, "height", 0) or 0)
+    if w <= 0 or h <= 0:
+        return []
+    # Render/engine failures stay best-effort (OCR is optional); a failure in
+    # block composition below is a real bug and must surface, not degrade to
+    # a silent full-page image.
     try:
-        w = float(getattr(page, "width", 0) or 0)
-        h = float(getattr(page, "height", 0) or 0)
-        if w <= 0 or h <= 0:
-            return []
         png = _render_region_png(page, (0, 0, w, h), resolution=OCR_RENDER_DPI)
-        if not png:
-            return []
-        return ocr_image_to_blocks(png, page_width=w, page_height=h, lang=lang)
     except Exception:
         return []
+    if not png:
+        return []
+    lines = ocr_image_lines(png, page_width=w, page_height=h, lang=lang)
+    if not lines:
+        return []
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(png))
+    return compose_ocr_blocks(img, lines, page_width=w, page_height=h)
 
 
 def count_pdf_pages(pdf_path: str) -> int:
@@ -296,6 +311,6 @@ __all__ = [
     "count_blocks",
     "content_warnings",
     "_extract_page",
-    "_ocr_page_to_text_blocks",
+    "_ocr_page_blocks",
     "_friendly_open_error",
 ]

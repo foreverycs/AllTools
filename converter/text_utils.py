@@ -456,6 +456,23 @@ def _merge_soft_wrap_paragraphs(
     return merged
 
 
+def _median_line_pitch(tops: Sequence[float]) -> Optional[float]:
+    """Median top-to-top distance of ``tops`` (None when fewer than two lines)."""
+    if len(tops) < 2:
+        return None
+    ordered = sorted(tops)
+    deltas = sorted(
+        b - a for a, b in zip(ordered, ordered[1:], strict=False)
+    )
+    deltas = [d for d in deltas if d > 0]
+    if not deltas:
+        return None
+    mid = len(deltas) // 2
+    if len(deltas) % 2:
+        return float(deltas[mid])
+    return float(deltas[mid - 1] + deltas[mid]) / 2.0
+
+
 def _merge_soft_wrap_text_blocks(
     blocks: List["TextBlock"],
     *,
@@ -478,6 +495,26 @@ def _merge_soft_wrap_text_blocks(
     last_bot = float(cur.bottom)
     last_x0 = float(cur.x0)
     last_x1 = float(cur.x1)
+    # First line keeps its own x0 (2-em first-line indent) while ``cur.x0``
+    # is widened to the leftmost edge for the paragraph left indent.
+    first_x0 = float(cur.x0)
+    line_tops: List[float] = [float(cur.top)]
+
+    def _flush(block: TextBlock) -> TextBlock:
+        return TextBlock(
+            text=_normalize_spacing(block.text),
+            top=block.top,
+            bottom=block.bottom,
+            x0=block.x0,
+            x1=block.x1,
+            font_size=block.font_size,
+            font_name=block.font_name,
+            align=block.align,
+            from_ocr=block.from_ocr,
+            first_x0=block.first_x0,
+            line_pitch=block.line_pitch,
+        )
+
     for nxt in blocks[1:]:
         prev_h = max(0.0, last_bot - last_top)
         next_h = max(0.0, float(nxt.bottom) - float(nxt.top))
@@ -510,43 +547,27 @@ def _merge_soft_wrap_text_blocks(
                 font_name=cur.font_name or nxt.font_name,
                 align=cur.align,
                 from_ocr=cur.from_ocr or nxt.from_ocr,
+                first_x0=first_x0,
             )
+            line_tops.append(float(nxt.top))
             last_top = float(nxt.top)
             last_bot = float(nxt.bottom)
             last_x0 = float(nxt.x0)
             last_x1 = float(nxt.x1)
         else:
-            out.append(
-                TextBlock(
-                    text=_normalize_spacing(cur.text),
-                    top=cur.top,
-                    bottom=cur.bottom,
-                    x0=cur.x0,
-                    x1=cur.x1,
-                    font_size=cur.font_size,
-                    font_name=cur.font_name,
-                    align=cur.align,
-                    from_ocr=cur.from_ocr,
-                )
-            )
+            cur.first_x0 = first_x0
+            cur.line_pitch = _median_line_pitch(line_tops)
+            out.append(_flush(cur))
             cur = nxt
+            first_x0 = float(cur.x0)
+            line_tops = [float(cur.top)]
             last_top = float(cur.top)
             last_bot = float(cur.bottom)
             last_x0 = float(cur.x0)
             last_x1 = float(cur.x1)
-    out.append(
-        TextBlock(
-            text=_normalize_spacing(cur.text),
-            top=cur.top,
-            bottom=cur.bottom,
-            x0=cur.x0,
-            x1=cur.x1,
-            font_size=cur.font_size,
-            font_name=cur.font_name,
-            align=cur.align,
-            from_ocr=cur.from_ocr,
-        )
-    )
+    cur.first_x0 = first_x0
+    cur.line_pitch = _median_line_pitch(line_tops)
+    out.append(_flush(cur))
     return out
 
 
@@ -559,6 +580,7 @@ __all__ = [
     "_normalize_newlines",
     "_soft_join_text",
     "_is_soft_wrap_break",
+    "_median_line_pitch",
     "_ends_sentence",
     "_starts_list_item",
     "_merge_soft_wrap_text_blocks",

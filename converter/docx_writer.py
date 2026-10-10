@@ -32,6 +32,12 @@ TABLE_SPACER_PT = 1.0
 # Soft vertical gaps between other rows: ignore tiny PDF gaps, cap large ones.
 V_GAP_MIN_PT = 6.0
 V_GAP_CAP_PT = 28.0
+# OCR'd pages carry their real paragraph leading; compressing it to the form
+# cap above is what made scans look tighter than the original.
+V_GAP_CAP_OCR_PT = 48.0
+# An image at least this tall forms its own row: a seal (≈110pt) tab-aligned
+# next to the signature line drags that line's baseline down the picture.
+SOLO_IMAGE_MIN_PT = 48.0
 
 _HALIGN = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -276,6 +282,20 @@ def _block_bottom(block: Block) -> float:
     return float(getattr(block, "bottom", 0.0) or 0.0)
 
 
+def _block_height(block: Block) -> float:
+    return max(0.0, _block_bottom(block) - _block_top(block))
+
+
+def _is_solo_row_block(block: Block) -> bool:
+    """Tall images (seals) and tables never share a row with other blocks."""
+    if isinstance(block, TableBlock):
+        return True
+    return (
+        isinstance(block, ImageBlock)
+        and _block_height(block) >= SOLO_IMAGE_MIN_PT
+    )
+
+
 def _infer_page_margins(
     pages: Sequence[PageContent],
 ) -> Tuple[float, float, float, float, float, float]:
@@ -384,7 +404,7 @@ def _group_horizontal_rows(blocks: Sequence[Block]) -> List[List[Block]]:
     for i, b in enumerate(items):
         if used[i]:
             continue
-        if isinstance(b, TableBlock):
+        if _is_solo_row_block(b):
             used[i] = True
             rows.append([b])
             continue
@@ -401,7 +421,7 @@ def _group_horizontal_rows(blocks: Sequence[Block]) -> List[List[Block]]:
         while changed:
             changed = False
             for j, other in enumerate(items):
-                if used[j] or isinstance(other, TableBlock):
+                if used[j] or _is_solo_row_block(other):
                     continue
                 ot = _block_top(other)
                 ob = _block_bottom(other) or ot
@@ -463,6 +483,17 @@ def _write_text_paragraph(
         indent = _pdf_x_to_indent_pt(block.x0, left_margin_pt)
         if indent > 0.5:
             p.paragraph_format.left_indent = Pt(indent)
+        # Soft-wrapped paragraphs keep the first line's own x0 (2-em indent);
+        # firstLine in OOXML is added to the left indent, so the delta is the
+        # indent to apply.
+        if block.first_x0 is not None and block.first_x0 - block.x0 > 0.5:
+            p.paragraph_format.first_line_indent = Pt(block.first_x0 - block.x0)
+    # Source leading (median line pitch) instead of Word's single spacing for
+    # OCR'd multi-line paragraphs — this is what made scans look "squashed".
+    if block.from_ocr and block.line_pitch:
+        pitch = max(float(block.line_pitch), (block.font_size or 10.5) * 1.15)
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        p.paragraph_format.line_spacing = Pt(pitch)
     run = p.add_run(block.text)
     _set_run_font(run, block.font_name, block.font_size, _is_bold(block.font_name))
 
@@ -622,14 +653,14 @@ def _add_compact_spacer(doc: Document, height_pt: float = TABLE_SPACER_PT) -> No
     p.paragraph_format.line_spacing = Pt(max(height_pt, 0.5))
 
 
-def _soft_v_gap_pt(gap_pt: float) -> float:
+def _soft_v_gap_pt(gap_pt: float, cap: float = V_GAP_CAP_PT) -> float:
     """Map a PDF vertical gap to a modest Word spacer height."""
     if gap_pt < V_GAP_MIN_PT:
         return 0.0
     # Keep more of small gaps; compress large white space so forms stay compact.
     if gap_pt <= 18.0:
-        return min(gap_pt, V_GAP_CAP_PT)
-    return min(12.0 + (gap_pt - 18.0) * 0.25, V_GAP_CAP_PT)
+        return min(gap_pt, cap)
+    return min(12.0 + (gap_pt - 18.0) * 0.25, cap)
 
 
 def _row_top(row: Sequence[Block]) -> float:
@@ -769,7 +800,15 @@ def write_document(
         for row in rows:
             top = _row_top(row)
             gap = 0.0 if prev_bottom is None else max(0.0, top - prev_bottom)
-            soft_before = _soft_v_gap_pt(gap) if prev_bottom is not None else 0.0
+            # OCR'd paragraphs keep more of their real inter-block spacing.
+            gap_cap = (
+                V_GAP_CAP_OCR_PT
+                if any(getattr(b, "from_ocr", False) for b in row)
+                else V_GAP_CAP_PT
+            )
+            soft_before = (
+                _soft_v_gap_pt(gap, gap_cap) if prev_bottom is not None else 0.0
+            )
 
             if len(row) == 1 and isinstance(row[0], TableBlock):
                 _write_table(

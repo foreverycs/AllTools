@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import List
+from typing import List, Optional, Tuple
 
 from .constants import LINE_GAP, TEXT_COL_GAP
 from .models import TextBlock
@@ -15,8 +15,13 @@ from .text_utils import (
 )
 from .word_index import WordIndex
 
-def _text_h_align(x0: float, x1: float, page_w: float) -> str:
-    """Infer paragraph alignment from the text bbox relative to the page."""
+def _page_h_align(x0: float, x1: float, page_w: float) -> str:
+    """Legacy page-based alignment guess, used when the page gives no context.
+
+    A line whose side pads are balanced on the *page* reads as centred — which
+    is also what a full-width line looks like in a document with symmetric
+    margins, so callers should prefer :func:`_text_h_align` with content bounds.
+    """
     if page_w <= 0:
         return "left"
     width = max(x1 - x0, 1.0)
@@ -33,6 +38,49 @@ def _text_h_align(x0: float, x1: float, page_w: float) -> str:
         if left_pad > page_w * 0.18 or abs(left_pad - right_pad) <= page_w * 0.12:
             return "center"
     if left_pad > right_pad * 2.0 and left_pad / page_w > 0.45:
+        return "right"
+    return "left"
+
+
+def _text_h_align(
+    x0: float,
+    x1: float,
+    page_w: float,
+    *,
+    content_left: Optional[float] = None,
+    content_right: Optional[float] = None,
+    content_lines: int = 0,
+) -> str:
+    """Infer paragraph alignment from the text bbox relative to the content area.
+
+    ``content_left`` / ``content_right`` are the page's real text extent; with
+    fewer than two lines there is nothing to judge the extent against, so the
+    legacy page-based heuristic is used instead.
+
+    "left" is the position-preserving choice (the writer indents to ``x0``),
+    so "center" is only returned when the line is clearly inset on *both*
+    sides of the content box and balanced between them.
+    """
+    if page_w <= 0:
+        return "left"
+    if (
+        content_lines < 2
+        or content_left is None
+        or content_right is None
+        or content_right - content_left <= 0
+    ):
+        return _page_h_align(x0, x1, page_w)
+
+    box = content_right - content_left
+    width = x1 - x0
+    if width >= box * 0.90:
+        return "left"
+    left_gap = x0 - content_left
+    right_gap = content_right - x1
+    balanced = abs(left_gap - right_gap) <= max(box * 0.10, 8.0)
+    if left_gap >= box * 0.10 and right_gap >= box * 0.10 and balanced:
+        return "center"
+    if right_gap <= box * 0.08 and left_gap >= box * 0.25:
         return "right"
     return "left"
 
@@ -70,6 +118,13 @@ def _words_same_visual_line(line: List[dict], w: dict) -> bool:
     return False
 
 
+def _content_extent(segs: List[dict]) -> Tuple[Optional[float], Optional[float]]:
+    """(left, right) of the page's own text box, or (None, None) when empty."""
+    if not segs:
+        return None, None
+    return min(s["x0"] for s in segs), max(s["x1"] for s in segs)
+
+
 def _extract_text_blocks(page, table_bboxes, widx: WordIndex) -> List[TextBlock]:
     outside = widx.query_outside_rects(table_bboxes)
     if not outside:
@@ -85,7 +140,7 @@ def _extract_text_blocks(page, table_bboxes, widx: WordIndex) -> List[TextBlock]
         else:
             lines.append([w])
     page_w = float(getattr(page, "width", 0) or 0)
-    blocks: List[TextBlock] = []
+    segs: List[dict] = []
     for line in lines:
         ordered = sorted(line, key=_word_line_sort_key)
         # Split a visual line into horizontal segments when words sit far apart
@@ -114,13 +169,29 @@ def _extract_text_blocks(page, table_bboxes, widx: WordIndex) -> List[TextBlock]
             for w in seg:
                 counter[(round(w.get("size") or 0.0, 1), w.get("fontname") or "")] += 1
             (size, fname), _ = counter.most_common(1)[0]
-            align = _text_h_align(x0, x1, page_w)
-            blocks.append(TextBlock(
-                text=text.strip(),
-                top=top, bottom=bottom, x0=x0, x1=x1,
-                font_size=size or None, font_name=fname or None,
-                align=align,
-            ))
+            segs.append({
+                "text": text.strip(), "top": top, "bottom": bottom,
+                "x0": x0, "x1": x1, "size": size, "fontname": fname,
+            })
+
+    # Content extent over the whole page: alignment must be judged against the
+    # real text box, not the page (a full-width line in a symmetric-margin
+    # document has balanced *page* pads and was being sent to "center").
+    content_left, content_right = _content_extent(segs)
+    blocks: List[TextBlock] = []
+    for s in segs:
+        align = _text_h_align(
+            s["x0"], s["x1"], page_w,
+            content_left=content_left,
+            content_right=content_right,
+            content_lines=len(segs),
+        )
+        blocks.append(TextBlock(
+            text=s["text"],
+            top=s["top"], bottom=s["bottom"], x0=s["x0"], x1=s["x1"],
+            font_size=s["size"] or None, font_name=s["fontname"] or None,
+            align=align,
+        ))
     # PDF auto word-wrap produces one TextBlock per visual line; merge soft
     # wraps so a single sentence is one Word paragraph (not hard line breaks).
     return _merge_soft_wrap_text_blocks(blocks, page_right=page_w or None)
@@ -128,6 +199,8 @@ def _extract_text_blocks(page, table_bboxes, widx: WordIndex) -> List[TextBlock]
 
 __all__ = [
     "_text_h_align",
+    "_page_h_align",
+    "_content_extent",
     "_word_mid_y",
     "_words_same_visual_line",
     "_extract_text_blocks",
